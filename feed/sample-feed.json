@@ -1,0 +1,39 @@
+{
+  "version": 1,
+  "generated_at": "2026-06-30T00:00:00Z",
+  "pricing": {
+    "opus": { "input": 15, "output": 75, "cache_write": 18.75, "cache_read": 1.5 },
+    "sonnet": { "input": 3, "output": 15, "cache_write": 3.75, "cache_read": 0.3 },
+    "haiku": { "input": 0.8, "output": 4, "cache_write": 1.0, "cache_read": 0.08 },
+    "gpt-5": { "input": 1.25, "output": 10, "cache_write": 1.25, "cache_read": 0.125 }
+  },
+  "tips": [
+    {
+      "id": "tip-model-routing",
+      "title": "Route by difficulty, not by habit",
+      "body": "Default to Sonnet for edits, tests, and refactors; escalate to Opus only for hard reasoning or ambiguous design work. Most teams cut spend 30-50% with no quality loss.",
+      "category": "efficiency",
+      "date": "2026-06-28T00:00:00Z"
+    },
+    {
+      "id": "tip-cache",
+      "title": "Prompt caching is your biggest lever",
+      "body": "Cached input reads cost ~10x less than fresh input. Keep your file set and early messages stable within a session so the cache stays warm.",
+      "category": "efficiency",
+      "date": "2026-06-25T00:00:00Z"
+    },
+    {
+      "id": "news-haiku",
+      "title": "Haiku 4.5 is great for boilerplate",
+      "body": "For mechanical tasks — renames, formatting, simple scaffolding — Haiku is ~18x cheaper than Opus on output. Consider it your default for low-stakes turns.",
+      "category": "model",
+      "date": "2026-06-20T00:00:00Z"
+    }
+  ],
+  "update": {
+    "latest_version": "0.1.0",
+    "notes": "Initial enterprise release.",
+    "download_url": "https://updates.example-enterprise.internal/aipet/latest",
+    "sha256": ""
+  }
+}

@@ -1,0 +1,9 @@
+# Build output
+/bin/
+
+# Local companion state (never commit a user's usage data)
+.aipet/
+
+# OS / editor
+.DS_Store
+*.swp
