@@ -23,11 +23,11 @@ import (
 
 // Manifest is the payload an enterprise publishes.
 type Manifest struct {
-	Version     int                      `json:"version"`      // manifest schema version
-	GeneratedAt time.Time                `json:"generated_at"`
-	Pricing     map[string]pricing.Rate  `json:"pricing"`      // model-key -> rate overrides
-	Tips        []Tip                    `json:"tips"`         // market updates & guidance
-	Update      *UpdateInfo              `json:"update"`       // self-update info, optional
+	Version     int                     `json:"version"` // manifest schema version
+	GeneratedAt time.Time               `json:"generated_at"`
+	Pricing     map[string]pricing.Rate `json:"pricing"` // model-key -> rate overrides
+	Tips        []Tip                   `json:"tips"`    // market updates & guidance
+	Update      *UpdateInfo             `json:"update"`  // self-update info, optional
 }
 
 // Tip is a market update or efficiency note shown in the TUI.

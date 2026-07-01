@@ -15,6 +15,17 @@ import (
 	"time"
 )
 
+// maxLineBytes bounds a single JSONL line. It must match (or exceed) the buffer
+// the collectors use, otherwise Open could fail to index a long line that a
+// collector can still read — producing a dedupe miss and double-counted spend.
+const maxLineBytes = 16 * 1024 * 1024
+
+func newScanner(f *os.File) *bufio.Scanner {
+	sc := bufio.NewScanner(f)
+	sc.Buffer(make([]byte, 0, 64*1024), maxLineBytes)
+	return sc
+}
+
 // Event is one model turn observed from a coding tool's session log.
 type Event struct {
 	Key        string    `json:"key"`    // dedupe key: source|session|uuid
@@ -42,15 +53,22 @@ type Store struct {
 func Open(path string) (*Store, error) {
 	s := &Store{path: path, seen: make(map[string]struct{})}
 	if f, err := os.Open(path); err == nil {
-		sc := bufio.NewScanner(f)
-		sc.Buffer(make([]byte, 1024*1024), 8*1024*1024)
+		sc := newScanner(f)
 		for sc.Scan() {
 			var e Event
 			if json.Unmarshal(sc.Bytes(), &e) == nil && e.Key != "" {
 				s.seen[e.Key] = struct{}{}
 			}
 		}
-		f.Close()
+		closeErr := f.Close()
+		// A scan error here means the dedupe index is incomplete, which risks
+		// double-counting. Surface it rather than silently continuing.
+		if err := sc.Err(); err != nil {
+			return nil, err
+		}
+		if closeErr != nil {
+			return nil, closeErr
+		}
 	}
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
 	if err != nil {
@@ -105,8 +123,7 @@ func (s *Store) All() ([]Event, error) {
 	}
 	defer f.Close()
 	var out []Event
-	sc := bufio.NewScanner(f)
-	sc.Buffer(make([]byte, 1024*1024), 8*1024*1024)
+	sc := newScanner(f)
 	for sc.Scan() {
 		var e Event
 		if json.Unmarshal(sc.Bytes(), &e) == nil && e.Key != "" {

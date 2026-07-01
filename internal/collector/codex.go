@@ -1,10 +1,9 @@
 package collector
 
 import (
-	"bufio"
-	"crypto/sha1"
 	"encoding/json"
 	"fmt"
+	"hash/fnv"
 	"os"
 	"path/filepath"
 	"strings"
@@ -31,8 +30,8 @@ type codexLine struct {
 type codexUsage struct {
 	InputTokens       int64 `json:"input_tokens"`
 	OutputTokens      int64 `json:"output_tokens"`
-	PromptTokens      int64 `json:"prompt_tokens"`      // alt naming
-	CompletionTokens  int64 `json:"completion_tokens"`  // alt naming
+	PromptTokens      int64 `json:"prompt_tokens"`     // alt naming
+	CompletionTokens  int64 `json:"completion_tokens"` // alt naming
 	CachedInputTokens int64 `json:"cached_input_tokens"`
 	CacheReadTokens   int64 `json:"cache_read_input_tokens"`
 }
@@ -56,6 +55,7 @@ func (u codexUsage) normalize() pricing.Usage {
 // CollectCodex scans Codex session files under root for usage-bearing turns.
 func CollectCodex(root string, st *store.Store, prices *pricing.Table) (int, error) {
 	var added int
+	var errs fileErrors
 	err := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
 		if err != nil || d.IsDir() {
 			return nil //nolint:nilerr
@@ -63,11 +63,15 @@ func CollectCodex(root string, st *store.Store, prices *pricing.Table) (int, err
 		if !strings.HasSuffix(path, ".jsonl") && !strings.HasSuffix(path, ".json") {
 			return nil
 		}
-		n, _ := collectCodexFile(path, st, prices)
+		n, ferr := collectCodexFile(path, st, prices)
 		added += n
+		errs.add(path, ferr)
 		return nil
 	})
-	return added, err
+	if err != nil {
+		return added, err
+	}
+	return added, errs.err()
 }
 
 func collectCodexFile(path string, st *store.Store, prices *pricing.Table) (int, error) {
@@ -81,8 +85,7 @@ func collectCodexFile(path string, st *store.Store, prices *pricing.Table) (int,
 	project := projectName(filepath.Base(filepath.Dir(path)))
 
 	var added, idx int
-	sc := bufio.NewScanner(f)
-	sc.Buffer(make([]byte, 1024*1024), 16*1024*1024)
+	sc := newLineScanner(f)
 	for sc.Scan() {
 		idx++
 		raw := sc.Bytes()
@@ -100,9 +103,11 @@ func collectCodexFile(path string, st *store.Store, prices *pricing.Table) (int,
 		}
 		ts := parseCodexTime(l)
 		// No stable per-turn uuid is guaranteed, so derive a deterministic key
-		// from file+line content. Idempotent across re-scans of the same file.
-		sum := sha1.Sum(raw)
-		key := fmt.Sprintf("codex|%s|%d|%x", session, idx, sum[:6])
+		// from file + line index + content hash. This is a dedupe key, not a
+		// security digest, so a fast non-cryptographic hash (FNV) is appropriate.
+		h := fnv.New64a()
+		h.Write(raw)
+		key := fmt.Sprintf("codex|%s|%d|%x", session, idx, h.Sum64())
 		if st.Has(key) {
 			continue
 		}

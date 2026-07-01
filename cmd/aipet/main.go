@@ -99,6 +99,9 @@ func runStatus(cfg config.Config) {
 	} else {
 		fmt.Printf("  feed:      unavailable (%s)\n", snap.FeedError)
 	}
+	for _, ce := range snap.CollectErrors {
+		fmt.Printf("  ! collect: %s\n", ce)
+	}
 	if len(snap.Suggestions) > 0 {
 		fmt.Println("\n  suggestions:")
 		shown := 0

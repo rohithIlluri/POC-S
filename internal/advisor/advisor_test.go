@@ -61,6 +61,75 @@ func TestUnknownModelRule(t *testing.T) {
 	}
 }
 
+func TestBudgetNearThreshold(t *testing.T) {
+	in := Inputs{
+		DailyBudgetUSD: 10,
+		Stats:          store.Stats{TodayCost: 8, ByModel: map[string]float64{}},
+	}
+	got := Run(in, []Rule{ruleBudget})
+	if !hasID(got, "budget-near") {
+		t.Errorf("expected budget-near at 80%%, got %+v", got)
+	}
+	// Below 75% the rule must stay quiet.
+	in.Stats.TodayCost = 5
+	if got := Run(in, []Rule{ruleBudget}); len(got) != 0 {
+		t.Errorf("no budget nudge expected at 50%%, got %+v", got)
+	}
+	// Disabled budget never fires.
+	in.DailyBudgetUSD = 0
+	in.Stats.TodayCost = 999
+	if got := Run(in, []Rule{ruleBudget}); len(got) != 0 {
+		t.Errorf("budget 0 disables the rule, got %+v", got)
+	}
+}
+
+func TestContextBloatFires(t *testing.T) {
+	in := Inputs{Stats: store.Stats{Turns: 10, TokensIn: 500_000, CacheRead: 1_000_000}}
+	got := Run(in, []Rule{ruleContextBloat})
+	if !hasID(got, "context-bloat") {
+		t.Errorf("expected context-bloat at 150k/turn, got %+v", got)
+	}
+	// Modest context stays quiet.
+	in = Inputs{Stats: store.Stats{Turns: 10, TokensIn: 100_000}}
+	if got := Run(in, []Rule{ruleContextBloat}); len(got) != 0 {
+		t.Errorf("10k/turn should not fire, got %+v", got)
+	}
+}
+
+func TestFragmentationFires(t *testing.T) {
+	var events []store.Event
+	for i := 0; i < 10; i++ {
+		events = append(events, store.Event{Session: string(rune('a' + i)), Model: "m"})
+	}
+	in := Inputs{Events: events, Stats: store.Stats{Turns: 10}} // 1 turn/session
+	got := Run(in, []Rule{ruleIdleSessions})
+	if !hasID(got, "fragmented") {
+		t.Errorf("expected fragmentation nudge, got %+v", got)
+	}
+	// Long sessions (many turns each) are healthy.
+	in.Stats.Turns = 100
+	if got := Run(in, []Rule{ruleIdleSessions}); len(got) != 0 {
+		t.Errorf("10 turns/session should not fire, got %+v", got)
+	}
+}
+
+func TestOpusOveruseQuietWhenBalanced(t *testing.T) {
+	in := Inputs{Stats: store.Stats{
+		TotalCost: 10,
+		ByModel:   map[string]float64{"claude-opus-4-8": 4, "claude-sonnet-4-6": 6},
+	}}
+	if got := Run(in, []Rule{ruleOpusOveruse}); len(got) != 0 {
+		t.Errorf("40%% opus share should not fire, got %+v", got)
+	}
+}
+
+func TestEmptyInputsProduceNothing(t *testing.T) {
+	got := Run(Inputs{Stats: store.Stats{ByModel: map[string]float64{}}}, DefaultRules())
+	if len(got) != 0 {
+		t.Errorf("no data should produce no suggestions, got %+v", got)
+	}
+}
+
 func TestRunSortsBySeverity(t *testing.T) {
 	in := Inputs{
 		DailyBudgetUSD: 10,

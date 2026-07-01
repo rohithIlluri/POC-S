@@ -257,6 +257,9 @@ func (m Model) footer() string {
 		} else {
 			feed = warnStyle.Render("feed: " + trunc(m.snap.FeedError, 30))
 		}
+		if n := len(m.snap.CollectErrors); n > 0 {
+			feed += "  " + warnStyle.Render(fmt.Sprintf("%d collect error(s)", n))
+		}
 	}
 	return dimStyle.Render(help) + "   " + feed
 }

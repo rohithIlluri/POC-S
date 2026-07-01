@@ -30,10 +30,10 @@ func Default() *Table {
 		"sonnet": {Input: 3, Output: 15, CacheWrite: 3.75, CacheRead: 0.30},
 		"haiku":  {Input: 0.80, Output: 4, CacheWrite: 1.0, CacheRead: 0.08},
 		// OpenAI (Codex) — representative coding-model rates.
-		"gpt-5":     {Input: 1.25, Output: 10, CacheWrite: 1.25, CacheRead: 0.125},
-		"gpt-4.1":   {Input: 2, Output: 8, CacheWrite: 2, CacheRead: 0.50},
-		"o4-mini":   {Input: 1.10, Output: 4.40, CacheWrite: 1.10, CacheRead: 0.275},
-		"codex":     {Input: 1.25, Output: 10, CacheWrite: 1.25, CacheRead: 0.125},
+		"gpt-5":   {Input: 1.25, Output: 10, CacheWrite: 1.25, CacheRead: 0.125},
+		"gpt-4.1": {Input: 2, Output: 8, CacheWrite: 2, CacheRead: 0.50},
+		"o4-mini": {Input: 1.10, Output: 4.40, CacheWrite: 1.10, CacheRead: 0.275},
+		"codex":   {Input: 1.25, Output: 10, CacheWrite: 1.25, CacheRead: 0.125},
 	}}
 }
 

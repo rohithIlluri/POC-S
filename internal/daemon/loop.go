@@ -24,13 +24,16 @@ func Serve(ctx context.Context, cfg config.Config) error {
 	if interval <= 0 {
 		interval = 6 * time.Hour
 	}
-	// Usage collection is cheap, so poll it more often than the (remote) feed.
+	// Usage collection is cheap and local, so it ticks every couple of minutes;
+	// the (possibly remote) feed is fetched through a cache that honors the
+	// configured poll interval.
 	collectEvery := 2 * time.Minute
 	if collectEvery > interval {
 		collectEvery = interval
 	}
+	fc := &FeedCache{}
 
-	if _, err := Run(cfg); err != nil {
+	if _, err := RunCycle(cfg, fc); err != nil {
 		fmt.Fprintf(os.Stderr, "aipet: initial cycle: %v\n", err)
 	}
 
@@ -41,7 +44,7 @@ func Serve(ctx context.Context, cfg config.Config) error {
 		case <-ctx.Done():
 			return nil
 		case <-t.C:
-			if _, err := Run(cfg); err != nil {
+			if _, err := RunCycle(cfg, fc); err != nil {
 				fmt.Fprintf(os.Stderr, "aipet: cycle: %v\n", err)
 			}
 		}

@@ -23,26 +23,60 @@ import (
 
 // Snapshot is the daemon's published state, read by the TUI and `status`.
 type Snapshot struct {
-	UpdatedAt       time.Time             `json:"updated_at"`
-	Stats           store.Stats           `json:"stats"`
-	Suggestions     []advisor.Suggestion  `json:"suggestions"`
-	Tips            []feed.Tip            `json:"tips"`
-	FeedOK          bool                  `json:"feed_ok"`
-	FeedError       string                `json:"feed_error,omitempty"`
-	UpdateAvailable bool                  `json:"update_available"`
-	UpdateInfo      *feed.UpdateInfo      `json:"update_info,omitempty"`
-	Sources         map[string]bool       `json:"sources"` // detected tool dirs
-	NewEvents       int                   `json:"new_events"`
+	UpdatedAt       time.Time            `json:"updated_at"`
+	Stats           store.Stats          `json:"stats"`
+	Suggestions     []advisor.Suggestion `json:"suggestions"`
+	Tips            []feed.Tip           `json:"tips"`
+	FeedOK          bool                 `json:"feed_ok"`
+	FeedError       string               `json:"feed_error,omitempty"`
+	UpdateAvailable bool                 `json:"update_available"`
+	UpdateInfo      *feed.UpdateInfo     `json:"update_info,omitempty"`
+	Sources         map[string]bool      `json:"sources"` // detected tool dirs
+	NewEvents       int                  `json:"new_events"`
+	CollectErrors   []string             `json:"collect_errors,omitempty"` // non-fatal per-source errors
 }
 
-// Run executes one collect+advise+feed cycle and writes a snapshot. The daemon's
-// main loop calls this on an interval; `status` calls it once on demand.
+// FeedCache memoizes the last feed fetch so the daemon loop — which collects
+// usage every couple of minutes — only hits the enterprise feed at the
+// configured poll_interval_min, not on every collection tick.
+type FeedCache struct {
+	manifest *feed.Manifest
+	err      error
+	fetched  time.Time
+}
+
+// get returns a cached manifest while it is fresh, refetching otherwise.
+// A nil receiver always fetches (the one-shot `status`/`update` path).
+func (fc *FeedCache) get(cfg config.Config) (*feed.Manifest, error) {
+	if fc == nil {
+		return loadFeed(cfg)
+	}
+	ttl := time.Duration(cfg.PollIntervalMin) * time.Minute
+	if ttl <= 0 {
+		ttl = 6 * time.Hour
+	}
+	if !fc.fetched.IsZero() && time.Since(fc.fetched) < ttl {
+		return fc.manifest, fc.err
+	}
+	fc.manifest, fc.err = loadFeed(cfg)
+	fc.fetched = time.Now()
+	return fc.manifest, fc.err
+}
+
+// Run executes one collect+advise+feed cycle and writes a snapshot. One-shot
+// callers (`status`, `update`) always fetch the feed fresh.
 func Run(cfg config.Config) (*Snapshot, error) {
+	return RunCycle(cfg, nil)
+}
+
+// RunCycle is Run with an optional feed cache, used by the daemon loop to honor
+// the feed poll interval across frequent collection ticks.
+func RunCycle(cfg config.Config, fc *FeedCache) (*Snapshot, error) {
 	prices := pricing.Default()
 
 	// Refresh the feed first so pricing overrides apply to this cycle.
 	snap := &Snapshot{Sources: map[string]bool{}, UpdatedAt: time.Now()}
-	if m, err := loadFeed(cfg); err != nil {
+	if m, err := fc.get(cfg); err != nil {
 		snap.FeedError = err.Error()
 	} else {
 		snap.FeedOK = true
@@ -66,16 +100,24 @@ func Run(cfg config.Config) (*Snapshot, error) {
 	}
 	defer st.Close()
 
-	// Collect from whichever tools are present; absence is not an error.
+	// Collect from whichever tools are present; absence is not an error, but a
+	// real failure (permissions, corrupt tree) is recorded without aborting the
+	// cycle so the other source and the feed still refresh.
 	if dir, ok := config.ClaudeProjectsDir(); ok {
 		snap.Sources["claude-code"] = true
-		n, _ := collector.CollectClaude(dir, st, prices)
+		n, err := collector.CollectClaude(dir, st, prices)
 		snap.NewEvents += n
+		if err != nil {
+			snap.CollectErrors = append(snap.CollectErrors, "claude-code: "+err.Error())
+		}
 	}
 	if dir, ok := config.CodexSessionsDir(); ok {
 		snap.Sources["codex"] = true
-		n, _ := collector.CollectCodex(dir, st, prices)
+		n, err := collector.CollectCodex(dir, st, prices)
 		snap.NewEvents += n
+		if err != nil {
+			snap.CollectErrors = append(snap.CollectErrors, "codex: "+err.Error())
+		}
 	}
 
 	events, err := st.All()

@@ -5,7 +5,6 @@
 package collector
 
 import (
-	"bufio"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -39,15 +38,20 @@ type claudeLine struct {
 // file are skipped so one corrupt session never blocks collection.
 func CollectClaude(root string, st *store.Store, prices *pricing.Table) (int, error) {
 	var added int
+	var errs fileErrors
 	err := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
 		if err != nil || d.IsDir() || !strings.HasSuffix(path, ".jsonl") {
 			return nil //nolint:nilerr // skip unreadable entries, keep walking
 		}
-		n, _ := collectClaudeFile(path, st, prices)
+		n, ferr := collectClaudeFile(path, st, prices)
 		added += n
+		errs.add(path, ferr)
 		return nil
 	})
-	return added, err
+	if err != nil {
+		return added, err
+	}
+	return added, errs.err()
 }
 
 func collectClaudeFile(path string, st *store.Store, prices *pricing.Table) (int, error) {
@@ -58,8 +62,7 @@ func collectClaudeFile(path string, st *store.Store, prices *pricing.Table) (int
 	defer f.Close()
 
 	var added int
-	sc := bufio.NewScanner(f)
-	sc.Buffer(make([]byte, 1024*1024), 16*1024*1024)
+	sc := newLineScanner(f)
 	for sc.Scan() {
 		var l claudeLine
 		if json.Unmarshal(sc.Bytes(), &l) != nil {
