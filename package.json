@@ -1,0 +1,33 @@
+{
+  "name": "ccr",
+  "version": "0.1.0",
+  "description": "Multi coding tools router: routes prompts to Claude Code or Codex, picking a model by task complexity",
+  "type": "module",
+  "bin": {
+    "ccr": "dist/cli.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "test": "vitest run",
+    "prepublishOnly": "npm run build"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.109.1",
+    "commander": "^15.0.0",
+    "yaml": "^2.9.0",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@types/node": "^26.1.0",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.9"
+  }
+}
