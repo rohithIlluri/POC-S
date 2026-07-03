@@ -119,19 +119,54 @@ function parseConfigFile(path: string): unknown {
   }
 }
 
-function discoverConfigPath(explicitPath?: string): string | undefined {
+interface DiscoveredConfig {
+  path: string;
+  /**
+   * Trusted sources (explicit --config, the user's home config) may override
+   * anything. An untrusted source (a config discovered in the current working
+   * directory, e.g. from a cloned repo) may not touch tool-invocation fields.
+   */
+  trusted: boolean;
+}
+
+function discoverConfigPath(explicitPath?: string): DiscoveredConfig | undefined {
   if (explicitPath) {
     if (!existsSync(explicitPath)) {
       throw new ConfigError(`Config file not found: ${explicitPath}`);
     }
-    return explicitPath;
+    return { path: explicitPath, trusted: true };
   }
-  const candidates = [
-    join(process.cwd(), "ccr.config.yaml"),
-    join(process.cwd(), "ccr.config.json"),
-    join(homedir(), ".config", "ccr", "config.yaml"),
-  ];
-  return candidates.find((p) => existsSync(p));
+  const cwdCandidates = [join(process.cwd(), "ccr.config.yaml"), join(process.cwd(), "ccr.config.json")];
+  const cwdHit = cwdCandidates.find((p) => existsSync(p));
+  if (cwdHit) return { path: cwdHit, trusted: false };
+  const homePath = join(homedir(), ".config", "ccr", "config.yaml");
+  if (existsSync(homePath)) return { path: homePath, trusted: true };
+  return undefined;
+}
+
+/**
+ * A config discovered from the working directory must not be able to choose the
+ * executable ccr spawns or the arguments it passes — that would let a cloned
+ * repo run arbitrary commands (or inject dangerous flags into claude/codex) the
+ * moment a user runs `ccr` inside it. Such fields require an explicit --config
+ * or the user's own home config.
+ */
+function assertNoPrivilegedOverrides(user: unknown, path: string): void {
+  if (!isPlainObject(user)) return;
+  const tools = user.tools;
+  if (!isPlainObject(tools)) return;
+  const privileged = ["command", "argsTemplate", "installHint"];
+  for (const [toolName, toolCfg] of Object.entries(tools)) {
+    if (!isPlainObject(toolCfg)) continue;
+    const offending = privileged.filter((field) => field in toolCfg);
+    if (offending.length > 0) {
+      throw new ConfigError(
+        `Untrusted config ${path} may not set tools.${toolName}.${offending[0]} ` +
+          `(command/argsTemplate/installHint control the spawned process). ` +
+          `Move tool-invocation overrides to ~/.config/ccr/config.yaml or pass them with --config.`,
+      );
+    }
+  }
 }
 
 export function validateConfig(merged: unknown): Config {
@@ -146,9 +181,10 @@ export function validateConfig(merged: unknown): Config {
 }
 
 export function loadConfig(explicitPath?: string): Config {
-  const path = discoverConfigPath(explicitPath);
-  if (!path) return DEFAULT_CONFIG;
+  const discovered = discoverConfigPath(explicitPath);
+  if (!discovered) return DEFAULT_CONFIG;
   // An empty or comments-only file parses to null; treat it as "no overrides".
-  const user = parseConfigFile(path) ?? {};
+  const user = parseConfigFile(discovered.path) ?? {};
+  if (!discovered.trusted) assertNoPrivilegedOverrides(user, discovered.path);
   return validateConfig(deepMerge<unknown>(DEFAULT_CONFIG, user));
 }
