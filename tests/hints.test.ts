@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { extractHints, hintsAreConclusive } from "../src/classifier/hints.js";
+import { extractHints, hintsAreConclusive, inferToolFromModel } from "../src/classifier/hints.js";
+import { DEFAULT_CONFIG, type Config } from "../src/config.js";
 
 describe("extractHints", () => {
   it("extracts a codex tool hint", () => {
@@ -30,6 +31,32 @@ describe("extractHints", () => {
   it("does not false-positive on passing mentions", () => {
     expect(extractHints("parse the codex file format spec")).toEqual({});
     expect(extractHints("the claude integration is broken")).toEqual({});
+  });
+});
+
+describe("inferToolFromModel", () => {
+  it("finds a model listed in the config, beating the prefix guess", () => {
+    const config: Config = {
+      ...DEFAULT_CONFIG,
+      tools: {
+        ...DEFAULT_CONFIG.tools,
+        codex: {
+          ...DEFAULT_CONFIG.tools.codex,
+          models: { ...DEFAULT_CONFIG.tools.codex.models, low: "claude-repackaged-mini" },
+        },
+      },
+    };
+    expect(inferToolFromModel("claude-repackaged-mini", config)).toBe("codex");
+  });
+
+  it("guesses by vendor prefix without config", () => {
+    expect(inferToolFromModel("claude-opus-4-8")).toBe("claude");
+    expect(inferToolFromModel("gpt-5.2-codex")).toBe("codex");
+    expect(inferToolFromModel("codex-next")).toBe("codex");
+  });
+
+  it("returns undefined for unrecognizable models", () => {
+    expect(inferToolFromModel("my-custom-model", DEFAULT_CONFIG)).toBeUndefined();
   });
 });
 

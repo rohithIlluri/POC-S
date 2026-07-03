@@ -20,7 +20,11 @@ function tierForModel(model: string, tool: Tool, config: Config): Tier | undefin
 }
 
 function buildArgs(template: string[], prompt: string, model: string, passthrough: string[]): string[] {
-  const args = template.map((arg) => arg.replaceAll("{prompt}", prompt).replaceAll("{model}", model));
+  // Single-pass substitution: a prompt containing a literal "{model}" must not
+  // get the model id injected into it by a second replacement pass.
+  const args = template.map((arg) =>
+    arg.replace(/\{prompt\}|\{model\}/g, (token) => (token === "{prompt}" ? prompt : model)),
+  );
   return [...args, ...passthrough];
 }
 

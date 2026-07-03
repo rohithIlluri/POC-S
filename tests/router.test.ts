@@ -103,6 +103,12 @@ describe("argv construction", () => {
     expect(d.args).toContain(prompt);
   });
 
+  it("does not substitute a literal {model} inside the prompt", () => {
+    const prompt = "rename the {model} placeholder in template.ts";
+    const d = route(classification(), {}, DEFAULT_CONFIG, prompt);
+    expect(d.args).toContain(prompt);
+  });
+
   it("appends passthrough args", () => {
     const d = route(classification({ taskType: "docs" }), {}, DEFAULT_CONFIG, "p", ["--allowed-tools", "Bash"]);
     expect(d.args.slice(-2)).toEqual(["--allowed-tools", "Bash"]);

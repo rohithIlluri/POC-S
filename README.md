@@ -88,6 +88,12 @@ routing:
   default: { tool: claude, tier: medium }
 ```
 
+## Known limitations
+
+- Conflicting hints resolve deterministically in favor of the tier word: "use codex with opus" routes to claude/opus.
+- Quote your prompt — an unquoted token like `-p` is parsed as a flag by the shell/CLI, not as prompt text.
+- The file-mention heuristic counts dotted names like `node.js` as file paths (a small score nudge, not a routing error).
+
 ## Development
 
 ```sh

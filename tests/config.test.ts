@@ -33,6 +33,16 @@ describe("loadConfig", () => {
     expect(config.tools.claude).toEqual(DEFAULT_CONFIG.tools.claude);
   });
 
+  it("treats an empty config file as no overrides", () => {
+    const path = tempFile("ccr.yaml", "");
+    expect(loadConfig(path)).toEqual(DEFAULT_CONFIG);
+  });
+
+  it("treats a comments-only config file as no overrides", () => {
+    const path = tempFile("ccr.yaml", "# nothing here yet\n# more comments\n");
+    expect(loadConfig(path)).toEqual(DEFAULT_CONFIG);
+  });
+
   it("parses a JSON config", () => {
     const path = tempFile("ccr.json", JSON.stringify({ classifier: { llmFallback: false } }));
     expect(loadConfig(path).classifier.llmFallback).toBe(false);

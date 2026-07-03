@@ -62,6 +62,19 @@ describe("complexity scoring", () => {
     expect(many.reasoning).toContainEqual(expect.stringContaining("+15"));
   });
 
+  it("adds the multi-step bonus", () => {
+    const result = classifyHeuristically(
+      "add caching to the users endpoint then invalidate the entries whenever a write happens",
+      opts,
+    );
+    expect(result.reasoning).toContainEqual(expect.stringContaining("multi-step phrasing: +10"));
+  });
+
+  it("penalizes very short prompts", () => {
+    const result = classifyHeuristically("fix the build", opts);
+    expect(result.reasoning).toContainEqual(expect.stringContaining("< 60 chars: -10"));
+  });
+
   it("adds length bonuses", () => {
     const long = "investigate the request handling. ".repeat(15); // > 400 chars
     expect(classifyHeuristically(long, opts).reasoning).toContainEqual(

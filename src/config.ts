@@ -148,6 +148,7 @@ export function validateConfig(merged: unknown): Config {
 export function loadConfig(explicitPath?: string): Config {
   const path = discoverConfigPath(explicitPath);
   if (!path) return DEFAULT_CONFIG;
-  const user = parseConfigFile(path);
+  // An empty or comments-only file parses to null; treat it as "no overrides".
+  const user = parseConfigFile(path) ?? {};
   return validateConfig(deepMerge<unknown>(DEFAULT_CONFIG, user));
 }

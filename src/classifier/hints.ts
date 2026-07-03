@@ -1,4 +1,5 @@
-import type { Hints, Tier, Tool } from "../types.js";
+import type { Config } from "../config.js";
+import { TOOLS, type Hints, type Tier, type Tool } from "../types.js";
 
 const TIER_WORDS: Record<string, Tier> = {
   opus: "high",
@@ -29,12 +30,26 @@ export function extractHints(prompt: string): Hints {
   if (modelMatch) {
     hints.model = modelMatch[1];
     if (!hints.tool) {
-      if (/^claude/i.test(hints.model)) hints.tool = "claude";
-      else if (/^gpt|codex/i.test(hints.model)) hints.tool = "codex";
+      hints.tool = inferToolFromModel(hints.model);
     }
   }
 
   return hints;
+}
+
+/**
+ * Work out which tool a model id belongs to: a config lookup wins, then a
+ * vendor-prefix guess. Undefined when the model is unrecognizable.
+ */
+export function inferToolFromModel(model: string, config?: Config): Tool | undefined {
+  if (config) {
+    for (const tool of TOOLS) {
+      if (Object.values(config.tools[tool].models).includes(model)) return tool;
+    }
+  }
+  if (/^claude/i.test(model)) return "claude";
+  if (/^gpt|codex/i.test(model)) return "codex";
+  return undefined;
 }
 
 export function hasAnyHint(hints: Hints): boolean {

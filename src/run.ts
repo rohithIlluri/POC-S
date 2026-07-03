@@ -1,5 +1,5 @@
 import { classify } from "./classifier/index.js";
-import { extractHints } from "./classifier/hints.js";
+import { extractHints, inferToolFromModel } from "./classifier/hints.js";
 import { loadConfig, ConfigError } from "./config.js";
 import { execute } from "./executor.js";
 import { route } from "./router.js";
@@ -31,7 +31,11 @@ export async function run(opts: RunOptions): Promise<void> {
 
   const hints = extractHints(opts.prompt);
   if (opts.forceTool) hints.tool = opts.forceTool;
-  if (opts.forceModel) hints.model = opts.forceModel;
+  if (opts.forceModel) {
+    hints.model = opts.forceModel;
+    // A forced model must not end up on the other vendor's CLI.
+    if (!hints.tool) hints.tool = inferToolFromModel(opts.forceModel, config);
+  }
   if (hints.tool || hints.tier || hints.model) {
     log(`hints: ${JSON.stringify(hints)}`);
   }

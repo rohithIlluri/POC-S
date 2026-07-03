@@ -38,6 +38,27 @@ describe("hybrid classify", () => {
     expect(result.complexity).toBe("medium");
   });
 
+  it("keeps a confident heuristic complexity when only the task type was ambiguous", async () => {
+    // Unknown task type but heavy scope/deep-work signals -> score well above the dead band.
+    const prompt =
+      "the entire distributed system chokes under concurrency, every request stalls across the codebase";
+    const client = failingClient(new Error("connect ETIMEDOUT"));
+    const result = await classify(prompt, DEFAULT_CONFIG, {}, { llmClient: client });
+    expect(result.taskType).toBe("unknown");
+    expect(result.source).toBe("heuristic-fallback");
+    expect(result.complexity).toBe("high");
+  });
+
+  it("forces medium on degrade only for dead-band scores", async () => {
+    // feature task, score 50 -> inside [42, 58]
+    const prompt = "implement pagination for the users list endpoint in the admin panel";
+    const client = failingClient(new Error("connect ETIMEDOUT"));
+    const result = await classify(prompt, DEFAULT_CONFIG, {}, { llmClient: client });
+    expect(result.source).toBe("heuristic-fallback");
+    expect(result.complexity).toBe("medium");
+    expect(result.reasoning).toContainEqual(expect.stringContaining("defaulting to medium"));
+  });
+
   it("degrades when the LLM returns unparseable output", async () => {
     const client = mockClient({ nonsense: true });
     const result = await classify(AMBIGUOUS_PROMPT, DEFAULT_CONFIG, {}, { llmClient: client });

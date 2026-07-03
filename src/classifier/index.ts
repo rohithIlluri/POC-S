@@ -44,11 +44,18 @@ export async function classify(
   const llm = await classifyWithLlm(prompt, config, opts.llmClient);
   if (!llm.ok) {
     log(llm.error);
+    // Only a dead-band score means the heuristic complexity has no conviction;
+    // an unknown task type with a confident score keeps that complexity.
+    const [bandLow, bandHigh] = config.classifier.ambiguousBand;
+    const inBand = heuristic.score >= bandLow && heuristic.score <= bandHigh;
     return {
       ...heuristic,
       source: "heuristic-fallback",
-      complexity: "medium",
-      reasoning: [...heuristic.reasoning, `LLM fallback unavailable (${llm.error}); defaulting to medium`],
+      complexity: inBand ? "medium" : heuristic.complexity,
+      reasoning: [
+        ...heuristic.reasoning,
+        `LLM fallback unavailable (${llm.error}); ${inBand ? "defaulting to medium" : `keeping heuristic ${heuristic.complexity}`}`,
+      ],
     };
   }
 
