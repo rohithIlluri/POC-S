@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type AnthropicSdk from "@anthropic-ai/sdk";
 import type { Config } from "../config.js";
 import type { Complexity, TaskType } from "../types.js";
 
@@ -31,7 +32,7 @@ const SYSTEM_PROMPT =
 export async function classifyWithLlm(prompt: string, config: Config, client?: LlmClient): Promise<LlmResult> {
   // The Anthropic SDK is a heavy dependency; load it only when the fallback
   // actually fires (never for dry-runs or confident heuristic routing).
-  let Anthropic: typeof import("@anthropic-ai/sdk").default | undefined;
+  let Anthropic: typeof AnthropicSdk | undefined;
   let outputFormat: unknown;
   let llm: LlmClient;
 

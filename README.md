@@ -31,10 +31,13 @@ ccr "add endpoint" -- --allowed-tools Bash                # args after -- pass t
 | Flag | Effect |
 |---|---|
 | `--dry-run` | Print tool, model, matched rule, and full command; don't execute |
+| `--json` | With `--dry-run`, emit the decision as JSON (for scripting/composition) |
 | `--verbose` | Print heuristic signals, score, classifier source, and matched rule to stderr |
 | `--config <path>` | Use an explicit config file |
 | `--tool <claude\|codex>` | Force the tool |
 | `--model <id>` | Force the model |
+
+Exit codes: `ccr` mirrors the child CLI's exit code; `127` means the target CLI is not installed (an install hint is printed); `1` covers config/usage errors. Ctrl-C is forwarded to the child and the signal semantics are preserved.
 
 Inline prompt hints also work: `use codex`, `with opus`, `use claude sonnet`, `model=gpt-5.1-codex-mini`.
 
@@ -99,8 +102,11 @@ routing:
 ## Development
 
 ```sh
-npm test         # vitest — heuristics, hints, router, config, hybrid classifier (no network)
+npm test         # vitest — heuristics, hints, router, config, classifier, executor + CLI e2e (no network)
+npm run lint     # eslint (typescript-eslint recommended)
 npm run build    # tsc → dist/
 ```
+
+CI (GitHub Actions) runs lint, the full test suite on Node 18/20/22, and `npm audit --audit-level=high` on every PR.
 
 Layout: pure logic (`src/classifier/heuristics.ts`, `src/classifier/hints.ts`, `src/router.ts`) is separated from I/O (`src/config.ts`, `src/classifier/llm.ts`, `src/executor.ts`); `src/run.ts` orchestrates and `src/cli.ts` is the commander entrypoint.

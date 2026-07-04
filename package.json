@@ -2,6 +2,21 @@
   "name": "ccr",
   "version": "0.1.0",
   "description": "Multi coding tools router: routes prompts to Claude Code or Codex, picking a model by task complexity",
+  "keywords": [
+    "cli",
+    "router",
+    "claude-code",
+    "codex",
+    "llm",
+    "developer-tools"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/rohithIlluri/POC-S.git"
+  },
+  "bugs": {
+    "url": "https://github.com/rohithIlluri/POC-S/issues"
+  },
   "type": "module",
   "bin": {
     "ccr": "dist/cli.js"
@@ -15,6 +30,7 @@
   "scripts": {
     "build": "tsc",
     "dev": "tsc --watch",
+    "lint": "eslint .",
     "pretest": "npm run build",
     "test": "vitest run",
     "prepublishOnly": "npm run build"
@@ -23,12 +39,16 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.109.1",
     "commander": "^15.0.0",
+    "cross-spawn": "^7.0.6",
     "yaml": "^2.9.0",
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@types/cross-spawn": "^6.0.6",
     "@types/node": "^26.1.0",
+    "eslint": "^10.6.0",
     "typescript": "^6.0.3",
+    "typescript-eslint": "^8.62.1",
     "vitest": "^4.1.9"
   }
 }

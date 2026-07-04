@@ -9,13 +9,15 @@ export interface RunOptions {
   prompt: string;
   passthrough: string[];
   dryRun: boolean;
+  json: boolean;
   verbose: boolean;
   configPath?: string;
   forceTool?: Tool;
   forceModel?: string;
 }
 
-export async function run(opts: RunOptions): Promise<void> {
+/** Returns the exit code the CLI should terminate with. */
+export async function run(opts: RunOptions): Promise<number> {
   const log = opts.verbose ? (line: string) => console.error(`[ccr] ${line}`) : () => {};
 
   let config;
@@ -24,7 +26,7 @@ export async function run(opts: RunOptions): Promise<void> {
   } catch (err) {
     if (err instanceof ConfigError) {
       console.error(`ccr: ${err.message}`);
-      process.exit(1);
+      return 1;
     }
     throw err;
   }
@@ -48,13 +50,36 @@ export async function run(opts: RunOptions): Promise<void> {
   log(`matched: ${decision.matchedRule}`);
 
   if (opts.dryRun) {
-    console.log(`tool:    ${decision.tool}`);
-    console.log(`model:   ${decision.model} (tier: ${decision.tier})`);
-    console.log(`task:    ${classification.taskType}/${classification.complexity} (source: ${classification.source})`);
-    console.log(`rule:    ${decision.matchedRule}`);
-    console.log(`command: ${[decision.command, ...decision.args].map((a) => (/\s/.test(a) ? JSON.stringify(a) : a)).join(" ")}`);
-    return;
+    if (opts.json) {
+      console.log(
+        JSON.stringify(
+          {
+            tool: decision.tool,
+            model: decision.model,
+            tier: decision.tier,
+            command: decision.command,
+            args: decision.args,
+            matchedRule: decision.matchedRule,
+            classification: {
+              taskType: classification.taskType,
+              complexity: classification.complexity,
+              score: classification.score,
+              source: classification.source,
+            },
+          },
+          null,
+          2,
+        ),
+      );
+    } else {
+      console.log(`tool:    ${decision.tool}`);
+      console.log(`model:   ${decision.model} (tier: ${decision.tier})`);
+      console.log(`task:    ${classification.taskType}/${classification.complexity} (source: ${classification.source})`);
+      console.log(`rule:    ${decision.matchedRule}`);
+      console.log(`command: ${[decision.command, ...decision.args].map((a) => (/\s/.test(a) ? JSON.stringify(a) : a)).join(" ")}`);
+    }
+    return 0;
   }
 
-  execute(decision, config);
+  return execute(decision, config);
 }

@@ -34,4 +34,23 @@ describe("ccr CLI (compiled, dry-run)", () => {
   it("rejects an invalid --tool", () => {
     expect(() => ccr("--dry-run", "--tool", "emacs", "do a thing")).toThrow();
   });
+
+  it("emits machine-readable JSON with --dry-run --json", () => {
+    const out = ccr("--dry-run", "--json", "fix typo in README");
+    const parsed = JSON.parse(out);
+    expect(parsed.tool).toBe("codex");
+    expect(parsed.model).toBe("gpt-5.1-codex-mini");
+    expect(Array.isArray(parsed.args)).toBe(true);
+    expect(parsed.classification.taskType).toBe("docs");
+  });
+
+  it("reports the package version", () => {
+    const pkg = JSON.parse(
+      execFileSync("node", ["-e", "console.log(JSON.stringify(require('./package.json')))"], {
+        encoding: "utf8",
+        cwd: join(import.meta.dirname, ".."),
+      }),
+    );
+    expect(ccr("--version").trim()).toBe(pkg.version);
+  });
 });

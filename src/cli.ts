@@ -1,7 +1,10 @@
 #!/usr/bin/env node
+import { createRequire } from "node:module";
 import { Command } from "commander";
 import { run } from "./run.js";
 import type { Tool } from "./types.js";
+
+const { version } = createRequire(import.meta.url)("../package.json") as { version: string };
 
 const rawArgs = process.argv.slice(2);
 const separator = rawArgs.indexOf("--");
@@ -17,9 +20,10 @@ program
       "then runs it with Claude Code or Codex using the right model. " +
       "Args after -- are passed through to the chosen CLI.",
   )
-  .version("0.1.0")
+  .version(version)
   .argument("<prompt...>", "the coding prompt to route")
   .option("--dry-run", "print the routing decision without executing", false)
+  .option("--json", "with --dry-run, print the decision as JSON", false)
   .option("--verbose", "print classification signals and routing reasoning to stderr", false)
   .option("--config <path>", "path to a ccr config file (YAML or JSON)")
   .option("--tool <tool>", "force the tool (claude or codex)")
@@ -27,20 +31,23 @@ program
   .action(async (promptParts: string[], options) => {
     if (options.tool && options.tool !== "claude" && options.tool !== "codex") {
       console.error(`ccr: invalid --tool "${options.tool}" (expected claude or codex)`);
-      process.exit(1);
+      process.exitCode = 1;
+      return;
     }
-    await run({
+    const code = await run({
       prompt: promptParts.join(" "),
       passthrough,
       dryRun: options.dryRun,
+      json: options.json,
       verbose: options.verbose,
       configPath: options.config,
       forceTool: options.tool as Tool | undefined,
       forceModel: options.model,
     });
+    process.exitCode = code;
   });
 
-program.parseAsync(ownArgs, { from: "user" }).catch((err) => {
+program.parseAsync(ownArgs, { from: "user" }).catch((err: unknown) => {
   console.error(`ccr: ${err instanceof Error ? err.message : String(err)}`);
-  process.exit(1);
+  process.exitCode = 1;
 });
