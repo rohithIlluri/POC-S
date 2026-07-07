@@ -1,9 +1,19 @@
-name: CI
+name: ccr CI
 
 on:
   push:
     branches: [master]
+    paths:
+      - "pocs/ccr/**"
+      - ".github/workflows/ci-ccr.yml"
   pull_request:
+    paths:
+      - "pocs/ccr/**"
+      - ".github/workflows/ci-ccr.yml"
+
+defaults:
+  run:
+    working-directory: pocs/ccr
 
 jobs:
   test:
@@ -17,6 +27,7 @@ jobs:
         with:
           node-version: ${{ matrix.node-version }}
           cache: npm
+          cache-dependency-path: pocs/ccr/package-lock.json
       - run: npm ci
       - run: npm run lint
       - run: npm test # pretest builds first
