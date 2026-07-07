@@ -15,7 +15,7 @@ npm run build
 npm link        # installs the `ccr` command globally
 ```
 
-Requires Node 18+. The target CLIs are installed separately (`npm i -g @anthropic-ai/claude-code`, `npm i -g @openai/codex`) — `ccr` tells you which one is missing if it can't spawn it.
+Requires Node 20.11+. The target CLIs are installed separately (`npm i -g @anthropic-ai/claude-code`, `npm i -g @openai/codex`) — `ccr` tells you which one is missing if it can't spawn it.
 
 ## Usage
 
