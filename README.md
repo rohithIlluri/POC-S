@@ -107,6 +107,6 @@ npm run lint     # eslint (typescript-eslint recommended)
 npm run build    # tsc → dist/
 ```
 
-CI (GitHub Actions) runs lint, the full test suite on Node 18/20/22, and `npm audit --audit-level=high` on every PR.
+CI (GitHub Actions) runs lint, the full test suite on Node 20/22/24, and `npm audit --audit-level=high` on every PR.
 
 Layout: pure logic (`src/classifier/heuristics.ts`, `src/classifier/hints.ts`, `src/router.ts`) is separated from I/O (`src/config.ts`, `src/classifier/llm.ts`, `src/executor.ts`); `src/run.ts` orchestrates and `src/cli.ts` is the commander entrypoint.
