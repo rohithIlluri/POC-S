@@ -1,0 +1,34 @@
+name: ccr CI
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - "pocs/ccr/**"
+      - ".github/workflows/ci-ccr.yml"
+  pull_request:
+    paths:
+      - "pocs/ccr/**"
+      - ".github/workflows/ci-ccr.yml"
+
+defaults:
+  run:
+    working-directory: pocs/ccr
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node-version: [20.x, 22.x, 24.x]
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: npm
+          cache-dependency-path: pocs/ccr/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      - run: npm test # pretest builds first
+      - run: npm audit --audit-level=high
