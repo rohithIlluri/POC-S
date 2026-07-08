@@ -1,0 +1,1002 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CODELINGS — running build sheet</title>
+<style>
+  :root{
+    --bg:#070c08;
+    --bg2:#0b120c;
+    --panel:#0e1710;
+    --panel2:#121d13;
+    --line:#1e3322;
+    --line2:#2a4630;
+    --ink:#c8e6c9;
+    --ink-dim:#7ba382;
+    --ink-faint:#4a6b52;
+    --phos:#54fb7e;
+    --phos-dim:#2f9e50;
+    --amber:#ffc857;
+    --amber-dim:#8a6a2a;
+    --rose:#ff6b7f;
+    --cyan:#5fd7ff;
+    --violet:#b18cff;
+    --done:#54fb7e;
+    --wip:#ffc857;
+    --todo:#4a6b52;
+    --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{
+    background:var(--bg);
+    color:var(--ink);
+    font-family:var(--mono);
+    font-size:14px;
+    line-height:1.65;
+    overflow-x:hidden;
+  }
+  /* ---- CRT atmosphere ---- */
+  body::before{
+    content:"";position:fixed;inset:0;pointer-events:none;z-index:100;
+    background:repeating-linear-gradient(0deg,rgba(0,0,0,.22) 0 1px,transparent 1px 3px);
+    mix-blend-mode:multiply;
+  }
+  body::after{
+    content:"";position:fixed;inset:0;pointer-events:none;z-index:101;
+    background:radial-gradient(ellipse 120% 90% at 50% 40%,transparent 55%,rgba(0,0,0,.55) 100%);
+  }
+  .wrap{max-width:960px;margin:0 auto;padding:0 24px 120px}
+
+  /* ---- glow text helpers ---- */
+  .glow{color:var(--phos);text-shadow:0 0 8px rgba(84,251,126,.45),0 0 24px rgba(84,251,126,.18)}
+  .glow-a{color:var(--amber);text-shadow:0 0 8px rgba(255,200,87,.4)}
+
+  /* ---- header ---- */
+  header{padding:56px 0 8px;position:relative}
+  .boot{color:var(--ink-faint);font-size:12px;letter-spacing:.08em;margin-bottom:22px}
+  .boot .ok{color:var(--phos-dim)}
+  pre.logo{
+    color:var(--phos);
+    text-shadow:0 0 10px rgba(84,251,126,.5),0 0 40px rgba(84,251,126,.15);
+    font-size:clamp(8px,1.9vw,15px);
+    line-height:1.18;letter-spacing:.02em;
+    animation:flicker 7s infinite;
+    white-space:pre;overflow-x:auto;
+  }
+  @keyframes flicker{
+    0%,93%,95%,100%{opacity:1}
+    94%{opacity:.72}
+    97%{opacity:.9}
+  }
+  .tagline{margin-top:18px;font-size:15px;color:var(--ink)}
+  .tagline b{color:var(--amber)}
+  .cursor{display:inline-block;width:.6em;height:1.05em;background:var(--phos);vertical-align:text-bottom;animation:blink 1.05s steps(1) infinite;box-shadow:0 0 8px rgba(84,251,126,.6)}
+  @keyframes blink{50%{opacity:0}}
+  .meta-line{margin-top:10px;font-size:12px;color:var(--ink-faint)}
+  .meta-line .k{color:var(--ink-dim)}
+
+  /* ---- status board ---- */
+  .board{
+    margin-top:40px;border:1px solid var(--line2);background:var(--panel);
+    box-shadow:0 0 0 1px rgba(0,0,0,.6),0 0 60px rgba(84,251,126,.05) inset;
+  }
+  .board-title{
+    display:flex;justify-content:space-between;align-items:center;
+    padding:10px 16px;border-bottom:1px solid var(--line);
+    background:var(--panel2);font-size:12px;letter-spacing:.22em;color:var(--ink-dim);
+  }
+  .board-title .live{color:var(--phos);animation:blink 1.4s steps(1) infinite}
+  .mrow{display:grid;grid-template-columns:64px 1fr 200px 110px;gap:0;border-bottom:1px solid var(--line);align-items:center}
+  .mrow:last-child{border-bottom:none}
+  .mrow>div{padding:13px 16px}
+  .mid{font-weight:700;font-size:15px}
+  .mname{color:var(--ink)}
+  .mname small{display:block;color:var(--ink-faint);font-size:11px;margin-top:2px}
+  .bar{font-size:12px;letter-spacing:-.5px;white-space:nowrap;color:var(--ink-faint)}
+  .bar .fill{color:var(--phos)}
+  .st{font-size:11px;letter-spacing:.14em;text-align:right}
+  .st-done{color:var(--done)} .st-done::before{content:"● "}
+  .st-wip{color:var(--wip);animation:pulse 1.6s ease-in-out infinite} .st-wip::before{content:"◐ "}
+  .st-todo{color:var(--todo)} .st-todo::before{content:"○ "}
+  @keyframes pulse{50%{opacity:.45}}
+  .mrow.is-wip{background:linear-gradient(90deg,rgba(255,200,87,.05),transparent 60%)}
+  .mrow.is-done .mid,.mrow.is-done .mname{color:var(--ink-dim)}
+
+  /* ---- section chrome ---- */
+  section{margin-top:88px;position:relative}
+  .sec-head{display:flex;align-items:baseline;gap:14px;margin-bottom:26px}
+  .sec-num{color:var(--ink-faint);font-size:12px;letter-spacing:.2em}
+  h2{
+    font-size:clamp(20px,3vw,26px);font-weight:700;letter-spacing:.06em;
+    color:var(--phos);text-shadow:0 0 12px rgba(84,251,126,.35);
+    text-transform:uppercase;
+  }
+  .sec-head::after{content:"";flex:1;height:1px;background:linear-gradient(90deg,var(--line2),transparent)}
+  h3{color:var(--amber);font-size:14px;letter-spacing:.12em;text-transform:uppercase;margin:34px 0 12px}
+  p{color:var(--ink);max-width:70ch}
+  p+p{margin-top:12px}
+  .dim{color:var(--ink-dim)}
+  .faint{color:var(--ink-faint)}
+  code{color:var(--cyan);background:rgba(95,215,255,.07);padding:.1em .35em;border:1px solid rgba(95,215,255,.15);font-size:.92em}
+  a{color:var(--cyan)}
+
+  /* ---- pillars ---- */
+  .pillars{display:grid;grid-template-columns:repeat(2,1fr);gap:14px;margin-top:24px}
+  .pillar{border:1px solid var(--line);background:var(--panel);padding:18px;position:relative;transition:border-color .2s, transform .2s}
+  .pillar:hover{border-color:var(--phos-dim);transform:translateY(-2px)}
+  .pillar .pn{color:var(--ink-faint);font-size:11px;letter-spacing:.2em}
+  .pillar b{display:block;color:var(--phos);margin:6px 0 6px;font-size:15px}
+  .pillar span{color:var(--ink-dim);font-size:13px;line-height:1.6}
+
+  /* ---- teardown table ---- */
+  table{width:100%;border-collapse:collapse;font-size:13px;margin-top:8px}
+  th{
+    text-align:left;color:var(--ink-faint);font-weight:400;font-size:11px;
+    letter-spacing:.18em;text-transform:uppercase;padding:8px 12px;border-bottom:1px solid var(--line2);
+  }
+  td{padding:9px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+  tr:hover td{background:rgba(84,251,126,.03)}
+  .tbl-scroll{overflow-x:auto;border:1px solid var(--line);background:var(--panel)}
+  .act-del{color:var(--rose);font-weight:700;letter-spacing:.08em}
+  .act-strip{color:var(--amber);font-weight:700;letter-spacing:.08em}
+  .act-keep{color:var(--phos);font-weight:700;letter-spacing:.08em}
+  .act-morph{color:var(--violet);font-weight:700;letter-spacing:.08em}
+
+  /* ---- lore ---- */
+  .lore{
+    border-left:2px solid var(--phos-dim);padding:6px 0 6px 22px;margin-top:20px;
+    color:var(--ink);font-size:14.5px;max-width:68ch;
+  }
+  .lore em{color:var(--phos);font-style:normal;text-shadow:0 0 8px rgba(84,251,126,.3)}
+  .proverb{
+    margin:26px 0 4px;padding:18px 22px;border:1px dashed var(--line2);
+    background:var(--panel);color:var(--amber);font-size:15px;letter-spacing:.04em;
+    display:inline-block;
+  }
+  .proverb::before{content:"“"} .proverb::after{content:"”"}
+  .proverb small{display:block;color:var(--ink-faint);letter-spacing:.15em;margin-top:6px;font-size:10px}
+
+  /* ---- species cards ---- */
+  .species{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-top:20px}
+  .sp{border:1px solid var(--line);background:var(--panel);padding:0;overflow:hidden;transition:border-color .2s,box-shadow .2s}
+  .sp:hover{box-shadow:0 0 30px rgba(84,251,126,.08)}
+  .sp-head{padding:10px 14px;border-bottom:1px solid var(--line);font-size:11px;letter-spacing:.18em;display:flex;justify-content:space-between}
+  .sp pre{
+    text-align:center;padding:18px 8px 12px;font-size:13px;line-height:1.3;white-space:pre;
+  }
+  .sp.ember{--c:#ff9d5c} .sp.stream{--c:#5fd7ff} .sp.vector{--c:#b18cff}
+  .sp .sp-head{color:var(--c)}
+  .sp:hover{border-color:var(--c)}
+  .sp pre{color:var(--c);text-shadow:0 0 12px color-mix(in srgb,var(--c) 45%,transparent)}
+  .sp-body{padding:0 14px 16px;font-size:12.5px;color:var(--ink-dim)}
+  .sp-body .chain{color:var(--ink);margin-bottom:8px;font-size:12px;letter-spacing:.02em}
+  .sp-body .chain b{color:var(--c)}
+  .sp-tag{display:inline-block;border:1px solid var(--line2);color:var(--ink-faint);font-size:10px;letter-spacing:.15em;padding:2px 8px;margin-top:10px}
+
+  /* ---- dex grid (30 species) ---- */
+  .dex-filters{display:flex;gap:8px;flex-wrap:wrap;margin:18px 0 4px}
+  .dex-filters button{
+    font-family:var(--mono);font-size:10.5px;letter-spacing:.12em;background:var(--panel);
+    border:1px solid var(--line2);color:var(--ink-dim);padding:5px 11px;cursor:pointer;
+    transition:all .15s;text-transform:uppercase;
+  }
+  .dex-filters button:hover{border-color:var(--phos-dim);color:var(--phos)}
+  .dex-filters button.active{background:var(--phos-dim);color:#04240e;border-color:var(--phos-dim);font-weight:700}
+  .dexgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;margin-top:16px}
+  .dexcard{
+    border:1px solid var(--line);background:var(--panel);padding:10px;position:relative;
+    transition:border-color .2s,transform .15s;cursor:default;
+  }
+  .dexcard:hover{transform:translateY(-2px);z-index:2}
+  .dexcard .dn{font-size:10px;color:var(--ink-faint);letter-spacing:.1em}
+  .dexcard .dname{font-size:13px;color:var(--ink);margin:2px 0 6px;font-weight:700}
+  .dexcard pre{font-size:9.5px;line-height:1.15;white-space:pre;text-align:center;margin:4px 0;min-height:52px}
+  .dexcard .dtags{display:flex;gap:4px;flex-wrap:wrap;margin-top:6px}
+  .dexcard .dtag{font-size:8.5px;letter-spacing:.08em;padding:1px 6px;border:1px solid;text-transform:uppercase}
+  /* type colors */
+  .t-cache{--tc:#54fb7e} .t-context{--tc:#ffc857} .t-runtime{--tc:#ff6b7f}
+  .t-syntax{--tc:#b18cff} .t-stream{--tc:#5fd7ff} .t-daemon{--tc:#c8e6c9}
+  .dexcard{border-left:3px solid var(--tc)}
+  .dexcard pre{color:var(--tc);text-shadow:0 0 8px color-mix(in srgb,var(--tc) 35%,transparent)}
+  .dtag.dt-type{border-color:var(--tc);color:var(--tc)}
+  /* rarity colors */
+  .r-common{--rc:#7ba382} .r-uncommon{--rc:#5fd7ff} .r-rare{--rc:#b18cff}
+  .r-relic{--rc:#ffc857} .r-mythic{--rc:#ff6b7f}
+  .dtag.dt-rarity{border-color:var(--rc);color:var(--rc)}
+  .dexcard.r-mythic{box-shadow:0 0 0 1px rgba(255,107,127,.3),0 0 24px rgba(255,107,127,.12)}
+  .dexcard.r-relic{box-shadow:0 0 16px rgba(255,200,87,.08)}
+  .dex-hidden{display:none !important}
+  .dex-count{color:var(--ink-faint);font-size:11px;margin-top:14px;letter-spacing:.06em}
+
+  /* ---- type wheel ---- */
+  .wheel-row{display:flex;gap:28px;align-items:center;flex-wrap:wrap;margin-top:22px}
+  .wheel-svg{flex:0 0 300px;max-width:100%}
+  .wheel-notes{flex:1;min-width:240px;font-size:13px;color:var(--ink-dim)}
+  .wheel-notes li{margin:6px 0;list-style:none}
+  .wheel-notes li::before{content:"▸ ";color:var(--phos-dim)}
+
+  /* ---- mechanics: diet table styled as feed log ---- */
+  .feedlog{border:1px solid var(--line);background:var(--panel)}
+  .feedlog .fl-row{display:grid;grid-template-columns:190px 1fr;border-bottom:1px solid var(--line)}
+  .feedlog .fl-row:last-child{border-bottom:0}
+  .feedlog .fl-row>div{padding:12px 14px;font-size:13px}
+  .fl-sig{color:var(--rose);font-size:12px;letter-spacing:.04em}
+  .fl-sig.good{color:var(--phos)}
+  .fl-fx b{color:var(--amber)}
+  .fl-fx{color:var(--ink-dim)}
+
+  /* ---- stats ---- */
+  .stats{margin-top:18px;border:1px solid var(--line);background:var(--panel);padding:18px 20px;max-width:560px}
+  .stat{display:grid;grid-template-columns:76px 1fr 220px;gap:12px;align-items:center;margin:9px 0;font-size:13px}
+  .stat .sn{color:var(--phos);letter-spacing:.1em}
+  .stat .sb{color:var(--phos-dim);font-size:12px;letter-spacing:-1px;white-space:nowrap;overflow:hidden}
+  .stat .sd{color:var(--ink-faint);font-size:11.5px}
+
+  /* ---- architecture tree ---- */
+  pre.tree{
+    border:1px solid var(--line);background:var(--panel);padding:20px 22px;
+    font-size:12.5px;line-height:1.75;overflow-x:auto;color:var(--ink-dim);
+  }
+  pre.tree .d{color:var(--phos)}
+  pre.tree .new{color:var(--amber)}
+  pre.tree .c{color:var(--ink-faint)}
+  .law{
+    margin-top:22px;border:1px solid var(--amber-dim);background:linear-gradient(180deg,rgba(255,200,87,.06),transparent);
+    padding:18px 22px;max-width:70ch;
+  }
+  .law .law-t{color:var(--amber);letter-spacing:.2em;font-size:11px;margin-bottom:8px}
+  .law p{font-size:13.5px;color:var(--ink)}
+
+  /* ---- flow diagram ---- */
+  pre.flow{
+    text-align:center;border:1px solid var(--line);background:var(--panel);
+    padding:22px 12px;font-size:12.5px;line-height:1.6;color:var(--ink-dim);overflow-x:auto;
+  }
+  pre.flow .hot{color:var(--phos)}
+  pre.flow .warm{color:var(--amber)}
+
+  /* ---- distribution ---- */
+  .dist{display:grid;grid-template-columns:repeat(2,1fr);gap:14px;margin-top:20px}
+  .dist .d-card{border:1px solid var(--line);background:var(--panel);padding:16px 18px}
+  .d-card .d-k{color:var(--cyan);font-size:13px;margin-bottom:6px}
+  .d-card .d-v{color:var(--ink-dim);font-size:12.5px}
+  .zero{
+    margin-top:26px;display:flex;gap:0;flex-wrap:wrap;border:1px solid var(--line2);background:var(--panel)
+  }
+  .zero .z{flex:1;min-width:130px;padding:16px;border-right:1px solid var(--line);text-align:center}
+  .zero .z:last-child{border-right:0}
+  .zero .z .zk{font-size:10px;letter-spacing:.18em;color:var(--ink-faint)}
+  .zero .z .zv{font-size:20px;color:var(--phos);text-shadow:0 0 10px rgba(84,251,126,.35);margin-top:4px}
+
+  /* ---- odds / economy ---- */
+  .odds-strip{display:flex;border:1px solid var(--line2);background:var(--panel);margin-top:18px;flex-wrap:wrap}
+  .odds-strip .o{flex:1;min-width:110px;padding:14px 12px;border-right:1px solid var(--line);text-align:center}
+  .odds-strip .o:last-child{border-right:0}
+  .odds-strip .o .ok2{font-size:10px;letter-spacing:.16em;color:var(--ink-faint)}
+  .odds-strip .o .ov{font-size:17px;margin-top:5px;font-weight:700}
+  .odds-strip .o.common .ov{color:var(--ink-dim)}
+  .odds-strip .o.uncommon .ov{color:#5fd7ff}
+  .odds-strip .o.rare .ov{color:#b18cff}
+  .odds-strip .o.relic .ov{color:#ffc857}
+  .odds-strip .o.mythic .ov{color:#ff6b7f}
+  .pity{margin-top:16px;border:1px solid var(--line);background:var(--panel);padding:14px 18px}
+  .pity-row{display:grid;grid-template-columns:140px 1fr 70px;gap:10px;font-size:12.5px;align-items:center;margin:5px 0;color:var(--ink-dim)}
+  .pity-row b{color:var(--cyan)}
+
+  .badges{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:10px;margin-top:16px}
+  .badge{border:1px solid var(--line);background:var(--panel);padding:11px 13px}
+  .badge .bn{color:var(--amber);font-size:12.5px;font-weight:700}
+  .badge .bt{color:var(--ink-faint);font-size:11px;margin-top:3px}
+  .badge .bf{color:var(--ink-dim);font-size:11.5px;margin-top:5px;font-style:italic}
+
+  .artifacts{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:10px;margin-top:16px}
+  .art{border:1px solid var(--line);background:var(--panel);padding:11px 13px;border-left:3px solid var(--violet)}
+  .art .an{color:var(--violet);font-size:12.5px;font-weight:700}
+  .art .at{color:var(--ink-faint);font-size:11px;margin-top:3px}
+  .art .af{color:var(--ink-dim);font-size:11.5px;margin-top:5px;font-style:italic}
+
+  /* ---- voice lines ---- */
+  .voicebox{border:1px solid var(--line);background:var(--panel);margin-top:16px}
+  .vline{display:grid;grid-template-columns:170px 1fr;border-bottom:1px solid var(--line);padding:9px 14px;font-size:12.5px}
+  .vline:last-child{border-bottom:0}
+  .vline .vid{color:var(--ink-faint);font-size:10.5px;align-self:center}
+  .vline .vtext{color:var(--ink)}
+  .vline .vtext::before{content:"“"} .vline .vtext::after{content:"”"}
+
+  /* ---- moves table ---- */
+  .movekind{font-size:10px;letter-spacing:.1em;padding:1px 6px;border:1px solid}
+  .mk-strike{color:var(--rose);border-color:var(--rose)}
+  .mk-guard{color:var(--cyan);border-color:var(--cyan)}
+  .mk-boost{color:var(--amber);border-color:var(--amber)}
+  .mk-hex{color:var(--violet);border-color:var(--violet)}
+
+  /* ---- regions ---- */
+  .regions{display:grid;grid-template-columns:repeat(2,1fr);gap:14px;margin-top:20px}
+  .region{border:1px solid var(--line);background:var(--panel);padding:16px 18px;border-top:3px solid var(--tc)}
+  .region .rn{font-size:14px;font-weight:700;color:var(--tc)}
+  .region .rd{color:var(--ink-dim);font-size:12.5px;margin-top:8px}
+  .region .rf{color:var(--ink-faint);font-size:11.5px;margin-top:8px;font-style:italic;border-left:2px solid var(--line2);padding-left:10px}
+
+  /* ---- oath ---- */
+  .oath{
+    margin:22px 0;padding:24px 28px;border:1px solid var(--line2);background:var(--panel2);
+    text-align:center;position:relative;
+  }
+  .oath .ol{color:var(--phos);font-size:14px;line-height:2;text-shadow:0 0 8px rgba(84,251,126,.3)}
+  .oath .osrc{color:var(--ink-faint);font-size:10px;letter-spacing:.18em;margin-top:12px}
+
+  /* ---- changelog ---- */
+  .clog{border-left:1px solid var(--line2);margin-top:10px;padding-left:0;list-style:none}
+  .clog li{position:relative;padding:6px 0 6px 26px;font-size:13px;color:var(--ink-dim)}
+  .clog li::before{content:"";position:absolute;left:-4px;top:14px;width:7px;height:7px;background:var(--phos-dim);box-shadow:0 0 8px rgba(84,251,126,.4)}
+  .clog li b{color:var(--ink)}
+  .clog .ts{color:var(--ink-faint);font-size:11px;letter-spacing:.08em;margin-right:10px}
+
+  footer{margin-top:100px;padding-top:24px;border-top:1px solid var(--line);color:var(--ink-faint);font-size:11.5px;letter-spacing:.1em}
+  footer .fp{color:var(--phos-dim)}
+
+  /* ---- nav ---- */
+  nav{
+    position:sticky;top:0;z-index:50;background:rgba(7,12,8,.92);backdrop-filter:blur(4px);
+    border-bottom:1px solid var(--line);margin:36px -24px 0;padding:10px 24px;
+    display:flex;gap:18px;overflow-x:auto;font-size:11px;letter-spacing:.14em;white-space:nowrap;
+  }
+  nav a{color:var(--ink-faint);text-decoration:none;transition:color .15s}
+  nav a:hover{color:var(--phos)}
+
+  @media(max-width:720px){
+    .pillars,.species,.dist{grid-template-columns:1fr}
+    .mrow{grid-template-columns:48px 1fr 90px;font-size:12px}
+    .mrow .bar{display:none}
+    .stat{grid-template-columns:64px 1fr;}
+    .stat .sd{grid-column:1/-1}
+  }
+  ::selection{background:var(--phos);color:#04240e}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <div class="boot">
+    &gt; aipet --pivot codelings &nbsp;<span class="ok">[OK]</span><br>
+    &gt; loading design cartridge v1 … &nbsp;<span class="ok">[OK]</span><br>
+    &gt; backend modules …………………… <span style="color:var(--rose)">[MARKED FOR DELETION]</span>
+  </div>
+<pre class="logo">
+ ██████╗ ██████╗ ██████╗ ███████╗██╗     ██╗███╗   ██╗ ██████╗ ███████╗
+██╔════╝██╔═══██╗██╔══██╗██╔════╝██║     ██║████╗  ██║██╔════╝ ██╔════╝
+██║     ██║   ██║██║  ██║█████╗  ██║     ██║██╔██╗ ██║██║  ███╗███████╗
+██║     ██║   ██║██║  ██║██╔══╝  ██║     ██║██║╚██╗██║██║   ██║╚════██║
+╚██████╗╚██████╔╝██████╔╝███████╗███████╗██║██║ ╚████║╚██████╔╝███████║
+ ╚═════╝ ╚═════╝ ╚═════╝ ╚══════╝╚══════╝╚═╝╚═╝  ╚═══╝ ╚═════╝ ╚══════╝
+</pre>
+  <div class="tagline">a pocket-monster game for developers. <b>your real coding activity is the game.</b> no servers. no accounts. no tokens spent.<span class="cursor"></span></div>
+  <div class="meta-line">
+    <span class="k">repo:</span> POC-S &nbsp;·&nbsp; <span class="k">branch:</span> feat/aipet-companion &nbsp;·&nbsp; <span class="k">docs:</span> GAME_DESIGN.md + design/{SPEC,species,rarity,moves,lore}.md &nbsp;·&nbsp; <span class="k">sheet updated:</span> 2026-07-07
+  </div>
+</header>
+
+<nav>
+  <a href="#board">STATUS</a>
+  <a href="#vision">VISION</a>
+  <a href="#teardown">TEARDOWN</a>
+  <a href="#lore">LORE</a>
+  <a href="#dex">DEX</a>
+  <a href="#economy">ECONOMY</a>
+  <a href="#battle">BATTLE</a>
+  <a href="#game">GAME</a>
+  <a href="#arch">ARCHITECTURE</a>
+  <a href="#dist">DISTRIBUTION</a>
+  <a href="#log">CHANGELOG</a>
+</nav>
+
+<!-- ================= DESIGN PHASE BOARD ================= -->
+<div class="board" id="board">
+  <div class="board-title"><span>DESIGN PHASE — CONTENT WORKSTREAMS</span><span class="live">▮ 4 SONNET DESIGNERS RUNNING</span></div>
+
+  <div class="mrow is-done">
+    <div class="mid">D1</div>
+    <div class="mname">Species &amp; Dex<small>docs/design/species.md · 30 species self-audited (BST bands, silhouettes, charset)</small></div>
+    <div class="bar"><span class="fill">████████████████████</span> 100%</div>
+    <div class="st st-done">REVIEWED ✓</div>
+  </div>
+
+  <div class="mrow is-done">
+    <div class="mid">D2</div>
+    <div class="mname">Rarity &amp; economy<small>docs/design/rarity.md · odds, Lucent pity, IVs, 15 badges, 10 artifacts, anti-frustration math</small></div>
+    <div class="bar"><span class="fill">████████████████████</span> 100%</div>
+    <div class="st st-done">REVIEWED ✓</div>
+  </div>
+
+  <div class="mrow is-done">
+    <div class="mid">D3</div>
+    <div class="mname">Moves &amp; battle math<small>docs/design/moves.md · 45 moves, 6 statuses, deterministic algorithm, 3 worked battles (3 attempts — 2 rate-limited)</small></div>
+    <div class="bar"><span class="fill">████████████████████</span> 100%</div>
+    <div class="st st-done">REVIEWED ✓</div>
+  </div>
+
+  <div class="mrow is-done">
+    <div class="mid">D4</div>
+    <div class="mname">Lore world book<small>docs/design/lore.md · 56 voice lines verified · Keeper's Oath · Mythic epithets coined</small></div>
+    <div class="bar"><span class="fill">████████████████████</span> 100%</div>
+    <div class="st st-done">REVIEWED ✓</div>
+  </div>
+
+  <div class="mrow is-done">
+    <div class="mid">D5</div>
+    <div class="mname">Director review &amp; integration<small>reconciled 15→30 species count, recomputed N_common=10 Dex bound, resolved 4 battle-balance calls, folded into this sheet</small></div>
+    <div class="bar"><span class="fill">████████████████████</span> 100%</div>
+    <div class="st st-done">COMPLETE ✓</div>
+  </div>
+</div>
+
+<!-- ================= STATUS BOARD ================= -->
+<div class="board" style="margin-top:22px">
+  <div class="board-title"><span>MILESTONE BOARD</span><span class="live">▮ LIVE — updated as we build</span></div>
+
+  <div class="mrow is-todo">
+    <div class="mid glow-a">M0</div>
+    <div class="mname">Backend teardown<small>delete feed / feedsign / update · slim daemon &amp; config · drop Market tab</small></div>
+    <div class="bar"><span class="fill"></span>░░░░░░░░░░░░░░░░░░░░ 0%</div>
+    <div class="st st-todo">QUEUED</div>
+  </div>
+
+  <div class="mrow">
+    <div class="mid">M1</div>
+    <div class="mname">A pet is born<small>sim core (DNA · tick · XP · levels) · save files · egg → hatch → evolve · Pet tab</small></div>
+    <div class="bar">░░░░░░░░░░░░░░░░░░░░ 0%</div>
+    <div class="st st-todo">PLANNED</div>
+  </div>
+
+  <div class="mrow">
+    <div class="mid">M2</div>
+    <div class="mname">Care &amp; journal<small>advisor → care rules · diet / health / statuses · journal.jsonl · foraging limit</small></div>
+    <div class="bar">░░░░░░░░░░░░░░░░░░░░ 0%</div>
+    <div class="st st-todo">PLANNED</div>
+  </div>
+
+  <div class="mrow">
+    <div class="mid">M3</div>
+    <div class="mname">Dex &amp; encounters<small>species + type tables · catch-by-doing · Dex tab · Lucent rares (1/512)</small></div>
+    <div class="bar">░░░░░░░░░░░░░░░░░░░░ 0%</div>
+    <div class="st st-todo">PLANNED</div>
+  </div>
+
+  <div class="mrow">
+    <div class="mid">M4</div>
+    <div class="mname">Trade &amp; battle<small>.codeling files · export / import · Barn · seeded serverless battles</small></div>
+    <div class="bar">░░░░░░░░░░░░░░░░░░░░ 0%</div>
+    <div class="st st-todo">PLANNED</div>
+  </div>
+
+  <div class="mrow">
+    <div class="mid">M5</div>
+    <div class="mname">Ship it<small>goreleaser · brew tap · install.sh · README · community codeling-dex repo</small></div>
+    <div class="bar">░░░░░░░░░░░░░░░░░░░░ 0%</div>
+    <div class="st st-todo">PLANNED</div>
+  </div>
+</div>
+
+<!-- ================= VISION ================= -->
+<section id="vision">
+  <div class="sec-head"><span class="sec-num">01</span><h2>Vision</h2></div>
+  <p>A creature lives in your terminal. It hatches from an egg, feeds on the tokens you already burn
+  in <span class="glow">Claude Code</span> and <span class="glow">Codex</span>, and evolves based on
+  <em style="color:var(--amber);font-style:normal">how</em> you work — not how much you pay.
+  Good engineering hygiene raises a healthy, rare creature.</p>
+  <p class="dim">The existing collector/store engine already parses your session logs locally.
+  That engine becomes the game's sensory organ. Everything enterprise-facing gets deleted.</p>
+
+  <div class="pillars">
+    <div class="pillar"><span class="pn">PILLAR 01</span><b>Zero backend</b><span>Everything derives from local files. The only remote surface is GitHub — releases for distribution, gists/files for trading.</span></div>
+    <div class="pillar"><span class="pn">PILLAR 02</span><b>Real play, no grind</b><span>You never play instead of working. Working <i>is</i> playing. The game reads logs; it never asks for artificial actions.</span></div>
+    <div class="pillar"><span class="pn">PILLAR 03</span><b>Zero tokens, zero cost</b><span>The game never calls a model. All simulation is deterministic local computation. $0 to run, $0 to operate.</span></div>
+    <div class="pillar"><span class="pn">PILLAR 04</span><b>Craftsmanship is the meta</b><span>The old advisor rules — cache reuse, model routing, context hygiene — become care mechanics. Efficient devs raise stronger creatures.</span></div>
+  </div>
+  <p class="faint" style="margin-top:22px;font-size:12px">⚖ IP note: "like Pokémon" means the <i>genre</i>. All names, species, art and lore are original. No Pokémon names, sprites, or trade dress will ever ship.</p>
+</section>
+
+<!-- ================= TEARDOWN ================= -->
+<section id="teardown">
+  <div class="sec-head"><span class="sec-num">02</span><h2>Backend teardown</h2></div>
+  <p class="dim">The "backend" is the enterprise feed stack. M0 removes it completely.</p>
+  <div class="tbl-scroll" style="margin-top:16px">
+  <table>
+    <tr><th>Component</th><th>Action</th><th>Detail</th></tr>
+    <tr><td><code>internal/feed</code></td><td class="act-del">DELETE</td><td class="dim">feed client, ed25519 verify, version check</td></tr>
+    <tr><td><code>cmd/aipet-feedsign</code></td><td class="act-del">DELETE</td><td class="dim">signing tool + built binary</td></tr>
+    <tr><td><code>feed/sample-feed.json</code></td><td class="act-del">DELETE</td><td class="dim">bundled sample manifest</td></tr>
+    <tr><td><code>aipet update</code></td><td class="act-del">DELETE</td><td class="dim">self-update moves to brew / go install</td></tr>
+    <tr><td>daemon feed polling</td><td class="act-strip">STRIP</td><td class="dim">daemon keeps collect loop + snapshot only</td></tr>
+    <tr><td>config <code>feed_url</code> · <code>feed_public_key</code> · <code>poll_interval_min</code></td><td class="act-strip">STRIP</td><td class="dim">replaced by <code>collect_interval_min</code></td></tr>
+    <tr><td>TUI "Market" tab</td><td class="act-strip">STRIP</td><td class="dim">replaced by game tabs</td></tr>
+    <tr><td><code>internal/advisor</code></td><td class="act-morph">TRANSFORM</td><td class="dim">→ <code>internal/care</code> — rules become health effects</td></tr>
+    <tr><td><code>internal/collector</code> · <code>internal/store</code> · <code>internal/pricing</code></td><td class="act-keep">KEEP</td><td class="dim">untouched — the game engine's input layer</td></tr>
+  </table>
+  </div>
+</section>
+
+<!-- ================= LORE ================= -->
+<section id="lore">
+  <div class="sec-head"><span class="sec-num">03</span><h2>Lore — the Shellwoods</h2></div>
+  <div class="lore">
+    <p>Beneath every filesystem lies the <em>Shellwoods</em> — a forest that grows in the warm exhaust of
+    computation. When the first mainframes ran hot through the night, stray cycles condensed in the
+    dark and became living things: <em>Codelings</em>, small creatures woven from discarded tokens
+    and cache echoes.</p>
+    <p style="margin-top:12px">Codelings feed on <em>tokens</em> — the crumbs of thought that fall when a developer converses
+    with a machine. But they thrive on <em>quality</em>, not volume. A Codeling raised on cached,
+    well-routed, tightly-scoped work grows bright-eyed and quick. One gorged on bloated contexts
+    grows sluggish and dim — the Shellwoods call this <em>token bloat</em>.</p>
+    <p style="margin-top:12px">Developers who bond with a Codeling are called <em>Daemonkeepers</em> —
+    because the creature literally lives in a daemon.</p>
+  </div>
+  <div class="proverb">Feed the mind, not the meter.<small>— OLD DAEMONKEEPERS' PROVERB · THE GAME'S THESIS</small></div>
+
+  <h3>The three lines · launch set</h3>
+  <div class="species">
+    <div class="sp ember">
+      <div class="sp-head"><span>EMBER LINE</span><span>DEEP WORK</span></div>
+      <pre>
+   (\_/)
+  ( ~.~ )
+ c(")_(")
+ ~ zZ ~</pre>
+      <div class="sp-body">
+        <div class="chain"><b>Cindling</b> → Forgeon → Pyrolith</div>
+        A coal-colored salamander that naps in warm CPUs. Slow, powerful, hates session fragmentation.
+        <div class="sp-tag">HATCHES: LONG FOCUSED SESSIONS</div>
+      </div>
+    </div>
+    <div class="sp stream">
+      <div class="sp-head"><span>STREAM LINE</span><span>FAST ITERATION</span></div>
+      <pre>
+  ><(((º>
+ ~ ~ ~ ~
+  ≋ ≋ ≋</pre>
+      <div class="sp-body">
+        <div class="chain"><b>Rivulet</b> → Cascada → Torrentide</div>
+        A ribbon-fish of scrolling text. Quick, cheerful, loves cache hits.
+        <div class="sp-tag">HATCHES: MANY CHEAP CACHED TURNS</div>
+      </div>
+    </div>
+    <div class="sp vector">
+      <div class="sp-head"><span>VECTOR LINE</span><span>BREADTH</span></div>
+      <pre>
+  \ o o /
+   \|=|/
+   /_ _\
+  diff++</pre>
+      <div class="sp-body">
+        <div class="chain"><b>Glyphit</b> → Polyglyph → Omniglyph</div>
+        A moth whose wings are diff hunks. Curious, flighty, bonuses for variety.
+        <div class="sp-tag">HATCHES: MANY PROJECTS &amp; MODELS</div>
+      </div>
+    </div>
+  </div>
+  <p class="faint" style="margin-top:16px;font-size:12px">+ 21 more original species at launch — <b style="color:var(--phos)">30 total</b> · rare <span style="color:var(--cyan)">Lucent</span> palettes roll from 1/512 up to 1/64 with a GRIT-streak pity curve. Full Dex below.</p>
+
+  <h3>The six regions of the Shellwoods</h3>
+  <div class="regions">
+    <div class="region t-cache" style="--tc:#54fb7e"><div class="rn">The Cachefen</div><div class="rd">A misty, silver-fog wetland where reflections echo back a half-beat early — the fen already knew you were about to speak. Boardwalks from earlier Keepers still hold over water so still it looks memoized.</div><div class="rf">"Third week here and I still haven't heard an original sound. 10/10, would memoize again." — K. Odera</div></div>
+    <div class="region t-context" style="--tc:#ffc857"><div class="rn">The Contexta Canopy</div><div class="rd">Trunks thick as server racks, branches interleaving into a ceiling so dense the forest floor stays permanently dim. It holds everything ever grown into it, needed or not.</div><div class="rf">"Went up for one answer. Came down four hours later holding an entire project's history."</div></div>
+    <div class="region t-runtime" style="--tc:#ff6b7f"><div class="rn">Runtime Ridge</div><div class="rd">A spine of dark volcanic rock, always mid-execution. Heat shimmer bends the horizon; vents hiss on cycles nobody's mapped. The least comfortable region — and the most satisfying.</div><div class="rf">"Set up camp for a focus sprint. Four hours passed like twenty minutes."</div></div>
+    <div class="region t-syntax" style="--tc:#b18cff"><div class="rn">Syntax Thicket</div><div class="rd">A precise bramble maze — every branch meets every other at an angle that looks deliberate. Paths fork constantly; the Thicket punishes guessing and rewards reading the shape before committing.</div><div class="rf">"Asked a local for directions. Got a technically correct answer. Would ask again."</div></div>
+    <div class="region t-stream" style="--tc:#5fd7ff"><div class="rn">Streamfall</div><div class="rd">Waterfalls that scroll rather than fall — text-thin ribbons pouring down a canyon, catching light like a terminal that's never stopped outputting since it switched on.</div><div class="rf">"Sat by the falls for an hour just watching. Didn't catch anything. Best hour of the week."</div></div>
+    <div class="region t-daemon" style="--tc:#c8e6c9"><div class="rn">The Daemon Deep</div><div class="rd">Below the roots of every other region — dark, low-ceilinged, never fully silent. A steady hum of background processes that never asked for an audience. Home to most rare and Relic sightings.</div><div class="rf">"Two hours in near-total dark, one very patient hum for company. Bring a headlamp, not a hurry."</div></div>
+  </div>
+
+  <h3>The Keeper's Oath</h3>
+  <div class="oath">
+    <div class="ol">
+      I feed the mind, not the meter.<br>
+      I cache what repeats, and route what's simple, and focus what matters.<br>
+      I do not punish the small day, and I do not fear the slow one.<br>
+      What grows here, grows honest.
+    </div>
+    <div class="osrc">— RECITED BY TRADITION AMONG DAEMONKEEPERS</div>
+  </div>
+
+  <h3>The two Mythics — legends only</h3>
+  <div class="dist">
+    <div class="d-card"><div class="d-k" style="color:var(--rose)">The First Process</div><div class="d-v">Rumored to predate the Shellwoods' six regions entirely — not hatched, not condensed, just already running. Heard more often than seen: a hum just slightly too patient to be background noise, going on directly underneath everything else. Tied to the Daemon Deep and Runtime Ridge.</div></div>
+    <div class="d-card"><div class="d-k" style="color:var(--rose)">The Last Garbage Collector</div><div class="d-v">Appears, so the legend goes, at the exact moment something would otherwise be lost for good — a context about to be dropped, a cache about to be evicted. Every account agrees on one thing: it never shows up the same way twice, and never to a Keeper who isn't about to lose something that mattered.</div></div>
+  </div>
+
+  <h3>Voice of the pet — a sample from the Journal</h3>
+  <div class="voicebox">
+    <div class="vline"><span class="vid">journal_balanced_02</span><span class="vtext">Nothing dramatic happened. Just a clean, well-routed, ordinary day. My favorite kind.</span></div>
+    <div class="vline"><span class="vid">journal_junk_food_02</span><span class="vtext">Same question, five different ways. I remember all five, for what it's worth.</span></div>
+    <div class="vline"><span class="vid">return_no_guilt_01</span><span class="vtext">Don't worry about the gap — I wasn't keeping score. Truly wasn't.</span></div>
+    <div class="vline"><span class="vid">encounter_curious_01</span><span class="vtext">A {species} tilts its head at your terminal like it's reading over your shoulder.</span></div>
+    <div class="vline"><span class="vid">evolve_stage2to3_01</span><span class="vtext">This isn't the same animal that hatched. Feels earned, not sudden.</span></div>
+  </div>
+  <p class="faint" style="margin-top:10px;font-size:12px">56 voice lines total across journal / hatch / evolution / encounter / hibernation / trade — every line ≤90 chars, none of them ever guilt-trip a vacation. Full library in <code>docs/design/lore.md</code>.</p>
+
+  <h3>Type wheel</h3>
+  <div class="wheel-row">
+    <svg class="wheel-svg" viewBox="0 0 300 300" aria-label="type effectiveness wheel">
+      <defs>
+        <marker id="arr" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="6" markerHeight="6" orient="auto">
+          <path d="M0,0 L8,4 L0,8 z" fill="#2f9e50"/>
+        </marker>
+      </defs>
+      <circle cx="150" cy="150" r="106" fill="none" stroke="#1e3322" stroke-width="1" stroke-dasharray="3 5"/>
+      <g font-family="ui-monospace,Menlo,monospace" font-size="12" text-anchor="middle">
+        <!-- 6 nodes on circle -->
+        <g>
+          <circle cx="150" cy="34" r="4" fill="#54fb7e"/><text x="150" y="20" fill="#54fb7e">CACHE</text>
+          <circle cx="250" cy="92" r="4" fill="#ffc857"/><text x="272" y="86" fill="#ffc857">CONTEXT</text>
+          <circle cx="250" cy="208" r="4" fill="#ff6b7f"/><text x="272" y="226" fill="#ff6b7f">RUNTIME</text>
+          <circle cx="150" cy="266" r="4" fill="#b18cff"/><text x="150" y="288" fill="#b18cff">SYNTAX</text>
+          <circle cx="50" cy="208" r="4" fill="#5fd7ff"/><text x="30" y="226" fill="#5fd7ff">STREAM</text>
+          <circle cx="50" cy="92" r="4" fill="#c8e6c9"/><text x="30" y="86" fill="#c8e6c9">DAEMON</text>
+        </g>
+        <g stroke="#2f9e50" stroke-width="1.4" fill="none" opacity=".9">
+          <path d="M158,40 L242,86" marker-end="url(#arr)"/>
+          <path d="M250,100 L250,200" marker-end="url(#arr)"/>
+          <path d="M242,214 L158,260" marker-end="url(#arr)"/>
+          <path d="M142,260 L58,214" marker-end="url(#arr)"/>
+          <path d="M50,200 L50,100" marker-end="url(#arr)"/>
+          <path d="M58,86 L142,40" marker-end="url(#arr)"/>
+        </g>
+        <text x="150" y="147" fill="#4a6b52" font-size="10">→ = SUPER</text>
+        <text x="150" y="163" fill="#4a6b52" font-size="10">EFFECTIVE 2×</text>
+      </g>
+    </svg>
+    <ul class="wheel-notes">
+      <li>Six original types drawn from dev life; simple 2× / 1× / ½× chart.</li>
+      <li>Each species has one type; moves have types.</li>
+      <li>Types are flavor-first — battles are a minigame, not the core loop.</li>
+    </ul>
+  </div>
+</section>
+
+<!-- ================= DEX ================= -->
+<section id="dex">
+  <div class="sec-head"><span class="sec-num">04</span><h2>The Dex — 30 launch species</h2></div>
+  <p class="dim">9 canon starters (3 lines × 3 stages) + 21 original species, spread across all 6 types, all 5 rarity tiers, all 6 habitats. Every silhouette is distinct; every stat total respects its tier's BST band. Filter by type or rarity.</p>
+
+  <div class="dex-filters" id="dexTypeFilters">
+    <button class="active" data-f="type" data-v="all">ALL TYPES</button>
+    <button data-f="type" data-v="cache">Cache</button>
+    <button data-f="type" data-v="context">Context</button>
+    <button data-f="type" data-v="runtime">Runtime</button>
+    <button data-f="type" data-v="syntax">Syntax</button>
+    <button data-f="type" data-v="stream">Stream</button>
+    <button data-f="type" data-v="daemon">Daemon</button>
+  </div>
+  <div class="dex-filters" id="dexRarityFilters">
+    <button class="active" data-f="rarity" data-v="all">ALL RARITIES</button>
+    <button data-f="rarity" data-v="common">Common</button>
+    <button data-f="rarity" data-v="uncommon">Uncommon</button>
+    <button data-f="rarity" data-v="rare">Rare</button>
+    <button data-f="rarity" data-v="relic">Relic</button>
+    <button data-f="rarity" data-v="mythic">Mythic</button>
+  </div>
+
+  <div class="dexgrid" id="dexGrid"></div>
+  <div class="dex-count" id="dexCount"></div>
+
+  <h3>Rarity tiers &amp; base-stat-total bands</h3>
+  <div class="odds-strip">
+    <div class="o common"><div class="ok2">COMMON</div><div class="ov">200–239</div></div>
+    <div class="o uncommon"><div class="ok2">UNCOMMON</div><div class="ov">240–279</div></div>
+    <div class="o rare"><div class="ok2">RARE</div><div class="ov">280–319</div></div>
+    <div class="o relic"><div class="ok2">RELIC</div><div class="ov">320–359</div></div>
+    <div class="o mythic"><div class="ok2">MYTHIC</div><div class="ov">360–400</div></div>
+  </div>
+  <p class="faint" style="margin-top:10px;font-size:12px">10 Common · 7 Uncommon · 7 Rare · 4 Relic · exactly 2 Mythic (<code>everfile</code> — read a whole repo in one turn; <code>uptimewyrm</code> — 365-day streak, zero restarts). Both Mythics are encounter-only by construction, never a rolled-odds catch.</p>
+</section>
+
+<!-- ================= ECONOMY ================= -->
+<section id="economy">
+  <div class="sec-head"><span class="sec-num">05</span><h2>Rarity &amp; economy</h2></div>
+  <p class="dim">Every roll is a pure function of <code>(dna, date, history)</code> — replayable, server-free, and structurally incapable of rewarding spend. The odds only ever move in the direction of <i>better habits</i>, never <i>more tokens</i>.</p>
+
+  <h3>Encounter tier odds (per trigger, /1024)</h3>
+  <div class="odds-strip">
+    <div class="o relic"><div class="ok2">RELIC</div><div class="ov">8/1024</div></div>
+    <div class="o rare"><div class="ok2">RARE</div><div class="ov">64/1024</div></div>
+    <div class="o uncommon"><div class="ok2">UNCOMMON</div><div class="ov">256/1024</div></div>
+    <div class="o common"><div class="ok2">COMMON</div><div class="ov">696/1024</div></div>
+    <div class="o mythic"><div class="ok2">MYTHIC gate</div><div class="ov">1/4096</div></div>
+  </div>
+  <p class="faint" style="margin-top:8px;font-size:12px">A "balanced diet" day (no token bloat, cache-read ≥1/2, under budget) shifts every encounter that day one tier band up. It's a post-roll remap — never a second roll, never purchasable.</p>
+
+  <h3>Lucent (shiny) pity curve — keyed to consistency, not spend</h3>
+  <div class="pity">
+    <div class="pity-row"><span>GRIT streak 0–6d</span><span class="dim">base rate</span><b>1/512</b></div>
+    <div class="pity-row"><span>GRIT streak 7–13d</span><span class="dim">halved</span><b>1/256</b></div>
+    <div class="pity-row"><span>GRIT streak 14–27d</span><span class="dim">halved again</span><b>1/128</b></div>
+    <div class="pity-row"><span>GRIT streak 28d+</span><span class="dim">floor</span><b>1/64</b></div>
+  </div>
+  <p class="faint" style="margin-top:8px;font-size:12px">Roll: <code>SHA256(dna‖date‖"lucent") mod denom</code> — a Keeper working 10 minutes a day maintains streak identically to one working 8 hours a day.</p>
+
+  <h3>Anti-frustration guarantees (arithmetic, not vibes)</h3>
+  <table>
+    <tr><th>Guarantee</th><th>Mechanism</th><th>Bound</th></tr>
+    <tr><td>First RARE+</td><td>whiff-streak pity floors at RARE after 40 whiffs</td><td class="dim">≤40 days worst case · ~9–10 days expected</td></tr>
+    <tr><td>First RELIC+</td><td>pity floors at RELIC after 120 whiffs</td><td class="dim">≤120 days worst case</td></tr>
+    <tr><td>Casual Dex completion</td><td>uncaught-first species weighting, N_common=10</td><td class="dim">&lt;12 weeks even at 2 active days/week</td></tr>
+    <tr><td>Neglect</td><td>hibernation after 7 idle days, wakes happy</td><td class="dim">vacation delays the clock, never rewinds it</td></tr>
+  </table>
+
+  <h3>Badges — 15 titles, all from real signals</h3>
+  <div class="badges">
+    <div class="badge"><div class="bn">Night Daemon</div><div class="bt">session between 02:00–04:00</div><div class="bf">I heard the fans spin up at 3am. Respect.</div></div>
+    <div class="badge"><div class="bn">Cache Whisperer</div><div class="bt">7 days ≥60% cache reuse</div><div class="bf">You and the cache have an understanding now.</div></div>
+    <div class="badge"><div class="bn">Polyglot</div><div class="bt">5 models in a rolling week</div><div class="bf">New model, who dis? Five, this week alone.</div></div>
+    <div class="badge"><div class="bn">Traveler</div><div class="bt">arrived via trade import</div><div class="bf">I've seen another Keeper's terminal. Cozy.</div></div>
+    <div class="badge"><div class="bn">Deep Diver</div><div class="bt">90min session, zero gaps &gt;5min</div><div class="bf">One thread, ninety minutes, zero context switches.</div></div>
+    <div class="badge"><div class="bn">Frugal Forager</div><div class="bt">7 days under budget, zero bloat</div><div class="bf">Ate well, spent little. The Shellwoods approve.</div></div>
+    <div class="badge"><div class="bn">Marathoner</div><div class="bt">20+ sessions in one day</div><div class="bf">Twenty sessions. Lost count around twelve.</div></div>
+    <div class="badge"><div class="bn">Router</div><div class="bt">3+ models, none &gt;50% of the day</div><div class="bf">Right tool, right job, every single time today.</div></div>
+  </div>
+  <p class="faint" style="margin-top:10px;font-size:12px">+7 more (Early Bird, Streak Keeper, Polymath, Polisher, Weekend Warrior, Comeback, First Light) — full 15 in <code>docs/design/rarity.md</code> §5.</p>
+
+  <h3>Artifacts — 10 held items, one slot, all habit-gated</h3>
+  <div class="artifacts">
+    <div class="art"><div class="an">Warm Cache Shard</div><div class="at">day ends ≥80% cache reuse → +1/16 daily XP</div><div class="af">Still warm. Smells like a hot path.</div></div>
+    <div class="art"><div class="an">Deep Focus Lens</div><div class="at">90min unbroken session → +1/8 FOCUS growth</div><div class="af">Everything else gets a little blurry. On purpose.</div></div>
+    <div class="art"><div class="an">Budget Ledger</div><div class="at">5 days under budget → loosens diet-shift threshold</div><div class="af">Every token, accounted for. Tidy little book.</div></div>
+    <div class="art"><div class="an">Streak Charm</div><div class="at">GRIT streak reaches 7 → idle decay −1/day</div><div class="af">One charm, seven days of not skipping leg day.</div></div>
+  </div>
+  <p class="faint" style="margin-top:10px;font-size:12px">Every effect audited twice for a "does this reward spending more" loophole — none found. Full 10 in <code>docs/design/rarity.md</code> §6.</p>
+</section>
+
+<!-- ================= BATTLE ================= -->
+<section id="battle">
+  <div class="sec-head"><span class="sec-num">06</span><h2>Battles — deterministic, serverless</h2></div>
+  <p class="dim">45 moves (36 type-pool + 9 starter signatures), 6 statuses, and a fully-specified integer battle algorithm. Two Keepers export battle cards; either machine replays the identical fight from a shared seed — no connection required, ever.</p>
+
+  <h3>Move kinds</h3>
+  <p class="dim"><span class="movekind mk-strike">STRIKE</span> direct damage (VIGOR-driven) &nbsp; <span class="movekind mk-hex">HEX</span> status-inflicting (WIT-driven) &nbsp; <span class="movekind mk-guard">GUARD</span> defensive charge &nbsp; <span class="movekind mk-boost">BOOST</span> self-buff charge — 6 per type × 6 types = 36, plus 9 signature moves for the starter lines.</p>
+
+  <h3>Sample movepool — RUNTIME</h3>
+  <table>
+    <tr><th>Move</th><th>Kind</th><th>Power</th><th>Acc</th><th>Flavor</th></tr>
+    <tr><td>Segfault</td><td><span class="movekind mk-strike">STRIKE</span></td><td>80</td><td>5/8</td><td class="dim">Reaches into memory it was never given.</td></tr>
+    <tr><td>Force Push</td><td><span class="movekind mk-strike">STRIKE</span></td><td>60</td><td>3/4</td><td class="dim">Overwrites whatever was there. History optional.</td></tr>
+    <tr><td>Hotfix</td><td><span class="movekind mk-strike">STRIKE</span></td><td>45</td><td>1/1</td><td class="dim">Small, ugly, ships in five minutes. Works.</td></tr>
+    <tr><td>Sandbox</td><td><span class="movekind mk-guard">GUARD</span></td><td>—</td><td>1/1</td><td class="dim">Runs the risky part in isolation first.</td></tr>
+    <tr><td>Overclock</td><td><span class="movekind mk-boost">BOOST</span></td><td>—</td><td>1/1</td><td class="dim">Pushes the clock past the sane range. Fans scream.</td></tr>
+    <tr><td>Panic Unwind</td><td><span class="movekind mk-hex">HEX</span></td><td>30</td><td>7/8</td><td class="dim">Doesn't crash cleanly. Leaves a mess.</td></tr>
+  </table>
+
+  <h3>Status effects</h3>
+  <table>
+    <tr><th>Status</th><th>Duration</th><th>Effect</th></tr>
+    <tr><td>DEPRECATED</td><td class="dim">3 turns</td><td class="dim">outgoing power × 3/4</td></tr>
+    <tr><td>RATE_LIMITED</td><td class="dim">2 turns</td><td class="dim">1/4 chance to skip the turn</td></tr>
+    <tr><td>MEMORY_LEAK</td><td class="dim">3 turns</td><td class="dim">loses HP_max/16 each turn</td></tr>
+    <tr><td>TOKEN_BLOAT</td><td class="dim">until Focus &gt;0</td><td class="dim">incoming damage × 5/4</td></tr>
+    <tr><td>HOTPATCHED</td><td class="dim">1 turn</td><td class="dim">next hit against holder is a guaranteed crit</td></tr>
+    <tr><td>WARMED_UP</td><td class="dim">1 turn</td><td class="dim">next outgoing power × 3/2</td></tr>
+  </table>
+
+  <h3>Worked example — Forgeon vs Cascada, both level 20</h3>
+  <pre class="flow">
+HP_max: Forgeon 242  ·  Cascada 186
+DEF:    Forgeon 65   ·  Cascada 70
+
+<span class="hot">power-60 STRIKE, Forgeon → Cascada: 33 dmg → 6 turns to KO</span>
+<span class="warm">power-60 STRIKE, Cascada → Forgeon: 28 dmg → 9 turns to KO</span>
+
+result: Forgeon favored, Cascada survives well past turn 6 —
+        lands inside the 6–12 turn design target, no one-shots.
+</pre>
+  <p class="faint" style="margin-top:8px;font-size:12px">Seeded from <code>SHA256(sort(dnaA,dnaB) + UTC-date)</code>, 6 documented RNG draws per pet-turn in a fixed order, deterministic AI-less move selection — both machines land on the exact same log, every line ≤90 chars, e.g. <code>Forgeon used Force Push! Cascada takes 28.</code></p>
+</section>
+
+<!-- ================= GAME DESIGN ================= -->
+<section id="game">
+  <div class="sec-head"><span class="sec-num">07</span><h2>Game design</h2></div>
+
+  <h3 style="margin-top:8px">The core loop</h3>
+  <pre class="flow">
+ you work with Claude Code / Codex
+              │
+              ▼  <span class="hot">collector parses logs — already built, 0 tokens</span>
+   usage events → store → daily digest
+              │
+              ▼  <span class="warm">deterministic sim tick</span>
+ food eaten · XP gained · health &amp; mood updated
+      evolution + encounter checks
+              │
+              ▼
+  TUI: pet reacts · stats move · journal entry
+</pre>
+
+  <h3>Feeding &amp; health — the advisor, reborn</h3>
+  <p class="dim">Tokens are food. Every old advisor rule becomes nutrition. Advice stays explainable — the pet's journal says <i>why</i> it feels how it feels.</p>
+  <div class="feedlog" style="margin-top:14px">
+    <div class="fl-row"><div class="fl-sig">LOW CACHE REUSE</div><div class="fl-fx"><b>Junk food.</b> Uncached re-sent prompts digest poorly → health drips down, pet looks tired.</div></div>
+    <div class="fl-row"><div class="fl-sig">OPUS OVERUSE</div><div class="fl-fx"><b>Rich food.</b> Fine sometimes; a steady diet makes the pet lethargic (XP multiplier drops).</div></div>
+    <div class="fl-row"><div class="fl-sig">CONTEXT BLOAT</div><div class="fl-fx"><b>Overeating.</b> Huge average contexts → "token bloat" status until habits improve.</div></div>
+    <div class="fl-row"><div class="fl-sig">FRAGMENTATION</div><div class="fl-fx"><b>Interrupted naps.</b> Many cold starts → mood penalty.</div></div>
+    <div class="fl-row"><div class="fl-sig">OVER BUDGET</div><div class="fl-fx"><b>Foraging limit.</b> Past the soft daily budget the pet is "full" — extra tokens give zero XP.</div></div>
+    <div class="fl-row"><div class="fl-sig good">HEALTHY USAGE</div><div class="fl-fx"><b>Balanced diet.</b> Full XP, mood up, evolution progress.</div></div>
+  </div>
+
+  <h3>Stats — grown from real behavior</h3>
+  <div class="stats">
+    <div class="stat"><span class="sn">VIGOR</span><span class="sb">█████████████░░░░░░░</span><span class="sd">total healthy activity — turns, sessions</span></div>
+    <div class="stat"><span class="sn">FOCUS</span><span class="sb">████████████████░░░░</span><span class="sd">cache-read ratio</span></div>
+    <div class="stat"><span class="sn">WIT</span><span class="sb">█████████░░░░░░░░░░░</span><span class="sd">model-routing quality (right-sized model)</span></div>
+    <div class="stat"><span class="sn">GRIT</span><span class="sb">███████░░░░░░░░░░░░░</span><span class="sd">consecutive active days</span></div>
+    <div class="stat"><span class="sn">SPARK</span><span class="sb">████░░░░░░░░░░░░░░░░</span><span class="sd">rare events — new model, new project, night save</span></div>
+  </div>
+  <p class="faint" style="margin-top:10px;font-size:12px">+ hidden IVs rolled from DNA at hatch — two pets with identical history still differ.</p>
+
+  <h3>Progression</h3>
+  <p class="dim">Egg hatches after ~3 active days; the dominant playstyle in the hatch window picks the line.
+  Stage 1→2 at level 12, 2→3 at level 30. A dominant stat can branch the final evolution.
+  <b style="color:var(--phos)">Neglect never kills</b> — after 7 idle days the pet hibernates and wakes happy. No dead pets after vacation.</p>
+
+  <h3>Encounters · Trading · Battles — all serverless</h3>
+  <div class="dist">
+    <div class="d-card"><div class="d-k">ENCOUNTERS — catch by doing</div><div class="d-v">Wild Codelings appear on real events: a new project dir, a new model in the logs, an unusually efficient day. <i>"A wild Glyphit appeared! It joins you if you finish today with &gt;50% cache reuse."</i></div></div>
+    <div class="d-card"><div class="d-k">TRADING — .codeling files</div><div class="d-v"><code>aipet trade export</code> writes a versioned JSON file. Share over Slack, gist, a repo. Traded pets earn the "traveler" badge (+XP flavor bonus). Inactive pets live in the <b>Barn</b>.</div></div>
+    <div class="d-card" style="grid-column:1/-1"><div class="d-k">BATTLES — deterministic, no connection</div><div class="d-v">Each player exports a battle card. Either runs <code>aipet battle &lt;card&gt;</code>. RNG seeds from <code>SHA256(sort(dnaA,dnaB) + UTC-date)</code> — both machines replay the identical fight, turn by turn, in the TUI. Tampered cards that don't re-derive are flagged <span style="color:var(--rose)">counterfeit</span>. It's for fun between colleagues, not ranked ladders.</div></div>
+  </div>
+</section>
+
+<!-- ================= ARCHITECTURE ================= -->
+<section id="arch">
+  <div class="sec-head"><span class="sec-num">08</span><h2>Architecture</h2></div>
+<pre class="tree">
+cmd/aipet/               <span class="c">CLI: play | daemon | status | dex | trade | battle | config</span>
+internal/collector/      <span class="d">KEEP</span>  <span class="c">parses Claude/Codex logs</span>
+internal/store/          <span class="d">KEEP</span>  <span class="c">append-only events + stats</span>
+internal/pricing/        <span class="d">KEEP</span>  <span class="c">prices "food" (bundled table only)</span>
+internal/care/           <span class="new">MORPH</span> <span class="c">was advisor — diet/health rules (pure functions)</span>
+internal/sim/            <span class="new">NEW</span>   <span class="c">deterministic pet simulation</span>
+  ├─ dna.go              <span class="c">seed, IVs, species roll, Lucent roll</span>
+  ├─ tick.go             <span class="c">daily digest → XP/health/mood deltas</span>
+  ├─ evolve.go           <span class="c">level &amp; evolution rules</span>
+  └─ battle.go           <span class="c">seeded battle resolver</span>
+internal/species/        <span class="new">NEW</span>   <span class="c">species table, type chart, movesets (embedded)</span>
+internal/save/           <span class="new">NEW</span>   <span class="c">~/.aipet/pet.json · barn/ · journal.jsonl</span>
+internal/daemon/         <span class="new">SLIM</span>  <span class="c">collect loop + sim tick + snapshot (no feed)</span>
+internal/tui/            <span class="new">MORPH</span> <span class="c">game screens: Pet | Journal | Dex | Barn</span>
+</pre>
+
+  <div class="law">
+    <div class="law-t">⚖ THE ONE ARCHITECTURAL LAW — DETERMINISM</div>
+    <p><code>internal/sim</code> is a <b>pure function of (save state, usage digest, seed)</b>.
+    No wall-clock reads inside the sim. No map-iteration-order dependence. No floats in battle
+    math — fixed-point ints. This single rule is what makes serverless battles, replayable saves,
+    and advisor-grade unit testing possible.</p>
+  </div>
+
+  <h3>Save data</h3>
+  <p class="dim"><code>~/.aipet/pet.json</code> (atomic writes) holds DNA, species, stage, level, stats, health, mood, statuses, badges.
+  <code>journal.jsonl</code> is the append-only life log (same pattern as <code>usage.db</code>).
+  The <code>.codeling</code> interchange format is versioned from day one so trades survive upgrades.</p>
+</section>
+
+<!-- ================= DISTRIBUTION ================= -->
+<section id="dist">
+  <div class="sec-head"><span class="sec-num">09</span><h2>Distribution &amp; infra</h2></div>
+  <div class="dist">
+    <div class="d-card"><div class="d-k">① GitHub Releases · goreleaser</div><div class="d-v">Static cross-compiled binaries (darwin/linux/windows × amd64/arm64), SHA-256 checksums. Single Go binary, no CGO. The artifact everything else wraps.</div></div>
+    <div class="d-card"><div class="d-k">② Homebrew tap</div><div class="d-v"><code>brew install &lt;org&gt;/tap/aipet</code> — formula generated by goreleaser. Primary channel for the audience.</div></div>
+    <div class="d-card"><div class="d-k">③ go install</div><div class="d-v"><code>go install …/cmd/aipet@latest</code> — free with the repo.</div></div>
+    <div class="d-card"><div class="d-k">④ curl installer</div><div class="d-v"><code>curl -fsSL …/install.sh | sh</code> for READMEs and demos. Later: <code>npx aipet</code> wrapper, mise/asdf plugin.</div></div>
+  </div>
+  <p class="dim" style="margin-top:18px"><b style="color:var(--phos)">Community without infra:</b> a public <code>codeling-dex</code> GitHub repo — ASCII species art, lore pages, and a <code>FOUND.md</code> where players PR their rare catches. Discussions host trades and battle cards. <b style="color:var(--amber)">GitHub is the backend.</b></p>
+
+  <div class="zero">
+    <div class="z"><div class="zk">SERVERS</div><div class="zv">0</div></div>
+    <div class="z"><div class="zk">ACCOUNTS</div><div class="zv">0</div></div>
+    <div class="z"><div class="zk">TELEMETRY</div><div class="zv">0</div></div>
+    <div class="z"><div class="zk">TOKENS USED</div><div class="zv">0</div></div>
+    <div class="z"><div class="zk">COST TO OPERATE</div><div class="zv">$0</div></div>
+  </div>
+  <p class="faint" style="margin-top:14px;font-size:12px">Only optional network call: unauthenticated GitHub Releases version check ("brew upgrade aipet"). Offline-first always. CI = GitHub Actions: make test &amp;&amp; make vet, goreleaser on tag.</p>
+</section>
+
+<!-- ================= CHANGELOG ================= -->
+<section id="log">
+  <div class="sec-head"><span class="sec-num">10</span><h2>Build changelog</h2></div>
+  <p class="dim">This sheet is maintained as we progress — every milestone update lands here and on the board above.</p>
+  <ul class="clog">
+    <li><span class="ts">2026-07-07</span><b>Design phase complete.</b> All four content docs landed and were director-reviewed: <code>species.md</code> (30-species Dex), <code>rarity.md</code> (odds/economy), <code>moves.md</code> (45 moves + battle algorithm, on its 3rd attempt after two API rate-limits), <code>lore.md</code> (world book + 56 voice lines). Cross-doc issues reconciled: launch roster corrected to 30 species (was "15" in the original sketch), Dex-completion math recomputed against the real N_common=10, four battle-balance calls resolved. Full content folded into this sheet — Dex, economy, and battle sections added.</li>
+    <li><span class="ts">2026-07-07</span><b>Design phase opened.</b> Content bible written (docs/design/SPEC.md): hard rules, canon vocabulary, rarity tiers (COMMON→MYTHIC), BST bands, six regions. Four Sonnet designers spawned in parallel — species (D1), rarity/economy (D2), moves/battle (D3), lore (D4) — with a director review loop (D5) to follow.</li>
+    <li><span class="ts">2026-07-07</span><b>Design cartridge v1.</b> Full pivot designed: lore, species, mechanics, architecture, distribution. Written to docs/GAME_DESIGN.md. This sheet created.</li>
+  </ul>
+</section>
+
+<footer>
+  <span class="fp">CODELINGS</span> · running build sheet · design cartridge v1 · the Shellwoods await
+  &nbsp;&nbsp;<span style="color:var(--phos)">▮</span>
+</footer>
+
+</div>
+
+<script>
+const DEX = [
+  {n:1,id:"cindling",name:"Cindling",type:"runtime",rarity:"common",bst:200,hab:"Runtime Ridge",art:"   .-\"\"-.\n  ( o  o )\n   \\ == /\n  ~~|  |~~\n    ^^^^"},
+  {n:2,id:"forgeon",name:"Forgeon",type:"runtime",rarity:"rare",bst:285,hab:"Runtime Ridge",art:"   .=\"\"\"=.\n  ( O  O )~\n   \\ ▲▲ /\n ~~/|  |\\~~\n   ^    ^"},
+  {n:3,id:"pyrolith",name:"Pyrolith",type:"runtime",rarity:"relic",bst:345,hab:"Runtime Ridge",art:"  .=#####=.\n ( ◆    ◆ )\n  \\  ▲▲▲  /\n ~~|  ||  |~~\n ~~^^^^^^^~~"},
+  {n:4,id:"rivulet",name:"Rivulet",type:"stream",rarity:"common",bst:200,hab:"Streamfall",art:"  ~≋≋≋>\n (o    )\n  ~≋≋≋≋>\n   ~~~~"},
+  {n:5,id:"cascada",name:"Cascada",type:"stream",rarity:"rare",bst:300,hab:"Streamfall",art:"  ~≋≋≋≋≋>\n (o  o   )\n  ~≋≋≋≋≋≋>\n   ~≋≋≋~"},
+  {n:6,id:"torrentide",name:"Torrentide",type:"stream",rarity:"relic",bst:335,hab:"Streamfall",art:"  ~≋≋≋≋≋≋≋>\n (o    o   )\n  ~≋≋≋≋≋≋≋≋>\n   ~≋≋≋≋≋~\n    ~≋≋~"},
+  {n:7,id:"glyphit",name:"Glyphit",type:"syntax",rarity:"common",bst:200,hab:"Syntax Thicket",art:"  \\   /\n  )+ +(\n -(o.o)-\n  )   (\n  /   \\"},
+  {n:8,id:"polyglyph",name:"Polyglyph",type:"syntax",rarity:"rare",bst:300,hab:"Syntax Thicket",art:" \\\\  |  //\n ))+ + ((\n-((o.o))-\n ))   ((\n //   \\\\"},
+  {n:9,id:"omniglyph",name:"Omniglyph",type:"syntax",rarity:"relic",bst:333,hab:"Syntax Thicket",art:"\\\\\\ | | ///\n )))+++(((\n=(( ◆.◆ ))=\n )))   (((\n/// | | \\\\\\"},
+  {n:10,id:"hoardlet",name:"Hoardlet",type:"cache",rarity:"common",bst:215,hab:"The Cachefen",art:" .-----.\n(  o o  )\n | $ $ |\n '--v--'"},
+  {n:11,id:"memoize",name:"Memoize",type:"cache",rarity:"common",bst:215,hab:"The Cachefen",art:" .------.\n( o    o )\n |  __  |\n '--vv--'"},
+  {n:12,id:"memoizard",name:"Memoizard",type:"cache",rarity:"uncommon",bst:255,hab:"The Cachefen",art:" .========.\n( O      O )\n |  [==]  |\n |  ____  |\n '---vv---'"},
+  {n:13,id:"pinshell",name:"Pinshell",type:"cache",rarity:"uncommon",bst:250,hab:"The Cachefen",art:"  .------.\n /  o  o  \\\n|    ┼     |\n \\_.----._/\n   ^^  ^^"},
+  {n:14,id:"staleout",name:"Staleout",type:"cache",rarity:"rare",bst:290,hab:"The Cachefen",art:"  .- - - -.\n ( o     o )\n  ' - - - '\n   |     |\n   ?     ?"},
+  {n:15,id:"widecope",name:"Widecope",type:"context",rarity:"common",bst:220,hab:"The Contexta Canopy",art:" .--------.\n( o  o  o )\n |  ....  |\n '---||---'"},
+  {n:16,id:"tabsprout",name:"Tabsprout",type:"context",rarity:"common",bst:205,hab:"The Contexta Canopy",art:" [|][|][|]\n(   o o   )\n  \\  --  /\n   '----'"},
+  {n:17,id:"tabgrove",name:"Tabgrove",type:"context",rarity:"uncommon",bst:250,hab:"The Contexta Canopy",art:"[|][|][|][|]\n(  o    o   )\n \\   ----   /\n  '--------'\n   |      |"},
+  {n:18,id:"longwindow",name:"Longwindow",type:"context",rarity:"relic",bst:340,hab:"The Contexta Canopy",art:"[|][|][|][|][|]\n(  O   ||   O  )\n \\    ----    /\n  '----------'\n   ^        ^"},
+  {n:19,id:"everfile",name:"Everfile",type:"context",rarity:"mythic",bst:400,hab:"The Contexta Canopy",art:"[#][#][#][#][#]\n( ◆   ||   ◆  )\n \\   ====    /\n \\==||||==/\n   '--------'\n    ^      ^"},
+  {n:20,id:"cronkin",name:"Cronkin",type:"daemon",rarity:"uncommon",bst:255,hab:"The Daemon Deep",art:"   ___\n  /o o\\\n ( 12: )\n  \\_-_/\n  ./ \\.\n ~     ~"},
+  {n:21,id:"cronarch",name:"Cronarch",type:"daemon",rarity:"rare",bst:305,hab:"The Daemon Deep",art:"   .===.\n  /o   o\\\n ( 00:00 )\n  \\_---_/\n  ./   \\.\n ~~     ~~"},
+  {n:22,id:"nightproc",name:"Nightproc",type:"daemon",rarity:"common",bst:215,hab:"The Daemon Deep",art:"  .-()-.\n ( -   - )\n  ' -.- '\n   /   \\\n  ~     ~"},
+  {n:23,id:"zombierun",name:"Zombierun",type:"daemon",rarity:"uncommon",bst:250,hab:"The Cachefen",art:"  ___\n /x x\\\n( PID? )\n \\_?_/\n _/ \\_\n~     ~"},
+  {n:24,id:"uptimewyrm",name:"Uptimewyrm",type:"daemon",rarity:"mythic",bst:380,hab:"The Daemon Deep",art:"~≋~.====.~≋~\n  (o    o)\n~≋~| 365 |~≋~\n  (========)\n~≋~'------'~≋~\n  ~   ~   ~"},
+  {n:25,id:"stackrail",name:"Stackrail",type:"runtime",rarity:"common",bst:200,hab:"Runtime Ridge",art:" [#]=[#]=[#]\n(  o     o  )\n )===||===(\n  ^  ^^  ^"},
+  {n:26,id:"threadwolf",name:"Threadwolf",type:"runtime",rarity:"rare",bst:280,hab:"The Daemon Deep",art:"  /\\_/\\ /\\_/\\\n ( o.o X o.o )\n  > ^  |  ^ <\n  /   ---   \\\n ^^         ^^"},
+  {n:27,id:"bufferpup",name:"Bufferpup",type:"stream",rarity:"uncommon",bst:245,hab:"Runtime Ridge",art:"  [::::]\n (  o o )\n  )  ~  (\n  ^^   ^^"},
+  {n:28,id:"flashecho",name:"Flashecho",type:"stream",rarity:"rare",bst:285,hab:"Streamfall",art:"   .>=>=.\n  ( o  o )>\n   )~~~~(\n  ^      ^"},
+  {n:29,id:"bracketail",name:"Bracketail",type:"syntax",rarity:"common",bst:225,hab:"Syntax Thicket",art:" [  o  o  ]\n{    ~~    }\n [   ][   ]\n  ^        ^"},
+  {n:30,id:"lintmoth",name:"Lintmoth",type:"syntax",rarity:"uncommon",bst:240,hab:"Syntax Thicket",art:"  \\  ][  /\n  )+ vv +(\n -( o..o )-\n  )      (\n  /      \\"}
+];
+
+function renderDex(){
+  const grid = document.getElementById('dexGrid');
+  grid.innerHTML = DEX.map(s => `
+    <div class="dexcard t-${s.type} r-${s.rarity}" data-type="${s.type}" data-rarity="${s.rarity}">
+      <div class="dn">#${String(s.n).padStart(3,'0')}</div>
+      <div class="dname">${s.name}</div>
+      <pre>${s.art}</pre>
+      <div class="dtags">
+        <span class="dtag dt-type">${s.type}</span>
+        <span class="dtag dt-rarity">${s.rarity}</span>
+      </div>
+      <div class="faint" style="font-size:9.5px;margin-top:5px">BST ${s.bst} · ${s.hab}</div>
+    </div>
+  `).join('');
+  applyDexFilter();
+}
+
+let activeType = 'all', activeRarity = 'all';
+function applyDexFilter(){
+  const cards = document.querySelectorAll('#dexGrid .dexcard');
+  let shown = 0;
+  cards.forEach(c => {
+    const okType = activeType === 'all' || c.dataset.type === activeType;
+    const okRarity = activeRarity === 'all' || c.dataset.rarity === activeRarity;
+    const visible = okType && okRarity;
+    c.classList.toggle('dex-hidden', !visible);
+    if (visible) shown++;
+  });
+  document.getElementById('dexCount').textContent = `showing ${shown} / ${DEX.length} species`;
+}
+
+document.getElementById('dexTypeFilters').addEventListener('click', e => {
+  if (e.target.tagName !== 'BUTTON') return;
+  activeType = e.target.dataset.v;
+  document.querySelectorAll('#dexTypeFilters button').forEach(b => b.classList.toggle('active', b === e.target));
+  applyDexFilter();
+});
+document.getElementById('dexRarityFilters').addEventListener('click', e => {
+  if (e.target.tagName !== 'BUTTON') return;
+  activeRarity = e.target.dataset.v;
+  document.querySelectorAll('#dexRarityFilters button').forEach(b => b.classList.toggle('active', b === e.target));
+  applyDexFilter();
+});
+
+renderDex();
+</script>
+</body>
+</html>
