@@ -192,7 +192,10 @@
   .dexcard:hover{transform:translateY(-2px);z-index:2}
   .dexcard .dn{font-size:10px;color:var(--ink-faint);letter-spacing:.1em}
   .dexcard .dname{font-size:13px;color:var(--ink);margin:2px 0 6px;font-weight:700}
-  .dexcard pre{font-size:9.5px;line-height:1.15;white-space:pre;text-align:center;margin:4px 0;min-height:52px}
+  .dexcard pre{font-size:12px;line-height:1.3;white-space:pre;text-align:center;margin:8px 0 4px;min-height:60px;display:flex;flex-direction:column;justify-content:center;transform-origin:center 60%}
+  @keyframes dex-bob{0%,100%{transform:translateY(0)}50%{transform:translateY(-3px)}}
+  @keyframes dex-blink{0%,88%,100%{transform:scaleY(1)}92%,96%{transform:scaleY(.66)}}
+  @keyframes dex-mythflick{0%,100%{opacity:1}45%{opacity:.55}47%{opacity:.9}70%{opacity:.4}72%{opacity:.95}}
   .dexcard .dtags{display:flex;gap:4px;flex-wrap:wrap;margin-top:6px}
   .dexcard .dtag{font-size:8.5px;letter-spacing:.08em;padding:1px 6px;border:1px solid;text-transform:uppercase}
   /* type colors */
@@ -905,6 +908,7 @@ internal/tui/            <span class="new">MORPH</span> <span class="c">game scr
   <div class="sec-head"><span class="sec-num">10</span><h2>Build changelog</h2></div>
   <p class="dim">This sheet is maintained as we progress — every milestone update lands here and on the board above.</p>
   <ul class="clog">
+    <li><span class="ts">2026-07-08</span><b>Sprite redesign v2 applied.</b> All 30 Dex sprites replaced with a cleaner, alignment-safe Unicode set from an external design pass (handoff: <code>design_handoff_codelings_sprites</code>) — softer faces (<code>◕ ◡ ◔ ω ᴥ</code>), fewer strokes, evolution reads as growth (heavier borders, wider crowns). Added per-card idle animation: a gentle bob + blink loop, staggered per card, plus a distinct flicker for the two Mythics (Everfile, Uptimewyrm). Root cause of the old sprites' misalignment was full-width/exotic glyphs breaking per-line centering in the monospace &lt;pre&gt; — new set uses only monospace-safe box-drawing and geometric glyphs.</li>
     <li><span class="ts">2026-07-07</span><b>Design phase complete.</b> All four content docs landed and were director-reviewed: <code>species.md</code> (30-species Dex), <code>rarity.md</code> (odds/economy), <code>moves.md</code> (45 moves + battle algorithm, on its 3rd attempt after two API rate-limits), <code>lore.md</code> (world book + 56 voice lines). Cross-doc issues reconciled: launch roster corrected to 30 species (was "15" in the original sketch), Dex-completion math recomputed against the real N_common=10, four battle-balance calls resolved. Full content folded into this sheet — Dex, economy, and battle sections added.</li>
     <li><span class="ts">2026-07-07</span><b>Design phase opened.</b> Content bible written (docs/design/SPEC.md): hard rules, canon vocabulary, rarity tiers (COMMON→MYTHIC), BST bands, six regions. Four Sonnet designers spawned in parallel — species (D1), rarity/economy (D2), moves/battle (D3), lore (D4) — with a director review loop (D5) to follow.</li>
     <li><span class="ts">2026-07-07</span><b>Design cartridge v1.</b> Full pivot designed: lore, species, mechanics, architecture, distribution. Written to docs/GAME_DESIGN.md. This sheet created.</li>
@@ -920,52 +924,59 @@ internal/tui/            <span class="new">MORPH</span> <span class="c">game scr
 
 <script>
 const DEX = [
-  {n:1,id:"cindling",name:"Cindling",type:"runtime",rarity:"common",bst:200,hab:"Runtime Ridge",art:"   .-\"\"-.\n  ( o  o )\n   \\ == /\n  ~~|  |~~\n    ^^^^"},
-  {n:2,id:"forgeon",name:"Forgeon",type:"runtime",rarity:"rare",bst:285,hab:"Runtime Ridge",art:"   .=\"\"\"=.\n  ( O  O )~\n   \\ ▲▲ /\n ~~/|  |\\~~\n   ^    ^"},
-  {n:3,id:"pyrolith",name:"Pyrolith",type:"runtime",rarity:"relic",bst:345,hab:"Runtime Ridge",art:"  .=#####=.\n ( ◆    ◆ )\n  \\  ▲▲▲  /\n ~~|  ||  |~~\n ~~^^^^^^^~~"},
-  {n:4,id:"rivulet",name:"Rivulet",type:"stream",rarity:"common",bst:200,hab:"Streamfall",art:"  ~≋≋≋>\n (o    )\n  ~≋≋≋≋>\n   ~~~~"},
-  {n:5,id:"cascada",name:"Cascada",type:"stream",rarity:"rare",bst:300,hab:"Streamfall",art:"  ~≋≋≋≋≋>\n (o  o   )\n  ~≋≋≋≋≋≋>\n   ~≋≋≋~"},
-  {n:6,id:"torrentide",name:"Torrentide",type:"stream",rarity:"relic",bst:335,hab:"Streamfall",art:"  ~≋≋≋≋≋≋≋>\n (o    o   )\n  ~≋≋≋≋≋≋≋≋>\n   ~≋≋≋≋≋~\n    ~≋≋~"},
-  {n:7,id:"glyphit",name:"Glyphit",type:"syntax",rarity:"common",bst:200,hab:"Syntax Thicket",art:"  \\   /\n  )+ +(\n -(o.o)-\n  )   (\n  /   \\"},
-  {n:8,id:"polyglyph",name:"Polyglyph",type:"syntax",rarity:"rare",bst:300,hab:"Syntax Thicket",art:" \\\\  |  //\n ))+ + ((\n-((o.o))-\n ))   ((\n //   \\\\"},
-  {n:9,id:"omniglyph",name:"Omniglyph",type:"syntax",rarity:"relic",bst:333,hab:"Syntax Thicket",art:"\\\\\\ | | ///\n )))+++(((\n=(( ◆.◆ ))=\n )))   (((\n/// | | \\\\\\"},
-  {n:10,id:"hoardlet",name:"Hoardlet",type:"cache",rarity:"common",bst:215,hab:"The Cachefen",art:" .-----.\n(  o o  )\n | $ $ |\n '--v--'"},
-  {n:11,id:"memoize",name:"Memoize",type:"cache",rarity:"common",bst:215,hab:"The Cachefen",art:" .------.\n( o    o )\n |  __  |\n '--vv--'"},
-  {n:12,id:"memoizard",name:"Memoizard",type:"cache",rarity:"uncommon",bst:255,hab:"The Cachefen",art:" .========.\n( O      O )\n |  [==]  |\n |  ____  |\n '---vv---'"},
-  {n:13,id:"pinshell",name:"Pinshell",type:"cache",rarity:"uncommon",bst:250,hab:"The Cachefen",art:"  .------.\n /  o  o  \\\n|    ┼     |\n \\_.----._/\n   ^^  ^^"},
-  {n:14,id:"staleout",name:"Staleout",type:"cache",rarity:"rare",bst:290,hab:"The Cachefen",art:"  .- - - -.\n ( o     o )\n  ' - - - '\n   |     |\n   ?     ?"},
-  {n:15,id:"widecope",name:"Widecope",type:"context",rarity:"common",bst:220,hab:"The Contexta Canopy",art:" .--------.\n( o  o  o )\n |  ....  |\n '---||---'"},
-  {n:16,id:"tabsprout",name:"Tabsprout",type:"context",rarity:"common",bst:205,hab:"The Contexta Canopy",art:" [|][|][|]\n(   o o   )\n  \\  --  /\n   '----'"},
-  {n:17,id:"tabgrove",name:"Tabgrove",type:"context",rarity:"uncommon",bst:250,hab:"The Contexta Canopy",art:"[|][|][|][|]\n(  o    o   )\n \\   ----   /\n  '--------'\n   |      |"},
-  {n:18,id:"longwindow",name:"Longwindow",type:"context",rarity:"relic",bst:340,hab:"The Contexta Canopy",art:"[|][|][|][|][|]\n(  O   ||   O  )\n \\    ----    /\n  '----------'\n   ^        ^"},
-  {n:19,id:"everfile",name:"Everfile",type:"context",rarity:"mythic",bst:400,hab:"The Contexta Canopy",art:"[#][#][#][#][#]\n( ◆   ||   ◆  )\n \\   ====    /\n \\==||||==/\n   '--------'\n    ^      ^"},
-  {n:20,id:"cronkin",name:"Cronkin",type:"daemon",rarity:"uncommon",bst:255,hab:"The Daemon Deep",art:"   ___\n  /o o\\\n ( 12: )\n  \\_-_/\n  ./ \\.\n ~     ~"},
-  {n:21,id:"cronarch",name:"Cronarch",type:"daemon",rarity:"rare",bst:305,hab:"The Daemon Deep",art:"   .===.\n  /o   o\\\n ( 00:00 )\n  \\_---_/\n  ./   \\.\n ~~     ~~"},
-  {n:22,id:"nightproc",name:"Nightproc",type:"daemon",rarity:"common",bst:215,hab:"The Daemon Deep",art:"  .-()-.\n ( -   - )\n  ' -.- '\n   /   \\\n  ~     ~"},
-  {n:23,id:"zombierun",name:"Zombierun",type:"daemon",rarity:"uncommon",bst:250,hab:"The Cachefen",art:"  ___\n /x x\\\n( PID? )\n \\_?_/\n _/ \\_\n~     ~"},
-  {n:24,id:"uptimewyrm",name:"Uptimewyrm",type:"daemon",rarity:"mythic",bst:380,hab:"The Daemon Deep",art:"~≋~.====.~≋~\n  (o    o)\n~≋~| 365 |~≋~\n  (========)\n~≋~'------'~≋~\n  ~   ~   ~"},
-  {n:25,id:"stackrail",name:"Stackrail",type:"runtime",rarity:"common",bst:200,hab:"Runtime Ridge",art:" [#]=[#]=[#]\n(  o     o  )\n )===||===(\n  ^  ^^  ^"},
-  {n:26,id:"threadwolf",name:"Threadwolf",type:"runtime",rarity:"rare",bst:280,hab:"The Daemon Deep",art:"  /\\_/\\ /\\_/\\\n ( o.o X o.o )\n  > ^  |  ^ <\n  /   ---   \\\n ^^         ^^"},
-  {n:27,id:"bufferpup",name:"Bufferpup",type:"stream",rarity:"uncommon",bst:245,hab:"Runtime Ridge",art:"  [::::]\n (  o o )\n  )  ~  (\n  ^^   ^^"},
-  {n:28,id:"flashecho",name:"Flashecho",type:"stream",rarity:"rare",bst:285,hab:"Streamfall",art:"   .>=>=.\n  ( o  o )>\n   )~~~~(\n  ^      ^"},
-  {n:29,id:"bracketail",name:"Bracketail",type:"syntax",rarity:"common",bst:225,hab:"Syntax Thicket",art:" [  o  o  ]\n{    ~~    }\n [   ][   ]\n  ^        ^"},
-  {n:30,id:"lintmoth",name:"Lintmoth",type:"syntax",rarity:"uncommon",bst:240,hab:"Syntax Thicket",art:"  \\  ][  /\n  )+ vv +(\n -( o..o )-\n  )      (\n  /      \\"}
+  {n:1,id:"cindling",name:"Cindling",type:"runtime",rarity:"common",bst:200,hab:"Runtime Ridge",art:"▴\n(• ◡ •)\n( ─── )\n˘   ˘"},
+  {n:2,id:"forgeon",name:"Forgeon",type:"runtime",rarity:"rare",bst:285,hab:"Runtime Ridge",art:"▴▴▴\n(◕ ◡ ◕)\n(═════)\n˘   ˘"},
+  {n:3,id:"pyrolith",name:"Pyrolith",type:"runtime",rarity:"relic",bst:345,hab:"Runtime Ridge",art:"▲▲▲\n(◆ ◡ ◆)\n(══▣══)\n˘˘   ˘˘"},
+  {n:4,id:"rivulet",name:"Rivulet",type:"stream",rarity:"common",bst:200,hab:"Streamfall",art:"∿∿∿\n≋(° ◡ °)>\n‿‿‿"},
+  {n:5,id:"cascada",name:"Cascada",type:"stream",rarity:"rare",bst:300,hab:"Streamfall",art:"∿∿∿∿\n≋≋(˘ ◡ ˘)>\n‿‿‿‿"},
+  {n:6,id:"torrentide",name:"Torrentide",type:"stream",rarity:"relic",bst:335,hab:"Streamfall",art:"∿∿∿∿∿\n≋≋≋(˘ ◡ ˘)≫\n≈≈≈≈≈"},
+  {n:7,id:"glyphit",name:"Glyphit",type:"syntax",rarity:"common",bst:200,hab:"Syntax Thicket",art:"˖ ˖\n\\+ +/\n(• ◡ •)\n/- -\\"},
+  {n:8,id:"polyglyph",name:"Polyglyph",type:"syntax",rarity:"rare",bst:300,hab:"Syntax Thicket",art:"˖ ˖\n\\\\+ +//\n((• ◡ •))\n//- -\\\\"},
+  {n:9,id:"omniglyph",name:"Omniglyph",type:"syntax",rarity:"relic",bst:333,hab:"Syntax Thicket",art:"˖ ˖ ˖\n\\\\\\+ +///\n=((◆ ◡ ◆))=\n///- -\\\\\\"},
+  {n:10,id:"hoardlet",name:"Hoardlet",type:"cache",rarity:"common",bst:215,hab:"The Cachefen",art:"╭─◠─╮\n(o• ◡ •o)\n╰ $$ ╯"},
+  {n:11,id:"memoize",name:"Memoize",type:"cache",rarity:"common",bst:215,hab:"The Cachefen",art:"╭────╮\n(◕ ◡ ◕)\n╰─◡◡─╯"},
+  {n:12,id:"memoizard",name:"Memoizard",type:"cache",rarity:"uncommon",bst:255,hab:"The Cachefen",art:"╔════╗\n(◕ ◡ ◕)\n╰─◡◡─╯"},
+  {n:13,id:"pinshell",name:"Pinshell",type:"cache",rarity:"uncommon",bst:250,hab:"The Cachefen",art:"╭▩▩▩╮\n(◕ ◡ ◕)\n˘╰──╯˘"},
+  {n:14,id:"staleout",name:"Staleout",type:"cache",rarity:"rare",bst:290,hab:"The Cachefen",art:"╭ ╌╌ ╮\n(◔ ╌ ◔)\n╰ ╌╌ ╯"},
+  {n:15,id:"widecope",name:"Widecope",type:"context",rarity:"common",bst:220,hab:"The Contexta Canopy",art:"╭─────╮\n(◕ ◕ ◕)\n╰──╥──╯"},
+  {n:16,id:"tabsprout",name:"Tabsprout",type:"context",rarity:"common",bst:205,hab:"The Contexta Canopy",art:"▐▌ ▐▌\n(˘ ◡ ˘)\n╰───╯"},
+  {n:17,id:"tabgrove",name:"Tabgrove",type:"context",rarity:"uncommon",bst:250,hab:"The Contexta Canopy",art:"▐▌▐▌▐▌\n(˘ ◡ ˘)\n╰────╯"},
+  {n:18,id:"longwindow",name:"Longwindow",type:"context",rarity:"relic",bst:340,hab:"The Contexta Canopy",art:"▐▌▐▌▐▌▐▌\n(◕ │ ◕)\n╰─────╯"},
+  {n:19,id:"everfile",name:"Everfile",type:"context",rarity:"mythic",bst:400,hab:"The Contexta Canopy",art:"▐█▐█▐█▐█\n(◆ ║ ◆)\n╚══════╝\n˅      ˅"},
+  {n:20,id:"cronkin",name:"Cronkin",type:"daemon",rarity:"uncommon",bst:255,hab:"The Daemon Deep",art:"╭─◷─╮\n(• ◡ •)\n╰┬──┬╯"},
+  {n:21,id:"cronarch",name:"Cronarch",type:"daemon",rarity:"rare",bst:305,hab:"The Daemon Deep",art:"╔═◷═╗\n(◕ ◡ ◕)\n╰┬──┬╯"},
+  {n:22,id:"nightproc",name:"Nightproc",type:"daemon",rarity:"common",bst:215,hab:"The Daemon Deep",art:"☾\n(˘ ω ˘)\n╰─◡─╯\nᶻ ᶻ ᶻ"},
+  {n:23,id:"zombierun",name:"Zombierun",type:"daemon",rarity:"uncommon",bst:250,hab:"The Cachefen",art:"╭ ╌╌ ╮\n(✕ ╌ ✕)\n╰ ╌╌ ╯\n?  ?"},
+  {n:24,id:"uptimewyrm",name:"Uptimewyrm",type:"daemon",rarity:"mythic",bst:380,hab:"The Daemon Deep",art:"∿═∿═∿\n(◕ ω ◕)\n∿═∿═∿\n·365·"},
+  {n:25,id:"stackrail",name:"Stackrail",type:"runtime",rarity:"common",bst:200,hab:"Runtime Ridge",art:"▤▤▤▤▤\n(• ◡ •)\n(═════)\nʌ ʌ ʌ ʌ"},
+  {n:26,id:"threadwolf",name:"Threadwolf",type:"runtime",rarity:"rare",bst:280,hab:"The Daemon Deep",art:"▲ ▲  ▲ ▲\n(◕ᴥ◕)(◕ᴥ◕)\n˘ ˘  ˘ ˘"},
+  {n:27,id:"bufferpup",name:"Bufferpup",type:"stream",rarity:"uncommon",bst:245,hab:"Runtime Ridge",art:"◠   ◠\n(◕ ᴥ ◕)\n╰─◡─╯\n∪   ∪"},
+  {n:28,id:"flashecho",name:"Flashecho",type:"stream",rarity:"rare",bst:285,hab:"Streamfall",art:"≫≫≫\n(> ◡ <)≫\n‿‿‿"},
+  {n:29,id:"bracketail",name:"Bracketail",type:"syntax",rarity:"common",bst:225,hab:"Syntax Thicket",art:"{ [ ] }\n[◕ ◡ ◕]\n{ [ ] }"},
+  {n:30,id:"lintmoth",name:"Lintmoth",type:"syntax",rarity:"uncommon",bst:240,hab:"Syntax Thicket",art:"˖ ˖\n\\] [/\n(˘ ◡ ˘)\n/] [\\"}
 ];
 
 function renderDex(){
   const grid = document.getElementById('dexGrid');
-  grid.innerHTML = DEX.map(s => `
+  grid.innerHTML = DEX.map((s,i) => {
+    const bobDur = (3 + (i%4)*0.35).toFixed(2);
+    const blinkDur = (4.5 + (i%5)*0.7).toFixed(2);
+    const delay = ((i%7)*0.4).toFixed(2);
+    let anim = `dex-bob ${bobDur}s ease-in-out ${delay}s infinite, dex-blink ${blinkDur}s ease-in-out ${delay}s infinite`;
+    if (s.rarity === 'mythic') anim += `, dex-mythflick 3.6s ease-in-out infinite`;
+    return `
     <div class="dexcard t-${s.type} r-${s.rarity}" data-type="${s.type}" data-rarity="${s.rarity}">
       <div class="dn">#${String(s.n).padStart(3,'0')}</div>
       <div class="dname">${s.name}</div>
-      <pre>${s.art}</pre>
+      <pre style="animation:${anim}">${s.art}</pre>
       <div class="dtags">
         <span class="dtag dt-type">${s.type}</span>
         <span class="dtag dt-rarity">${s.rarity}</span>
       </div>
       <div class="faint" style="font-size:9.5px;margin-top:5px">BST ${s.bst} · ${s.hab}</div>
     </div>
-  `).join('');
+  `;
+  }).join('');
   applyDexFilter();
 }
 

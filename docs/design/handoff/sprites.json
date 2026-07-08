@@ -1,0 +1,56 @@
+{
+  "$schema_note": "Codelings redesigned sprite set v2 — drop-in replacement for the `art` fields of the DEX array in running.html (and internal/tui pet faces). Lines are \\n-separated. RENDERING RULE: render in a monospace <pre> with text-align:center; every line is a symmetric unit that self-centers — do NOT left-align or add leading padding. Only monospace-safe glyphs are used (box drawing, geometric shapes, ◕ ◡ ˘ ω ᴥ). Never use full-width CJK punctuation (＼＋《》) — it breaks alignment.",
+  "types": {
+    "cache":   "#54fb7e",
+    "context": "#ffc857",
+    "runtime": "#ff6b7f",
+    "syntax":  "#b18cff",
+    "stream":  "#5fd7ff",
+    "daemon":  "#c8e6c9"
+  },
+  "rarities": {
+    "common":   "#7ba382",
+    "uncommon": "#5fd7ff",
+    "rare":     "#b18cff",
+    "relic":    "#ffc857",
+    "mythic":   "#ff6b7f"
+  },
+  "animation": {
+    "bob":       { "keyframes": "0%,100%: translateY(0); 50%: translateY(-3px)", "duration_s": "3.0 + (index%4)*0.35", "easing": "ease-in-out" },
+    "blink":     { "keyframes": "0%,88%,100%: scaleY(1); 92%,96%: scaleY(0.66)", "duration_s": "4.5 + (index%5)*0.7", "easing": "ease-in-out", "transform_origin": "center 60%" },
+    "mythic_flicker": { "keyframes": "0%,100%: opacity 1; 45%: .55; 47%: .9; 70%: .4; 72%: .95", "duration_s": 3.6 },
+    "stagger_delay_s": "(index%7)*0.4"
+  },
+  "species": [
+    {"n":1,"id":"cindling","name":"Cindling","type":"runtime","rarity":"common","bst":200,"hab":"Runtime Ridge","art":"▴\n(• ◡ •)\n( ─── )\n˘   ˘"},
+    {"n":2,"id":"forgeon","name":"Forgeon","type":"runtime","rarity":"rare","bst":285,"hab":"Runtime Ridge","art":"▴▴▴\n(◕ ◡ ◕)\n(═════)\n˘   ˘"},
+    {"n":3,"id":"pyrolith","name":"Pyrolith","type":"runtime","rarity":"relic","bst":345,"hab":"Runtime Ridge","art":"▲▲▲\n(◆ ◡ ◆)\n(══▣══)\n˘˘   ˘˘"},
+    {"n":4,"id":"rivulet","name":"Rivulet","type":"stream","rarity":"common","bst":200,"hab":"Streamfall","art":"∿∿∿\n≋(° ◡ °)>\n‿‿‿"},
+    {"n":5,"id":"cascada","name":"Cascada","type":"stream","rarity":"rare","bst":300,"hab":"Streamfall","art":"∿∿∿∿\n≋≋(˘ ◡ ˘)>\n‿‿‿‿"},
+    {"n":6,"id":"torrentide","name":"Torrentide","type":"stream","rarity":"relic","bst":335,"hab":"Streamfall","art":"∿∿∿∿∿\n≋≋≋(˘ ◡ ˘)≫\n≈≈≈≈≈"},
+    {"n":7,"id":"glyphit","name":"Glyphit","type":"syntax","rarity":"common","bst":200,"hab":"Syntax Thicket","art":"˖ ˖\n\\+ +/\n(• ◡ •)\n/- -\\"},
+    {"n":8,"id":"polyglyph","name":"Polyglyph","type":"syntax","rarity":"rare","bst":300,"hab":"Syntax Thicket","art":"˖ ˖\n\\\\+ +//\n((• ◡ •))\n//- -\\\\"},
+    {"n":9,"id":"omniglyph","name":"Omniglyph","type":"syntax","rarity":"relic","bst":333,"hab":"Syntax Thicket","art":"˖ ˖ ˖\n\\\\\\+ +///\n=((◆ ◡ ◆))=\n///- -\\\\\\"},
+    {"n":10,"id":"hoardlet","name":"Hoardlet","type":"cache","rarity":"common","bst":215,"hab":"The Cachefen","art":"╭─◠─╮\n(o• ◡ •o)\n╰ $$ ╯"},
+    {"n":11,"id":"memoize","name":"Memoize","type":"cache","rarity":"common","bst":215,"hab":"The Cachefen","art":"╭────╮\n(◕ ◡ ◕)\n╰─◡◡─╯"},
+    {"n":12,"id":"memoizard","name":"Memoizard","type":"cache","rarity":"uncommon","bst":255,"hab":"The Cachefen","art":"╔════╗\n(◕ ◡ ◕)\n╰─◡◡─╯"},
+    {"n":13,"id":"pinshell","name":"Pinshell","type":"cache","rarity":"uncommon","bst":250,"hab":"The Cachefen","art":"╭▩▩▩╮\n(◕ ◡ ◕)\n˘╰──╯˘"},
+    {"n":14,"id":"staleout","name":"Staleout","type":"cache","rarity":"rare","bst":290,"hab":"The Cachefen","art":"╭ ╌╌ ╮\n(◔ ╌ ◔)\n╰ ╌╌ ╯"},
+    {"n":15,"id":"widecope","name":"Widecope","type":"context","rarity":"common","bst":220,"hab":"The Contexta Canopy","art":"╭─────╮\n(◕ ◕ ◕)\n╰──╥──╯"},
+    {"n":16,"id":"tabsprout","name":"Tabsprout","type":"context","rarity":"common","bst":205,"hab":"The Contexta Canopy","art":"▐▌ ▐▌\n(˘ ◡ ˘)\n╰───╯"},
+    {"n":17,"id":"tabgrove","name":"Tabgrove","type":"context","rarity":"uncommon","bst":250,"hab":"The Contexta Canopy","art":"▐▌▐▌▐▌\n(˘ ◡ ˘)\n╰────╯"},
+    {"n":18,"id":"longwindow","name":"Longwindow","type":"context","rarity":"relic","bst":340,"hab":"The Contexta Canopy","art":"▐▌▐▌▐▌▐▌\n(◕ │ ◕)\n╰─────╯"},
+    {"n":19,"id":"everfile","name":"Everfile","type":"context","rarity":"mythic","bst":400,"hab":"The Contexta Canopy","art":"▐█▐█▐█▐█\n(◆ ║ ◆)\n╚══════╝\n˅      ˅"},
+    {"n":20,"id":"cronkin","name":"Cronkin","type":"daemon","rarity":"uncommon","bst":255,"hab":"The Daemon Deep","art":"╭─◷─╮\n(• ◡ •)\n╰┬──┬╯"},
+    {"n":21,"id":"cronarch","name":"Cronarch","type":"daemon","rarity":"rare","bst":305,"hab":"The Daemon Deep","art":"╔═◷═╗\n(◕ ◡ ◕)\n╰┬──┬╯"},
+    {"n":22,"id":"nightproc","name":"Nightproc","type":"daemon","rarity":"common","bst":215,"hab":"The Daemon Deep","art":"☾\n(˘ ω ˘)\n╰─◡─╯\nᶻ ᶻ ᶻ"},
+    {"n":23,"id":"zombierun","name":"Zombierun","type":"daemon","rarity":"uncommon","bst":250,"hab":"The Cachefen","art":"╭ ╌╌ ╮\n(✕ ╌ ✕)\n╰ ╌╌ ╯\n?  ?"},
+    {"n":24,"id":"uptimewyrm","name":"Uptimewyrm","type":"daemon","rarity":"mythic","bst":380,"hab":"The Daemon Deep","art":"∿═∿═∿\n(◕ ω ◕)\n∿═∿═∿\n·365·"},
+    {"n":25,"id":"stackrail","name":"Stackrail","type":"runtime","rarity":"common","bst":200,"hab":"Runtime Ridge","art":"▤▤▤▤▤\n(• ◡ •)\n(═════)\nʌ ʌ ʌ ʌ"},
+    {"n":26,"id":"threadwolf","name":"Threadwolf","type":"runtime","rarity":"rare","bst":280,"hab":"The Daemon Deep","art":"▲ ▲  ▲ ▲\n(◕ᴥ◕)(◕ᴥ◕)\n˘ ˘  ˘ ˘"},
+    {"n":27,"id":"bufferpup","name":"Bufferpup","type":"stream","rarity":"uncommon","bst":245,"hab":"Runtime Ridge","art":"◠   ◠\n(◕ ᴥ ◕)\n╰─◡─╯\n∪   ∪"},
+    {"n":28,"id":"flashecho","name":"Flashecho","type":"stream","rarity":"rare","bst":285,"hab":"Streamfall","art":"≫≫≫\n(> ◡ <)≫\n‿‿‿"},
+    {"n":29,"id":"bracketail","name":"Bracketail","type":"syntax","rarity":"common","bst":225,"hab":"Syntax Thicket","art":"{ [ ] }\n[◕ ◡ ◕]\n{ [ ] }"},
+    {"n":30,"id":"lintmoth","name":"Lintmoth","type":"syntax","rarity":"uncommon","bst":240,"hab":"Syntax Thicket","art":"˖ ˖\n\\] [/\n(˘ ◡ ˘)\n/] [\\"}
+  ]
+}
