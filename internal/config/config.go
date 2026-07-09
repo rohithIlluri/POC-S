@@ -1,7 +1,7 @@
 // Package config holds the companion's local configuration and resolves the
 // on-disk locations it reads from and writes to. Everything lives under the
-// user's home directory; nothing here points at a network location except the
-// enterprise feed URL, which an admin sets explicitly.
+// user's home directory; nothing points at a network location — the companion
+// is fully local.
 package config
 
 import (
@@ -10,31 +10,23 @@ import (
 	"path/filepath"
 )
 
-// Config is the companion's settings. It is intentionally small: the POC favors
-// sensible local defaults over a sprawling config surface.
+// Config is the companion's settings. It is intentionally small: sensible
+// local defaults over a sprawling config surface.
 type Config struct {
-	// FeedURL is the enterprise-hosted manifest the binary polls for tips,
-	// pricing overrides, and self-update info. Empty means "local sample feed".
-	FeedURL string `json:"feed_url"`
-
-	// FeedPublicKey is the base64 ed25519 key used to verify feed signatures.
-	// Empty disables verification (acceptable for the local POC feed only).
-	FeedPublicKey string `json:"feed_public_key"`
-
 	// DailyBudgetUSD is a soft per-developer guidance budget. The companion never
 	// blocks work — it nudges. 0 disables budget nudges.
 	DailyBudgetUSD float64 `json:"daily_budget_usd"`
 
-	// PollInterval is how often the daemon refreshes the feed, in minutes.
-	PollIntervalMin int `json:"poll_interval_min"`
+	// CollectIntervalMin is how often the daemon re-reads local session logs,
+	// in minutes. Collection is cheap (no network, no model calls).
+	CollectIntervalMin int `json:"collect_interval_min"`
 }
 
 // Default returns config with safe local-only defaults.
 func Default() Config {
 	return Config{
-		FeedURL:         "", // local sample feed by default
-		DailyBudgetUSD:  10,
-		PollIntervalMin: 360, // 6h
+		DailyBudgetUSD:     10,
+		CollectIntervalMin: 2,
 	}
 }
 

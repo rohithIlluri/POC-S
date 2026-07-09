@@ -1,7 +1,6 @@
 // Package pricing maps model identifiers to per-token costs so the companion can
-// estimate spend entirely on-device. Prices are USD per 1M tokens. These defaults
-// are bundled so the binary works offline; the enterprise feed can override them
-// at runtime (see internal/feed) without shipping a new binary.
+// estimate spend entirely on-device. Prices are USD per 1M tokens. The table is
+// bundled so the binary works fully offline.
 package pricing
 
 import "strings"
@@ -35,14 +34,6 @@ func Default() *Table {
 		"o4-mini": {Input: 1.10, Output: 4.40, CacheWrite: 1.10, CacheRead: 0.275},
 		"codex":   {Input: 1.25, Output: 10, CacheWrite: 1.25, CacheRead: 0.125},
 	}}
-}
-
-// Override merges feed-supplied rates over the defaults, keyed by the same
-// substring convention. Unknown keys are simply added.
-func (t *Table) Override(rates map[string]Rate) {
-	for k, v := range rates {
-		t.rates[strings.ToLower(k)] = v
-	}
 }
 
 // Lookup returns the rate for a model id and whether a match was found. The

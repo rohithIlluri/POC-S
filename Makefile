@@ -1,16 +1,15 @@
-VERSION ?= 0.1.0
-LDFLAGS := -s -w -X github.com/enterprise/aipet/internal/feed.Version=$(VERSION)
+VERSION ?= 1.0.0
+LDFLAGS := -s -w -X github.com/enterprise/aipet/internal/version.Version=$(VERSION)
 BIN := bin
 
-.PHONY: all build install test vet fmt clean run daemon status feedsign
+.PHONY: all build install test vet fmt clean run daemon status release
 
 all: build
 
-build: ## Build the aipet binary and the feed-signing tool
+build: ## Build the aipet binary
 	@mkdir -p $(BIN)
 	go build -ldflags "$(LDFLAGS)" -o $(BIN)/aipet ./cmd/aipet
-	go build -o $(BIN)/aipet-feedsign ./cmd/aipet-feedsign
-	@echo "built $(BIN)/aipet (v$(VERSION)) and $(BIN)/aipet-feedsign"
+	@echo "built $(BIN)/aipet (v$(VERSION))"
 
 install: build ## Install aipet to $GOBIN
 	go install -ldflags "$(LDFLAGS)" ./cmd/aipet
@@ -33,8 +32,15 @@ daemon: build ## Run the background daemon in the foreground
 status: build ## Collect once and print a summary
 	$(BIN)/aipet status
 
-feedsign: build ## Generate a feed signing keypair
-	$(BIN)/aipet-feedsign keygen
+release: ## Cross-compile release binaries into bin/release
+	@mkdir -p $(BIN)/release
+	GOOS=darwin  GOARCH=arm64 go build -ldflags "$(LDFLAGS)" -o $(BIN)/release/aipet-darwin-arm64 ./cmd/aipet
+	GOOS=darwin  GOARCH=amd64 go build -ldflags "$(LDFLAGS)" -o $(BIN)/release/aipet-darwin-amd64 ./cmd/aipet
+	GOOS=linux   GOARCH=arm64 go build -ldflags "$(LDFLAGS)" -o $(BIN)/release/aipet-linux-arm64 ./cmd/aipet
+	GOOS=linux   GOARCH=amd64 go build -ldflags "$(LDFLAGS)" -o $(BIN)/release/aipet-linux-amd64 ./cmd/aipet
+	GOOS=windows GOARCH=amd64 go build -ldflags "$(LDFLAGS)" -o $(BIN)/release/aipet-windows-amd64.exe ./cmd/aipet
+	cd $(BIN)/release && shasum -a 256 aipet-* > checksums.txt
+	@echo "release artifacts in $(BIN)/release (v$(VERSION))"
 
 clean:
 	rm -rf $(BIN)

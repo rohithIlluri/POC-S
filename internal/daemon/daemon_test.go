@@ -7,7 +7,6 @@ import (
 	"testing"
 
 	"github.com/enterprise/aipet/internal/config"
-	"github.com/enterprise/aipet/internal/feed"
 )
 
 // isolateHome points HOME at a temp dir so daemon cycles read and write only
@@ -33,30 +32,12 @@ func seedClaude(t *testing.T, home string) {
 	}
 }
 
-func writeFeed(t *testing.T, m feed.Manifest) string {
-	t.Helper()
-	b, err := json.Marshal(m)
-	if err != nil {
-		t.Fatal(err)
-	}
-	p := filepath.Join(t.TempDir(), "feed.json")
-	if err := os.WriteFile(p, b, 0o600); err != nil {
-		t.Fatal(err)
-	}
-	return p
-}
-
 // TestRunFullCycle drives collect → aggregate → advise → snapshot end to end.
 func TestRunFullCycle(t *testing.T) {
 	home := isolateHome(t)
 	seedClaude(t, home)
-	cfg := config.Default()
-	cfg.FeedURL = writeFeed(t, feed.Manifest{
-		Version: 1,
-		Tips:    []feed.Tip{{ID: "t1", Title: "tip title", Body: "tip body", Category: "efficiency"}},
-	})
 
-	snap, err := Run(cfg)
+	snap, err := Run(config.Default())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -68,19 +49,6 @@ func TestRunFullCycle(t *testing.T) {
 	}
 	if snap.Stats.TotalCost <= 0 {
 		t.Errorf("opus turn should have positive cost, got %v", snap.Stats.TotalCost)
-	}
-	if !snap.FeedOK || len(snap.Tips) != 1 {
-		t.Errorf("feed should load: ok=%v tips=%d err=%s", snap.FeedOK, len(snap.Tips), snap.FeedError)
-	}
-	// Feed tips must be appended as feed-sourced suggestions.
-	var feedSugs int
-	for _, s := range snap.Suggestions {
-		if s.Source == "feed" {
-			feedSugs++
-		}
-	}
-	if feedSugs != 1 {
-		t.Errorf("expected 1 feed suggestion, got %d", feedSugs)
 	}
 	if len(snap.CollectErrors) != 0 {
 		t.Errorf("unexpected collect errors: %v", snap.CollectErrors)
@@ -100,13 +68,11 @@ func TestRunFullCycle(t *testing.T) {
 func TestRunIdempotent(t *testing.T) {
 	home := isolateHome(t)
 	seedClaude(t, home)
-	cfg := config.Default()
-	cfg.FeedURL = writeFeed(t, feed.Manifest{Version: 1})
 
-	if snap, err := Run(cfg); err != nil || snap.NewEvents != 1 {
+	if snap, err := Run(config.Default()); err != nil || snap.NewEvents != 1 {
 		t.Fatalf("first run: %v / %+v", err, snap)
 	}
-	snap2, err := Run(cfg)
+	snap2, err := Run(config.Default())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -118,36 +84,12 @@ func TestRunIdempotent(t *testing.T) {
 	}
 }
 
-// TestRunSurvivesFeedFailure: a broken feed must not block usage collection.
-func TestRunSurvivesFeedFailure(t *testing.T) {
-	home := isolateHome(t)
-	seedClaude(t, home)
-	cfg := config.Default()
-	cfg.FeedURL = "/nonexistent/feed.json"
-
-	snap, err := Run(cfg)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if snap.FeedOK {
-		t.Error("feed should be reported unavailable")
-	}
-	if snap.FeedError == "" {
-		t.Error("feed error should carry a reason")
-	}
-	if snap.NewEvents != 1 {
-		t.Errorf("collection must proceed despite feed failure, got %d events", snap.NewEvents)
-	}
-}
-
 // TestRunNoTools: with no coding tools installed the cycle still succeeds and
 // reports empty sources — the pet's cold-start experience.
 func TestRunNoTools(t *testing.T) {
 	isolateHome(t)
-	cfg := config.Default()
-	cfg.FeedURL = writeFeed(t, feed.Manifest{Version: 1})
 
-	snap, err := Run(cfg)
+	snap, err := Run(config.Default())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -160,9 +102,7 @@ func TestRunNoTools(t *testing.T) {
 // a torn write (writeSnapshot goes through a tmp file + rename).
 func TestSnapshotAtomicity(t *testing.T) {
 	isolateHome(t)
-	cfg := config.Default()
-	cfg.FeedURL = writeFeed(t, feed.Manifest{Version: 1})
-	if _, err := Run(cfg); err != nil {
+	if _, err := Run(config.Default()); err != nil {
 		t.Fatal(err)
 	}
 	p, _ := SnapshotPath()

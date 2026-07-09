@@ -27,9 +27,7 @@ var (
 	tipStyle   = lipgloss.NewStyle().Foreground(cBlue)
 	warnStyle  = lipgloss.NewStyle().Foreground(cRed).Bold(true)
 
-	sectionStyle  = lipgloss.NewStyle().Bold(true).Foreground(cBlue)
-	categoryStyle = lipgloss.NewStyle().Bold(true).Foreground(cPurple)
-	updateStyle   = lipgloss.NewStyle().Bold(true).Foreground(cYellow)
+	sectionStyle = lipgloss.NewStyle().Bold(true).Foreground(cBlue)
 
 	tabStyle       = lipgloss.NewStyle().Foreground(cGray).Padding(0, 0)
 	activeTabStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("231")).Background(cBlue)

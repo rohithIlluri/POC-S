@@ -3,8 +3,7 @@
 // collected data — it never calls a model — so the guidance itself is free.
 //
 // Rules are deliberately explainable: each suggestion states what was observed,
-// why it costs money, and the specific action to take. Feed-supplied tips
-// (market updates, new model availability) are merged in as a separate category.
+// why it costs money, and the specific action to take.
 package advisor
 
 import (
@@ -42,7 +41,7 @@ type Suggestion struct {
 	Title     string
 	Detail    string
 	SavingUSD float64 // estimated potential daily saving, 0 if not quantifiable
-	Source    string  // "rule" or "feed"
+	Source    string  // suggestion origin; always "rule" in v1
 }
 
 // Inputs is everything a rule may inspect.
@@ -187,7 +186,7 @@ func ruleUnknownModel(in Inputs) []Suggestion {
 	return []Suggestion{{
 		ID: "unknown-model", Severity: Info, Source: "rule",
 		Title:  "Unpriced model(s) detected",
-		Detail: "No price is known for: " + strings.Join(models, ", ") + ". Spend for these turns shows as $0. Ask your admin to add rates to the enterprise feed.",
+		Detail: "No price is known for: " + strings.Join(models, ", ") + ". Spend for these turns shows as $0 until a rate is added to the bundled pricing table.",
 	}}
 }
 

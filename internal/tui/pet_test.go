@@ -18,7 +18,7 @@ func TestViewRenders(t *testing.T) {
 	if !strings.Contains(out, "aipet") {
 		t.Errorf("View() missing title; got:\n%s", out)
 	}
-	for _, want := range []string{"Overview", "Suggestions", "Market"} {
+	for _, want := range []string{"Overview", "Suggestions"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("View() missing tab %q", want)
 		}
@@ -31,8 +31,8 @@ func TestTabSwitching(t *testing.T) {
 	if m.tab != 0 {
 		t.Fatalf("expected initial tab 0, got %d", m.tab)
 	}
-	m.tab = (m.tab + 2) % 3 // simulate "left" from 0
-	if m.tab != 2 {
-		t.Errorf("expected wrap to tab 2, got %d", m.tab)
+	m.tab = (m.tab + 1) % 2 // simulate "left"/"right" from 0 (two tabs wrap the same way)
+	if m.tab != 1 {
+		t.Errorf("expected wrap to tab 1, got %d", m.tab)
 	}
 }

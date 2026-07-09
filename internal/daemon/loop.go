@@ -11,29 +11,23 @@ import (
 	"github.com/enterprise/aipet/internal/config"
 )
 
-// Serve runs the daemon loop until ctx is cancelled, refreshing every interval.
-// It writes a PID file so the TUI can tell whether the companion is alive and so
-// a second daemon refuses to start.
+// Serve runs the daemon loop until ctx is cancelled, re-collecting every
+// collect_interval_min. It writes a PID file so the TUI can tell whether the
+// companion is alive and so a second daemon refuses to start.
 func Serve(ctx context.Context, cfg config.Config) error {
 	if err := acquireLock(); err != nil {
 		return err
 	}
 	defer releaseLock()
 
-	interval := time.Duration(cfg.PollIntervalMin) * time.Minute
-	if interval <= 0 {
-		interval = 6 * time.Hour
+	// Collection is cheap and local (no network, no model calls), so a short
+	// interval keeps the pet fresh without meaningful cost.
+	collectEvery := time.Duration(cfg.CollectIntervalMin) * time.Minute
+	if collectEvery <= 0 {
+		collectEvery = 2 * time.Minute
 	}
-	// Usage collection is cheap and local, so it ticks every couple of minutes;
-	// the (possibly remote) feed is fetched through a cache that honors the
-	// configured poll interval.
-	collectEvery := 2 * time.Minute
-	if collectEvery > interval {
-		collectEvery = interval
-	}
-	fc := &FeedCache{}
 
-	if _, err := RunCycle(cfg, fc); err != nil {
+	if _, err := Run(cfg); err != nil {
 		fmt.Fprintf(os.Stderr, "aipet: initial cycle: %v\n", err)
 	}
 
@@ -44,7 +38,7 @@ func Serve(ctx context.Context, cfg config.Config) error {
 		case <-ctx.Done():
 			return nil
 		case <-t.C:
-			if _, err := RunCycle(cfg, fc); err != nil {
+			if _, err := Run(cfg); err != nil {
 				fmt.Fprintf(os.Stderr, "aipet: cycle: %v\n", err)
 			}
 		}

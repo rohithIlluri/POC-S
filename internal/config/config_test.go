@@ -30,10 +30,8 @@ func TestLoadDefaultsWhenMissing(t *testing.T) {
 func TestSaveLoadRoundtrip(t *testing.T) {
 	isolateHome(t)
 	want := Config{
-		FeedURL:         "https://feed.corp/aipet.json",
-		FeedPublicKey:   "abc123",
-		DailyBudgetUSD:  25.5,
-		PollIntervalMin: 60,
+		DailyBudgetUSD:     25.5,
+		CollectIntervalMin: 7,
 	}
 	if err := want.Save(); err != nil {
 		t.Fatal(err)
@@ -98,8 +96,8 @@ func TestPartialConfigKeepsDefaults(t *testing.T) {
 	if cfg.DailyBudgetUSD != 3 {
 		t.Errorf("explicit key lost: %v", cfg.DailyBudgetUSD)
 	}
-	if cfg.PollIntervalMin != Default().PollIntervalMin {
-		t.Errorf("unset key should keep default %d, got %d", Default().PollIntervalMin, cfg.PollIntervalMin)
+	if cfg.CollectIntervalMin != Default().CollectIntervalMin {
+		t.Errorf("unset key should keep default %d, got %d", Default().CollectIntervalMin, cfg.CollectIntervalMin)
 	}
 }
 

@@ -31,12 +31,3 @@ func TestCostKnownAndUnknown(t *testing.T) {
 		t.Errorf("unknown model should cost 0, got %v", c)
 	}
 }
-
-func TestOverride(t *testing.T) {
-	tbl := Default()
-	tbl.Override(map[string]Rate{"opus": {Input: 1, Output: 1}})
-	r, _ := tbl.Lookup("claude-opus-4-8")
-	if r.Input != 1 {
-		t.Errorf("override not applied: %+v", r)
-	}
-}

@@ -1,7 +1,7 @@
 // Package tui renders the companion — a small terminal "pet" that shows live
-// spend, money-saving suggestions, and market updates. It reads the daemon's
-// snapshot on a timer, so the UI stays responsive and works even if the daemon
-// is briefly down. No network or model calls happen here.
+// spend and money-saving suggestions. It reads the daemon's snapshot on a
+// timer, so the UI stays responsive and works even if the daemon is briefly
+// down. No network or model calls happen here.
 package tui
 
 import (
@@ -42,7 +42,7 @@ type Model struct {
 	snap     *daemon.Snapshot
 	mood     mood
 	frame    int
-	tab      int // 0 = overview, 1 = suggestions, 2 = market
+	tab      int // 0 = overview, 1 = suggestions
 	width    int
 	height   int
 	daemonUp bool
@@ -104,15 +104,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "q", "ctrl+c", "esc":
 			return m, tea.Quit
 		case "tab", "right", "l":
-			m.tab = (m.tab + 1) % 3
+			m.tab = (m.tab + 1) % 2
 		case "left", "h":
-			m.tab = (m.tab + 2) % 3
+			m.tab = (m.tab + 1) % 2
 		case "1":
 			m.tab = 0
 		case "2":
 			m.tab = 1
-		case "3":
-			m.tab = 2
 		case "r":
 			m.refresh()
 		}
@@ -132,8 +130,6 @@ func (m Model) View() string {
 		b.WriteString(m.overview())
 	case 1:
 		b.WriteString(m.suggestions())
-	case 2:
-		b.WriteString(m.market())
 	}
 	b.WriteString("\n")
 	b.WriteString(m.footer())
@@ -163,7 +159,7 @@ func (m Model) header() string {
 }
 
 func (m Model) tabBar() string {
-	labels := []string{"Overview", "Suggestions", "Market"}
+	labels := []string{"Overview", "Suggestions"}
 	var tabs []string
 	for i, l := range labels {
 		if i == m.tab {
@@ -216,9 +212,6 @@ func (m Model) suggestions() string {
 	var b strings.Builder
 	shown := 0
 	for _, s := range m.snap.Suggestions {
-		if s.Source == "feed" {
-			continue // feed items live in the Market tab
-		}
 		b.WriteString(renderSuggestion(s))
 		shown++
 		if shown >= 6 {
@@ -231,35 +224,13 @@ func (m Model) suggestions() string {
 	return b.String()
 }
 
-func (m Model) market() string {
-	if m.snap == nil || len(m.snap.Tips) == 0 {
-		return dimStyle.Render("  No market updates yet. The feed refreshes periodically.")
-	}
-	var b strings.Builder
-	if m.snap.UpdateAvailable && m.snap.UpdateInfo != nil {
-		b.WriteString(updateStyle.Render(fmt.Sprintf("  ⬆ Update available: v%s — run `aipet update`", m.snap.UpdateInfo.LatestVersion)))
-		b.WriteString("\n\n")
-	}
-	for _, t := range m.snap.Tips {
-		cat := categoryStyle.Render(strings.ToUpper(t.Category))
-		b.WriteString(fmt.Sprintf("  %s  %s\n", cat, lipgloss.NewStyle().Bold(true).Render(t.Title)))
-		b.WriteString(dimStyle.Render("  "+wrap(t.Body, max(40, m.width-4))) + "\n\n")
-	}
-	return b.String()
-}
-
 func (m Model) footer() string {
 	help := "tab/←→ switch · r refresh · q quit"
-	feed := ""
+	status := ""
 	if m.snap != nil {
-		if m.snap.FeedOK {
-			feed = okStyle.Render("feed ok")
-		} else {
-			feed = warnStyle.Render("feed: " + trunc(m.snap.FeedError, 30))
-		}
 		if n := len(m.snap.CollectErrors); n > 0 {
-			feed += "  " + warnStyle.Render(fmt.Sprintf("%d collect error(s)", n))
+			status = warnStyle.Render(fmt.Sprintf("%d collect error(s)", n))
 		}
 	}
-	return dimStyle.Render(help) + "   " + feed
+	return dimStyle.Render(help) + "   " + status
 }
