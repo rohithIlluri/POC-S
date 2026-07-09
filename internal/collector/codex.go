@@ -81,7 +81,7 @@ func collectCodexFile(path string, st *store.Store, prices *pricing.Table) (int,
 	}
 	defer f.Close()
 
-	session := strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
+	session := sanitizeField(strings.TrimSuffix(filepath.Base(path), filepath.Ext(path)))
 	project := projectName(filepath.Base(filepath.Dir(path)))
 
 	var added, idx int
@@ -97,7 +97,7 @@ func collectCodexFile(path string, st *store.Store, prices *pricing.Table) (int,
 		if usage == nil {
 			continue
 		}
-		model := l.Model
+		model := sanitizeField(l.Model)
 		if model == "" {
 			model = "codex" // fall back to the generic codex rate
 		}

@@ -90,9 +90,9 @@ func collectClaudeFile(path string, st *store.Store, prices *pricing.Table) (int
 		e := store.Event{
 			Key:        key,
 			Source:     "claude-code",
-			Session:    l.SessionID,
+			Session:    sanitizeField(l.SessionID),
 			Project:    projectName(l.Cwd),
-			Model:      l.Message.Model,
+			Model:      sanitizeField(l.Message.Model),
 			Timestamp:  l.Timestamp,
 			Input:      usage.Input,
 			Output:     usage.Output,
@@ -108,9 +108,11 @@ func collectClaudeFile(path string, st *store.Store, prices *pricing.Table) (int
 }
 
 // projectName shortens a cwd to its base directory for readable grouping.
+// The cwd is untrusted log content, so the result is control-char sanitized
+// (filepath.Base does not strip escape sequences).
 func projectName(cwd string) string {
 	if cwd == "" {
 		return "(unknown)"
 	}
-	return filepath.Base(cwd)
+	return sanitizeField(filepath.Base(cwd))
 }

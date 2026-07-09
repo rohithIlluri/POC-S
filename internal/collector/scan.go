@@ -28,7 +28,10 @@ type fileErrors struct {
 
 func (e *fileErrors) add(path string, err error) {
 	if err != nil {
-		e.msgs = append(e.msgs, fmt.Sprintf("%s: %v", path, err))
+		// The path (and any filename inside err) is untrusted and reaches the
+		// terminal unescaped via `status`/TUI, so strip control characters that
+		// could smuggle terminal escape sequences.
+		e.msgs = append(e.msgs, sanitizeField(fmt.Sprintf("%s: %v", path, err)))
 	}
 }
 
