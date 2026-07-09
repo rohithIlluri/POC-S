@@ -28,6 +28,10 @@ func Default() *Table {
 		"opus":   {Input: 15, Output: 75, CacheWrite: 18.75, CacheRead: 1.50},
 		"sonnet": {Input: 3, Output: 15, CacheWrite: 3.75, CacheRead: 0.30},
 		"haiku":  {Input: 0.80, Output: 4, CacheWrite: 1.0, CacheRead: 0.08},
+		// Fable is a Claude Code model id observed in session logs; public list
+		// prices are not published, so we approximate at Sonnet rates to avoid
+		// silently under-counting spend (unknown models cost $0 otherwise).
+		"fable": {Input: 3, Output: 15, CacheWrite: 3.75, CacheRead: 0.30},
 		// OpenAI (Codex) — representative coding-model rates.
 		"gpt-5":   {Input: 1.25, Output: 10, CacheWrite: 1.25, CacheRead: 0.125},
 		"gpt-4.1": {Input: 2, Output: 8, CacheWrite: 2, CacheRead: 0.50},
@@ -60,6 +64,12 @@ type Usage struct {
 	CacheRead  int64
 }
 
+// Known reports whether the table has a rate for model (substring match).
+func (t *Table) Known(model string) bool {
+	_, ok := t.Lookup(model)
+	return ok
+}
+
 // Cost returns the estimated USD cost of a turn. Unknown models cost 0 so the
 // companion never invents spend it can't justify; the advisor flags unknowns.
 func (t *Table) Cost(model string, u Usage) float64 {
@@ -72,4 +82,18 @@ func (t *Table) Cost(model string, u Usage) float64 {
 		float64(u.Output)/per*r.Output +
 		float64(u.CacheWrite)/per*r.CacheWrite +
 		float64(u.CacheRead)/per*r.CacheRead
+}
+
+// RepriceEvent recomputes an event's cost from the current table when the
+// model is known, leaving it unchanged (typically $0) otherwise. Historical
+// rows written while a model was unpriced stay at $0 on disk; callers use
+// this so live stats reflect today's rates without rewriting the
+// append-only log.
+func (t *Table) RepriceEvent(model string, input, output, cacheWrite, cacheRead int64, cost float64) float64 {
+	if !t.Known(model) {
+		return cost
+	}
+	return t.Cost(model, Usage{
+		Input: input, Output: output, CacheWrite: cacheWrite, CacheRead: cacheRead,
+	})
 }

@@ -10,9 +10,11 @@ to disk*) and:
 - 🪙 **coaches you to spend fewer tokens** — flags Opus overuse, low cache reuse, context bloat
 - ⚡ **improves efficiency** — model-routing tips, session hygiene, prompt caching
 - 🏆 **keeps score** — a local leaderboard of your top projects, models, best cache-reuse days, and streaks
-- 🐣 **is the seed of a game** — the same on-device engine powers *Codelings*, a
-  pocket-monster game where your real coding activity raises a companion creature
-  (see [`docs/GAME_DESIGN.md`](docs/GAME_DESIGN.md))
+- 🐣 **raises a Codeling** — a real pocket-monster-style companion that hatches
+  from an egg after 3 active days, grows stats from how you actually work
+  (cache reuse, model routing, streaks, variety), and evolves — the same
+  advisor rules that produce Suggestions double as its diet
+  (see [`docs/GAME_DESIGN.md`](docs/GAME_DESIGN.md) and [`docs/design/`](docs/design/) for the full 30-species Dex, economy, and lore)
 
 ## Why it's safe
 
@@ -35,8 +37,10 @@ to disk*) and:
 Claude Code / Codex                ~/.aipet/
   session logs (on disk)             usage.db       append-only event log
         │                            snapshot.json  daemon → TUI state
-        ▼                            config.json    local settings
-                                     scanstate.json skip-unchanged fingerprints
+        │                            config.json    local settings
+        │                            scanstate.json skip-unchanged fingerprints
+        │                            pet.json       the Codeling's save
+        ▼                            journal.jsonl  pet's life log
   ┌───────────┐   collect    ┌──────────┐  advise   ┌──────────┐
   │ collector │ ───────────▶ │  store   │ ────────▶ │ advisor  │
   └───────────┘  (0 tokens)  └──────────┘           └──────────┘
@@ -44,7 +48,9 @@ Claude Code / Codex                ~/.aipet/
         │                          ▼                      ▼
   ┌───────────┐             ┌──────────────┐        ┌──────────┐
   │  daemon   │ ──────────▶ │ leaderboard  │        │   TUI    │ ← the "pet"
-  └───────────┘  snapshot   └──────────────┘        └──────────┘
+  └───────────┘   │ snap    └──────────────┘        └──────────┘
+                   │
+                   ▼  digest ──▶ care (diet) ──▶ sim (tick/evolve) ──▶ save
 ```
 
 - **`internal/collector`** — parses Claude Code / Codex session logs into normalized usage events (no network, no LLM), sanitizing untrusted fields.
@@ -52,8 +58,12 @@ Claude Code / Codex                ~/.aipet/
 - **`internal/store`** — append-only JSONL event log with idempotent dedupe (no external DB).
 - **`internal/advisor`** — explainable rules that turn usage into money-saving suggestions.
 - **`internal/leaderboard`** — rankings and personal records, computed on-device.
-- **`internal/daemon`** — background collect loop; publishes an atomic snapshot.
-- **`internal/tui`** — the Bubble Tea pet (Overview / Suggestions / Records).
+- **`internal/species`** — the embedded 30-species Codelings Dex (stats, evolution rules, sprites, flavor).
+- **`internal/care`** — the advisor's rules, reborn as diet verdicts (junk food, rich food, balanced…) that drive the pet's health/XP.
+- **`internal/sim`** — the deterministic pet simulation: DNA/IVs, daily tick, leveling, evolution. A pure function of (pet, digest, seed) — no wall clock, no floats, fully replayable.
+- **`internal/save`** — atomic `pet.json` + append-only `journal.jsonl`.
+- **`internal/daemon`** — background collect loop; runs at most one pet tick per calendar day (with catch-up for missed days) and publishes an atomic snapshot.
+- **`internal/tui`** — the Bubble Tea pet (Pet / Overview / Suggestions / Records).
 
 ## Install
 
@@ -88,9 +98,30 @@ aipet leaderboard    # rankings + personal records (add --json for scripts)
 aipet daemon         # run the background watcher
 ```
 
-The TUI has three tabs — **Overview** (spend, budget bar, top models/projects),
+The TUI has four tabs — **Pet** (your Codeling: egg or hatchling, level, health,
+stats, recent journal), **Overview** (spend, budget bar, top models/projects),
 **Suggestions** (efficiency advice with estimated savings), and **Records** (the
-local leaderboard). Navigate with `tab`/`←→` or `1`/`2`/`3`; `q` quits.
+local leaderboard). Navigate with `tab`/`←→` or `1`–`4`; `q` quits.
+
+### Your Codeling
+
+An egg starts warming the first time the daemon (or `aipet status`) runs. After
+3 active days, it hatches — which of the three starter lines it picks depends
+on how those days looked:
+
+- **Ember** (long, focused sessions) → Cindling → Forgeon → Pyrolith
+- **Stream** (fast, cache-heavy iteration) → Rivulet → Cascada → Torrentide
+- **Vector** (breadth across projects/models) → Glyphit → Polyglyph → Omniglyph
+
+From there it grows daily: the same signals the advisor already coaches
+(cache reuse, model routing, session hygiene, budget discipline) become its
+diet — a healthy day is a full-XP "balanced diet," a low-cache-reuse day is
+"junk food," blowing past budget caps XP for the day at zero. Evolution needs
+both a level (12, then 30) and the right dominant stat, so it's earned by
+habit, not by grinding. Neglect never punishes: an idle pet's mood just fades,
+and after 7 days it quietly hibernates — waking up happy, with zero guilt,
+whenever you're back. The full 30-species Dex, rarity tiers, and battle system
+are designed in [`docs/design/`](docs/design/) for a future release.
 
 ## Configuration
 

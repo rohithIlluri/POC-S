@@ -17,6 +17,7 @@ import (
 	"github.com/rohithIlluri/POC-S/pocs/aipet/internal/config"
 	"github.com/rohithIlluri/POC-S/pocs/aipet/internal/leaderboard"
 	"github.com/rohithIlluri/POC-S/pocs/aipet/internal/pricing"
+	"github.com/rohithIlluri/POC-S/pocs/aipet/internal/sim"
 	"github.com/rohithIlluri/POC-S/pocs/aipet/internal/store"
 )
 
@@ -26,9 +27,11 @@ type Snapshot struct {
 	Stats         store.Stats          `json:"stats"`
 	Suggestions   []advisor.Suggestion `json:"suggestions"`
 	Board         leaderboard.Board    `json:"board"`
+	Pet           sim.Pet              `json:"pet"`
 	Sources       map[string]bool      `json:"sources"` // detected tool dirs
 	NewEvents     int                  `json:"new_events"`
 	CollectErrors []string             `json:"collect_errors,omitempty"` // non-fatal per-source errors
+	PetError      string               `json:"pet_error,omitempty"`      // non-fatal: pet tick failed, rest of the cycle still published
 }
 
 // Run executes one collect+advise cycle and writes a snapshot. Everything is
@@ -36,6 +39,14 @@ type Snapshot struct {
 // callers (status, TUI launch) pay the store load each time; the daemon loop
 // uses runCycle with a store it keeps open instead.
 func Run(cfg config.Config) (*Snapshot, error) {
+	return RunCycleAt(cfg, time.Now())
+}
+
+// RunCycleAt is Run with an explicit "now", so tests can drive multi-day pet
+// growth and catch-up deterministically instead of depending on wall-clock
+// time. Production code should call Run; RunCycleAt exists for tests and for
+// any future replay/backfill tooling.
+func RunCycleAt(cfg config.Config, now time.Time) (*Snapshot, error) {
 	dbPath, err := config.DBPath()
 	if err != nil {
 		return nil, err
@@ -45,15 +56,18 @@ func Run(cfg config.Config) (*Snapshot, error) {
 		return nil, err
 	}
 	defer st.Close()
-	return runCycle(cfg, st, loadScanState())
+	return runCycle(cfg, st, loadScanState(), now)
 }
 
-// runCycle collects into an already-open store and publishes a snapshot.
-// The scan state lets unchanged session-log files be skipped entirely; it is
-// saved best-effort after the cycle (a lost save only means re-scanning).
-func runCycle(cfg config.Config, st *store.Store, scan *collector.ScanState) (*Snapshot, error) {
+// runCycle collects into an already-open store, advances the pet, and
+// publishes a snapshot. The scan state lets unchanged session-log files be
+// skipped entirely; it is saved best-effort after the cycle (a lost save only
+// means re-scanning). "now" flows through to everything time-dependent
+// (leaderboard windows, the pet's calendar-day tick) so the daemon loop and
+// deterministic tests share one code path.
+func runCycle(cfg config.Config, st *store.Store, scan *collector.ScanState, now time.Time) (*Snapshot, error) {
 	prices := pricing.Default()
-	snap := &Snapshot{Sources: map[string]bool{}, UpdatedAt: time.Now()}
+	snap := &Snapshot{Sources: map[string]bool{}, UpdatedAt: now}
 
 	// Collect from whichever tools are present; absence is not an error, but a
 	// real failure (permissions, corrupt tree) is recorded without aborting the
@@ -88,7 +102,16 @@ func runCycle(cfg config.Config, st *store.Store, scan *collector.ScanState) (*S
 		Events:         events,
 		DailyBudgetUSD: cfg.DailyBudgetUSD,
 	}, advisor.DefaultRules())
-	snap.Board = leaderboard.Compute(events, time.Now())
+	snap.Board = leaderboard.Compute(events, now)
+
+	pet, err := runPetTick(events, cfg, now)
+	if err != nil {
+		// The pet is gameplay, not the companion's core coaching function —
+		// a tick failure must never block spend advice or the leaderboard.
+		snap.PetError = err.Error()
+	} else {
+		snap.Pet = pet
+	}
 
 	if err := writeSnapshot(snap); err != nil {
 		return snap, err

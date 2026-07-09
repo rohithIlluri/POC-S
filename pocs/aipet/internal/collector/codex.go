@@ -132,7 +132,11 @@ func collectCodexFile(path string, st *store.Store, prices *pricing.Table) (int,
 			CacheRead: usage.CacheRead,
 			CostUSD:   prices.Cost(model, *usage),
 		}
-		if ok, _ := st.Append(e); ok {
+		ok, aerr := st.Append(e)
+		if aerr != nil {
+			return added, aerr
+		}
+		if ok {
 			added++
 		}
 	}

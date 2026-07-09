@@ -20,22 +20,22 @@ func TestViewRenders(t *testing.T) {
 	if !strings.Contains(out, "aipet") {
 		t.Errorf("View() missing title; got:\n%s", out)
 	}
-	for _, want := range []string{"Overview", "Suggestions", "Records"} {
+	for _, want := range []string{"Pet", "Overview", "Suggestions", "Records"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("View() missing tab %q", want)
 		}
 	}
 }
 
-// TestTabSwitching verifies tab navigation wraps correctly.
+// TestTabSwitching verifies tab navigation wraps correctly across all 4 tabs.
 func TestTabSwitching(t *testing.T) {
 	m := New(config.Default())
 	if m.tab != 0 {
 		t.Fatalf("expected initial tab 0, got %d", m.tab)
 	}
-	m.tab = (m.tab + 2) % 3 // simulate "left" from 0
-	if m.tab != 2 {
-		t.Errorf("expected wrap to tab 2, got %d", m.tab)
+	m.tab = (m.tab + tabCount - 1) % tabCount // simulate "left" from 0: wraps to the last tab
+	if m.tab != tabCount-1 {
+		t.Errorf("expected wrap to tab %d, got %d", tabCount-1, m.tab)
 	}
 }
 
@@ -43,7 +43,7 @@ func TestTabSwitching(t *testing.T) {
 // snapshot — rankings and personal records must both appear.
 func TestRecordsTabRenders(t *testing.T) {
 	m := New(config.Default())
-	m.tab = 2
+	m.tab = 3
 	m.snap = &daemon.Snapshot{
 		Board: leaderboard.Board{
 			TopProjects: []leaderboard.Entry{{Name: "webapp", Value: 12.34}},

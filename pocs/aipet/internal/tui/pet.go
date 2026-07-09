@@ -17,6 +17,7 @@ import (
 	"github.com/rohithIlluri/POC-S/pocs/aipet/internal/config"
 	"github.com/rohithIlluri/POC-S/pocs/aipet/internal/daemon"
 	"github.com/rohithIlluri/POC-S/pocs/aipet/internal/leaderboard"
+	"github.com/rohithIlluri/POC-S/pocs/aipet/internal/save"
 	"github.com/rohithIlluri/POC-S/pocs/aipet/internal/store"
 )
 
@@ -40,17 +41,20 @@ type tickMsg time.Time
 
 // Model is the Bubble Tea model for the pet.
 type Model struct {
-	cfg      config.Config
-	snap     *daemon.Snapshot
-	snapMod  time.Time // snapshot file mtime at last parse
-	mood     mood
-	frame    int
-	tab      int // 0 = overview, 1 = suggestions, 2 = records
-	width    int
-	height   int
-	daemonUp bool
-	err      string
+	cfg            config.Config
+	snap           *daemon.Snapshot
+	snapMod        time.Time // snapshot file mtime at last parse
+	mood           mood
+	frame          int
+	tab            int // 0 = pet, 1 = overview, 2 = suggestions, 3 = records
+	width          int
+	height         int
+	daemonUp       bool
+	err            string
+	journalEntries []save.Entry
 }
+
+const tabCount = 4
 
 // New builds the TUI model, loading any existing snapshot immediately.
 func New(cfg config.Config) Model {
@@ -80,6 +84,9 @@ func (m *Model) refresh(force bool) {
 				}
 			}
 		}
+	}
+	if j, err := save.ReadJournal(); err == nil {
+		m.journalEntries = j
 	}
 	_, m.daemonUp = daemon.Running()
 	m.mood = m.computeMood()
@@ -119,15 +126,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "q", "ctrl+c", "esc":
 			return m, tea.Quit
 		case "tab", "right", "l":
-			m.tab = (m.tab + 1) % 3
+			m.tab = (m.tab + 1) % tabCount
 		case "left", "h":
-			m.tab = (m.tab + 2) % 3
+			m.tab = (m.tab + tabCount - 1) % tabCount
 		case "1":
 			m.tab = 0
 		case "2":
 			m.tab = 1
 		case "3":
 			m.tab = 2
+		case "4":
+			m.tab = 3
 		case "r":
 			m.refresh(true)
 		}
@@ -144,10 +153,12 @@ func (m Model) View() string {
 	b.WriteString("\n\n")
 	switch m.tab {
 	case 0:
-		b.WriteString(m.overview())
+		b.WriteString(m.pet())
 	case 1:
-		b.WriteString(m.suggestions())
+		b.WriteString(m.overview())
 	case 2:
+		b.WriteString(m.suggestions())
+	case 3:
 		b.WriteString(m.records())
 	}
 	b.WriteString("\n")
@@ -178,7 +189,7 @@ func (m Model) header() string {
 }
 
 func (m Model) tabBar() string {
-	labels := []string{"Overview", "Suggestions", "Records"}
+	labels := []string{"Pet", "Overview", "Suggestions", "Records"}
 	var tabs []string
 	for i, l := range labels {
 		if i == m.tab {

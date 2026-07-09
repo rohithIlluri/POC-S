@@ -109,7 +109,11 @@ func collectClaudeFile(path string, st *store.Store, prices *pricing.Table) (int
 			CacheRead:  usage.CacheRead,
 			CostUSD:    prices.Cost(l.Message.Model, usage),
 		}
-		if ok, _ := st.Append(e); ok {
+		ok, aerr := st.Append(e)
+		if aerr != nil {
+			return added, aerr
+		}
+		if ok {
 			added++
 		}
 	}

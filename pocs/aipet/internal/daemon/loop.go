@@ -44,7 +44,7 @@ func Serve(ctx context.Context, cfg config.Config) error {
 		collectEvery = 2 * time.Minute
 	}
 
-	if _, err := runCycle(cfg, st, scan); err != nil {
+	if _, err := runCycle(cfg, st, scan, time.Now()); err != nil {
 		fmt.Fprintf(os.Stderr, "aipet: initial cycle: %v\n", err)
 	}
 
@@ -55,7 +55,9 @@ func Serve(ctx context.Context, cfg config.Config) error {
 		case <-ctx.Done():
 			return nil
 		case <-t.C:
-			if _, err := runCycle(cfg, st, scan); err != nil {
+			// Fresh time.Now() per tick keeps the pet's calendar-day logic
+			// correct across midnight in a long-lived daemon process.
+			if _, err := runCycle(cfg, st, scan, time.Now()); err != nil {
 				fmt.Fprintf(os.Stderr, "aipet: cycle: %v\n", err)
 			}
 		}

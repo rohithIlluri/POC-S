@@ -1,6 +1,16 @@
 # Integration Plan — one local binary: efficiency tool + Codelings game
 
-**Status:** design, self-reviewed to prod-ready (see §12 iteration log)
+> **⚠ Superseded in part by implementation (2026-07-10).** The core of this
+> plan is now BUILT and merged: the deterministic game layer lives in
+> `internal/sim` (DNA/IVs/daily tick/evolution), `internal/care` (advisor
+> rules as diet verdicts), `internal/species` (embedded 30-species Dex), and
+> `internal/save` (pet.json + journal.jsonl) — wired into the daemon's
+> `runCycle` and a new Pet TUI tab. Where this doc says `internal/game`, read
+> those four packages; they are the implementation of record. Still-unbuilt
+> sections (encounters, battles, trading — M3/M4) remain valid design
+> references alongside `docs/design/rarity.md` and `docs/design/moves.md`.
+
+**Status:** design, superseded in part by shipped code (see banner above)
 **Author:** engineering
 **Scope:** merge the shipped `aipet` cost/efficiency companion and the designed
 `Codelings` game into a single, fully-local binary whose **backend work costs
