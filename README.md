@@ -7,10 +7,11 @@ A collection of proof-of-concept projects. Each POC is self-contained in its own
 | POC | Description | Status |
 |---|---|---|
 | [`pocs/ccr`](pocs/ccr) | Multi coding tools router — classifies a coding prompt by task type/complexity and runs it with Claude Code or Codex on a matched model | ✅ Active |
+| [`pocs/aipet`](pocs/aipet) | Local AI-usage companion — a terminal "pet" that reads Claude Code / Codex session logs on-device to coach token spend, rank a local leaderboard, and seed the *Codelings* game. Fully local, zero network surface | ✅ Active (v1.0.0) |
 
 ## Conventions
 
-- **One directory per POC** (`pocs/<name>/`), fully self-contained: own `package.json` (or equivalent), own README with setup/usage, own tests.
+- **One directory per POC** (`pocs/<name>/`), fully self-contained: own `package.json` / `go.mod` (or equivalent), own README with setup/usage, own tests.
 - **One branch + one PR per POC**, squash-merged so master history reads as one commit per meaningful change.
 - **Path-scoped CI**: each POC gets its own workflow (`.github/workflows/ci-<name>.yml`) filtered on `pocs/<name>/**`, so unrelated POCs never trigger or break each other's builds.
 - **Root stays minimal**: this index, shared repo config (`.github/`, `.gitignore`, `LICENSE`), nothing else.
