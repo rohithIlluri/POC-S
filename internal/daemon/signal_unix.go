@@ -2,8 +2,17 @@
 
 package daemon
 
-import "syscall"
+import (
+	"os"
+	"syscall"
+)
 
-// syscallZero is signal 0, used to probe process liveness without delivering a
-// real signal. Defined per-platform so a future Windows build can stub it.
-var syscallZero = syscall.Signal(0)
+// processAlive reports whether a process with the given pid exists. On Unix,
+// signal 0 probes liveness without delivering a real signal.
+func processAlive(pid int) bool {
+	proc, err := os.FindProcess(pid)
+	if err != nil {
+		return false
+	}
+	return proc.Signal(syscall.Signal(0)) == nil
+}

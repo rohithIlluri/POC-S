@@ -440,18 +440,25 @@
 <div class="board" style="margin-top:22px">
   <div class="board-title"><span>MILESTONE BOARD</span><span class="live">▮ LIVE — updated as we build</span></div>
 
-  <div class="mrow is-todo">
-    <div class="mid glow-a">M0</div>
-    <div class="mname">Backend teardown<small>delete feed / feedsign / update · slim daemon &amp; config · drop Market tab</small></div>
-    <div class="bar"><span class="fill"></span>░░░░░░░░░░░░░░░░░░░░ 0%</div>
-    <div class="st st-todo">QUEUED</div>
+  <div class="mrow is-done">
+    <div class="mid">M0</div>
+    <div class="mname">Backend teardown<small>feed / feedsign / update deleted · daemon &amp; config slimmed · Market tab gone · all tests green</small></div>
+    <div class="bar"><span class="fill">████████████████████</span> 100%</div>
+    <div class="st st-done">SHIPPED ✓</div>
+  </div>
+
+  <div class="mrow is-done">
+    <div class="mid">V1</div>
+    <div class="mname">Leaderboard + security + release<small>local leaderboard (CLI + Records tab) · terminal-escape audit fixed · cross-platform v1.0.0 binaries</small></div>
+    <div class="bar"><span class="fill">████████████████████</span> 100%</div>
+    <div class="st st-done">SHIPPED ✓</div>
   </div>
 
   <div class="mrow">
     <div class="mid">M1</div>
     <div class="mname">A pet is born<small>sim core (DNA · tick · XP · levels) · save files · egg → hatch → evolve · Pet tab</small></div>
     <div class="bar">░░░░░░░░░░░░░░░░░░░░ 0%</div>
-    <div class="st st-todo">PLANNED</div>
+    <div class="st st-todo">NEXT</div>
   </div>
 
   <div class="mrow">
@@ -908,6 +915,7 @@ internal/tui/            <span class="new">MORPH</span> <span class="c">game scr
   <div class="sec-head"><span class="sec-num">10</span><h2>Build changelog</h2></div>
   <p class="dim">This sheet is maintained as we progress — every milestone update lands here and on the board above.</p>
   <ul class="clog">
+    <li><span class="ts">2026-07-09</span><b>v1.0.0 shipped.</b> M0 backend teardown landed (enterprise feed stack, feedsign tool, and update command all deleted; daemon &amp; config slimmed; Market tab replaced). New local <b>leaderboard</b> — top projects/models, best cache-reuse days, streaks, and personal records — as an <code>aipet leaderboard</code> command (with <code>--json</code>) and a Records TUI tab. Full <b>security audit</b> (docs/SECURITY_AUDIT.md): one Medium finding — terminal-escape injection from untrusted session-log content — fixed at the collector boundary with tests; path traversal, XSS, and pidfile handling reviewed and cleared. Cross-platform release binaries (darwin/linux/windows × amd64/arm64) with SHA-256 checksums; a latent Windows-build bug (signal 0) was fixed in the process. Suite passes under -race.</li>
     <li><span class="ts">2026-07-08</span><b>Sprite redesign v2 applied.</b> All 30 Dex sprites replaced with a cleaner, alignment-safe Unicode set from an external design pass (handoff: <code>design_handoff_codelings_sprites</code>) — softer faces (<code>◕ ◡ ◔ ω ᴥ</code>), fewer strokes, evolution reads as growth (heavier borders, wider crowns). Added per-card idle animation: a gentle bob + blink loop, staggered per card, plus a distinct flicker for the two Mythics (Everfile, Uptimewyrm). Root cause of the old sprites' misalignment was full-width/exotic glyphs breaking per-line centering in the monospace &lt;pre&gt; — new set uses only monospace-safe box-drawing and geometric glyphs.</li>
     <li><span class="ts">2026-07-07</span><b>Design phase complete.</b> All four content docs landed and were director-reviewed: <code>species.md</code> (30-species Dex), <code>rarity.md</code> (odds/economy), <code>moves.md</code> (45 moves + battle algorithm, on its 3rd attempt after two API rate-limits), <code>lore.md</code> (world book + 56 voice lines). Cross-doc issues reconciled: launch roster corrected to 30 species (was "15" in the original sketch), Dex-completion math recomputed against the real N_common=10, four battle-balance calls resolved. Full content folded into this sheet — Dex, economy, and battle sections added.</li>
     <li><span class="ts">2026-07-07</span><b>Design phase opened.</b> Content bible written (docs/design/SPEC.md): hard rules, canon vocabulary, rarity tiers (COMMON→MYTHIC), BST bands, six regions. Four Sonnet designers spawned in parallel — species (D1), rarity/economy (D2), moves/battle (D3), lore (D4) — with a director review loop (D5) to follow.</li>

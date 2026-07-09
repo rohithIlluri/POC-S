@@ -88,12 +88,3 @@ func Running() (int, bool) {
 	}
 	return pid, true
 }
-
-func processAlive(pid int) bool {
-	proc, err := os.FindProcess(pid)
-	if err != nil {
-		return false
-	}
-	// On Unix, signal 0 checks for existence without affecting the process.
-	return proc.Signal(syscallZero) == nil
-}

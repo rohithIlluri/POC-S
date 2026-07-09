@@ -1,28 +1,33 @@
-# aipet — the enterprise AI-spend companion
+# aipet — your local AI-usage companion
 
-A local, terminal-native **companion that lives on each developer's machine** and
-helps them get the most out of AI coding tools — **Claude Code** and **Codex** —
-without anyone worrying about the budget blowing up.
+A small, terminal-native **pet that lives on your machine** and helps you get
+the most out of your AI coding tools — **Claude Code** and **Codex** — without
+ever sending your data anywhere.
 
-It's a small "pet" that watches how you use these tools and proactively:
+It watches how you use these tools (from the session logs they *already write
+to disk*) and:
 
 - 🪙 **coaches you to spend fewer tokens** — flags Opus overuse, low cache reuse, context bloat
 - ⚡ **improves efficiency** — model-routing tips, session hygiene, prompt caching
-- 📰 **keeps you current** — market & pricing updates from an enterprise-controlled feed
-- 🔄 **self-updates** — pulls new tips, pricing, and release info from a signed feed
+- 🏆 **keeps score** — a local leaderboard of your top projects, models, best cache-reuse days, and streaks
+- 🐣 **is the seed of a game** — the same on-device engine powers *Codelings*, a
+  pocket-monster game where your real coding activity raises a companion creature
+  (see [`docs/GAME_DESIGN.md`](docs/GAME_DESIGN.md))
 
-## Why it's safe for enterprises
+## Why it's safe
 
 - **Entirely local.** It reads the session logs Claude Code and Codex *already
   write to disk* (`~/.claude/projects`, `~/.codex/sessions`). No proxy, no
   interception, no code or prompts ever leave the machine.
+- **Zero network surface.** There is no outbound code at all — nothing to
+  configure, nothing to trust, nothing to leak. Usage stays in `~/.aipet`.
 - **Zero token cost to run.** Token counts are already in those logs, so
-  attributing spend and generating advice costs **nothing** — the companion never
-  calls a model. The only tokens it could ever use ride on the enterprise's
-  provider billing, and the analysis itself uses none.
-- **No data leakage.** Usage stays in `~/.aipet`. The single optional outbound
-  call is to an **enterprise-hosted, signed feed** the admin controls.
-- **Tamper-proof updates.** The feed is verified with an ed25519 signature.
+  attributing spend and generating advice costs **nothing** — the companion
+  never calls a model.
+- **Hardened against hostile logs.** Session-log content is treated as
+  untrusted (it's written by other tools and prompt-injectable agents), so
+  fields are sanitized against terminal-escape injection before display. See
+  [`docs/SECURITY_AUDIT.md`](docs/SECURITY_AUDIT.md).
 
 ## Architecture
 
@@ -34,64 +39,60 @@ Claude Code / Codex                ~/.aipet/
   ┌───────────┐   collect    ┌──────────┐  advise   ┌──────────┐
   │ collector │ ───────────▶ │  store   │ ────────▶ │ advisor  │
   └───────────┘  (0 tokens)  └──────────┘           └──────────┘
-        ▲                          ▲                      │
-        │                          │                      ▼
-  ┌───────────┐  signed feed  ┌──────────┐          ┌──────────┐
-  │  daemon   │ ◀──────────── │   feed   │          │   TUI    │ ← the "pet"
-  └───────────┘  (enterprise) └──────────┘          └──────────┘
+        ▲                          │                      │
+        │                          ▼                      ▼
+  ┌───────────┐             ┌──────────────┐        ┌──────────┐
+  │  daemon   │ ──────────▶ │ leaderboard  │        │   TUI    │ ← the "pet"
+  └───────────┘  snapshot   └──────────────┘        └──────────┘
 ```
 
-- **`internal/collector`** — parses Claude Code / Codex session logs into normalized usage events (no network, no LLM).
-- **`internal/pricing`** — bundled per-model rates; overridable by the feed.
+- **`internal/collector`** — parses Claude Code / Codex session logs into normalized usage events (no network, no LLM), sanitizing untrusted fields.
+- **`internal/pricing`** — bundled per-model rates.
 - **`internal/store`** — append-only JSONL event log with idempotent dedupe (no external DB).
 - **`internal/advisor`** — explainable rules that turn usage into money-saving suggestions.
-- **`internal/feed`** — enterprise-hosted signed manifest: pricing overrides, market tips, self-update info.
-- **`internal/daemon`** — background loop; publishes an atomic snapshot.
-- **`internal/tui`** — the Bubble Tea pet (Overview / Suggestions / Market).
+- **`internal/leaderboard`** — rankings and personal records, computed on-device.
+- **`internal/daemon`** — background collect loop; publishes an atomic snapshot.
+- **`internal/tui`** — the Bubble Tea pet (Overview / Suggestions / Records).
+
+## Install
+
+```bash
+go install github.com/enterprise/aipet/cmd/aipet@latest
+```
+
+or build from source:
+
+```bash
+make build      # builds ./bin/aipet
+make install    # installs to $GOBIN
+```
+
+Cross-platform release binaries (darwin/linux/windows × amd64/arm64) with
+SHA-256 checksums are built by `make release`.
 
 ## Quick start
 
 ```bash
-make build
-
-./bin/aipet status      # one-shot collect + summary (great first run)
-./bin/aipet             # launch the interactive pet (TUI)
-./bin/aipet daemon      # run the background watcher
+aipet status         # one-shot collect + summary (great first run)
+aipet                # launch the interactive pet (TUI)
+aipet leaderboard    # rankings + personal records (add --json for scripts)
+aipet daemon         # run the background watcher
 ```
 
 The TUI has three tabs — **Overview** (spend, budget bar, top models/projects),
-**Suggestions** (efficiency advice with estimated savings), and **Market** (feed
-tips + update notices). Navigate with `tab`/`←→` or `1`/`2`/`3`; `q` quits.
+**Suggestions** (efficiency advice with estimated savings), and **Records** (the
+local leaderboard). Navigate with `tab`/`←→` or `1`/`2`/`3`; `q` quits.
 
 ## Configuration
 
 ```bash
 aipet config                              # show current settings
 aipet config daily_budget_usd 15          # soft per-day guidance budget
-aipet config feed_url https://feed.corp/aipet.json
-aipet config feed_public_key <base64>     # enables signature verification
-aipet config poll_interval_min 360
+aipet config collect_interval_min 5       # how often the daemon re-scans logs
 ```
 
-Config lives at `~/.aipet/config.json`. With no `feed_url`, the bundled
-`feed/sample-feed.json` is used so everything works offline.
-
-## The enterprise feed
-
-An admin publishes a JSON manifest (pricing overrides, tips, update info) at a URL
-the company controls, signed with an ed25519 key:
-
-```bash
-make build
-./bin/aipet-feedsign keygen                                # make a keypair
-./bin/aipet-feedsign sign <private-key> feed/sample-feed.json > signed-feed.json
-# host signed-feed.json, then on each client:
-aipet config feed_url https://feed.corp/aipet.json
-aipet config feed_public_key <public-key>
-```
-
-Clients verify the signature before trusting any pricing, tip, or update. See
-[`feed/sample-feed.json`](feed/sample-feed.json) for the schema.
+Config lives at `~/.aipet/config.json`. There is nothing to configure for it to
+work — sensible local defaults apply out of the box.
 
 ## Suggestions the advisor produces
 
@@ -104,21 +105,29 @@ Clients verify the signature before trusting any pricing, tip, or update. See
 | Unknown model   | a turn's model has no known price (spend under-counted)|
 | Fragmentation   | many short sessions pay repeated cold-start costs      |
 
-All advice is explainable: each suggestion states what was observed, why it costs
-money, and the specific action to take.
+All advice is explainable: each suggestion states what was observed, why it
+costs money, and the specific action to take.
+
+## The leaderboard
+
+`aipet leaderboard` (aliases `board`, `lb`) ranks your top projects and models
+by lifetime spend, your best cache-reuse days (volume-gated so a lucky quiet day
+can't top the board), and your personal records — biggest day, busiest day,
+current and longest activity streaks. Pass `--json` for a machine-readable dump.
+Everything is computed locally from your own event log.
 
 ## Development
 
 ```bash
-make test     # unit tests (pricing, advisor, collector, feed, tui)
+make test     # unit tests (race-clean)
 make vet      # go vet
 make fmt      # gofmt
 ```
 
 ## Status
 
-This is a proof of concept. The collectors, store, advisor, feed client +
-signature verification, daemon, and TUI are fully functional against real
-Claude Code data. The `update` command reports new versions but does not yet
-self-replace the binary — in production the daemon would download, verify the
-SHA-256, and swap atomically.
+**v1.0.0.** The collectors, store, advisor, leaderboard, daemon, and TUI are
+fully functional against real Claude Code data, fully local, with a completed
+[security audit](docs/SECURITY_AUDIT.md). The next chapter is *Codelings* — the
+game layer designed in [`docs/GAME_DESIGN.md`](docs/GAME_DESIGN.md) and the
+[`docs/design/`](docs/design/) content bible.
