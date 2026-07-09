@@ -15,6 +15,7 @@ import (
 	"github.com/enterprise/aipet/internal/advisor"
 	"github.com/enterprise/aipet/internal/collector"
 	"github.com/enterprise/aipet/internal/config"
+	"github.com/enterprise/aipet/internal/leaderboard"
 	"github.com/enterprise/aipet/internal/pricing"
 	"github.com/enterprise/aipet/internal/store"
 )
@@ -24,6 +25,7 @@ type Snapshot struct {
 	UpdatedAt     time.Time            `json:"updated_at"`
 	Stats         store.Stats          `json:"stats"`
 	Suggestions   []advisor.Suggestion `json:"suggestions"`
+	Board         leaderboard.Board    `json:"board"`
 	Sources       map[string]bool      `json:"sources"` // detected tool dirs
 	NewEvents     int                  `json:"new_events"`
 	CollectErrors []string             `json:"collect_errors,omitempty"` // non-fatal per-source errors
@@ -75,6 +77,7 @@ func Run(cfg config.Config) (*Snapshot, error) {
 		Events:         events,
 		DailyBudgetUSD: cfg.DailyBudgetUSD,
 	}, advisor.DefaultRules())
+	snap.Board = leaderboard.Compute(events, time.Now())
 
 	if err := writeSnapshot(snap); err != nil {
 		return snap, err

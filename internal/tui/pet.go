@@ -15,6 +15,7 @@ import (
 	"github.com/enterprise/aipet/internal/advisor"
 	"github.com/enterprise/aipet/internal/config"
 	"github.com/enterprise/aipet/internal/daemon"
+	"github.com/enterprise/aipet/internal/leaderboard"
 	"github.com/enterprise/aipet/internal/store"
 )
 
@@ -42,7 +43,7 @@ type Model struct {
 	snap     *daemon.Snapshot
 	mood     mood
 	frame    int
-	tab      int // 0 = overview, 1 = suggestions
+	tab      int // 0 = overview, 1 = suggestions, 2 = records
 	width    int
 	height   int
 	daemonUp bool
@@ -104,13 +105,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "q", "ctrl+c", "esc":
 			return m, tea.Quit
 		case "tab", "right", "l":
-			m.tab = (m.tab + 1) % 2
+			m.tab = (m.tab + 1) % 3
 		case "left", "h":
-			m.tab = (m.tab + 1) % 2
+			m.tab = (m.tab + 2) % 3
 		case "1":
 			m.tab = 0
 		case "2":
 			m.tab = 1
+		case "3":
+			m.tab = 2
 		case "r":
 			m.refresh()
 		}
@@ -130,6 +133,8 @@ func (m Model) View() string {
 		b.WriteString(m.overview())
 	case 1:
 		b.WriteString(m.suggestions())
+	case 2:
+		b.WriteString(m.records())
 	}
 	b.WriteString("\n")
 	b.WriteString(m.footer())
@@ -159,7 +164,7 @@ func (m Model) header() string {
 }
 
 func (m Model) tabBar() string {
-	labels := []string{"Overview", "Suggestions"}
+	labels := []string{"Overview", "Suggestions", "Records"}
 	var tabs []string
 	for i, l := range labels {
 		if i == m.tab {
@@ -222,6 +227,60 @@ func (m Model) suggestions() string {
 		return okStyle.Render("  No efficiency issues detected. ")
 	}
 	return b.String()
+}
+
+// records renders the local leaderboard: rankings and personal bests. Every
+// number is computed on-device from the event log.
+func (m Model) records() string {
+	if m.snap == nil {
+		return dimStyle.Render("No data yet. Start the daemon with `aipet daemon` or run `aipet status`.")
+	}
+	board := m.snap.Board
+	var b strings.Builder
+
+	b.WriteString(sectionStyle.Render("Top projects"))
+	b.WriteString("\n")
+	writeRanking(&b, board.TopProjects, func(e leaderboard.Entry) string {
+		return fmt.Sprintf("$%6.2f", e.Value)
+	})
+	b.WriteString("\n")
+	b.WriteString(sectionStyle.Render("Best cache-reuse days"))
+	b.WriteString("\n")
+	writeRanking(&b, board.BestCacheDays, func(e leaderboard.Entry) string {
+		return fmt.Sprintf("%5.1f%%", e.Value)
+	})
+	b.WriteString("\n")
+
+	r := board.Records
+	b.WriteString(sectionStyle.Render("Personal records"))
+	b.WriteString("\n")
+	streak := fmt.Sprintf("%d day(s)", r.CurrentStreak)
+	if r.CurrentStreak > 0 && r.CurrentStreak == r.LongestStreak {
+		streak = okStyle.Render(streak + "  ★ personal best")
+	} else {
+		streak += dimStyle.Render(fmt.Sprintf("  (best %d)", r.LongestStreak))
+	}
+	b.WriteString(kv("Streak", streak))
+	if r.BiggestDayUSD.Name != "" {
+		b.WriteString(kv("Biggest day", fmt.Sprintf("$%.2f on %s", r.BiggestDayUSD.Value, r.BiggestDayUSD.Name)))
+	}
+	if r.BusiestDay.Name != "" {
+		b.WriteString(kv("Busiest day", fmt.Sprintf("%.0f turns on %s", r.BusiestDay.Value, r.BusiestDay.Name)))
+	}
+	if r.FirstSeen != "" {
+		b.WriteString(kv("Keeper since", fmt.Sprintf("%s · %d active day(s)", r.FirstSeen, r.ActiveDays)))
+	}
+	return b.String()
+}
+
+func writeRanking(b *strings.Builder, entries []leaderboard.Entry, val func(leaderboard.Entry) string) {
+	if len(entries) == 0 {
+		b.WriteString(dimStyle.Render("  (no qualifying data yet)") + "\n")
+		return
+	}
+	for i, e := range entries {
+		b.WriteString(fmt.Sprintf("  %d. %-28s %s\n", i+1, trunc(e.Name, 28), val(e)))
+	}
 }
 
 func (m Model) footer() string {

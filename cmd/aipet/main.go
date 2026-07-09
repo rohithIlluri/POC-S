@@ -4,15 +4,17 @@
 //
 // Subcommands:
 //
-//	aipet            launch the interactive pet (TUI)
-//	aipet daemon     run the background collector loop (foreground process)
-//	aipet status     run one collection cycle and print a summary
-//	aipet config     view or set local configuration
-//	aipet version    print version
+//	aipet              launch the interactive pet (TUI)
+//	aipet daemon       run the background collector loop (foreground process)
+//	aipet status       run one collection cycle and print a summary
+//	aipet leaderboard  print rankings and personal records (--json for scripts)
+//	aipet config       view or set local configuration
+//	aipet version      print version
 package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/signal"
@@ -23,6 +25,7 @@ import (
 
 	"github.com/enterprise/aipet/internal/config"
 	"github.com/enterprise/aipet/internal/daemon"
+	"github.com/enterprise/aipet/internal/leaderboard"
 	"github.com/enterprise/aipet/internal/tui"
 	"github.com/enterprise/aipet/internal/version"
 )
@@ -44,6 +47,8 @@ func main() {
 		runDaemon(cfg)
 	case "status":
 		runStatus(cfg)
+	case "leaderboard", "board", "lb":
+		runLeaderboard(cfg, os.Args[2:])
 	case "config":
 		runConfig(cfg, os.Args[2:])
 	case "version", "-v", "--version":
@@ -106,6 +111,70 @@ func runStatus(cfg config.Config) {
 	}
 }
 
+func runLeaderboard(cfg config.Config, args []string) {
+	snap, err := daemon.Run(cfg)
+	if err != nil {
+		fatalf("leaderboard: %v", err)
+	}
+	b := snap.Board
+
+	if len(args) > 0 && args[0] == "--json" {
+		out, err := json.MarshalIndent(b, "", "  ")
+		if err != nil {
+			fatalf("leaderboard: %v", err)
+		}
+		fmt.Println(string(out))
+		return
+	}
+
+	fmt.Println("aipet leaderboard — everything below is computed locally")
+	printRanking("Top projects (lifetime $)", b.TopProjects, func(e leaderboard.Entry) string {
+		return fmt.Sprintf("$%.2f", e.Value)
+	})
+	printRanking("Top models (lifetime $)", b.TopModels, func(e leaderboard.Entry) string {
+		return fmt.Sprintf("$%.2f", e.Value)
+	})
+	printRanking("Best cache-reuse days", b.BestCacheDays, func(e leaderboard.Entry) string {
+		return fmt.Sprintf("%.1f%%  (%s)", e.Value, e.Detail)
+	})
+
+	r := b.Records
+	fmt.Println("\n  Personal records")
+	fmt.Printf("    streak:        %d day(s) now · best %d\n", r.CurrentStreak, r.LongestStreak)
+	if r.BiggestDayUSD.Name != "" {
+		fmt.Printf("    biggest day:   $%.2f on %s\n", r.BiggestDayUSD.Value, r.BiggestDayUSD.Name)
+	}
+	if r.BusiestDay.Name != "" {
+		fmt.Printf("    busiest day:   %.0f turns on %s\n", r.BusiestDay.Value, r.BusiestDay.Name)
+	}
+	if r.BestCacheDay.Name != "" {
+		fmt.Printf("    best cache:    %.1f%% reuse on %s\n", r.BestCacheDay.Value, r.BestCacheDay.Name)
+	}
+	fmt.Printf("    lifetime:      $%.2f over %d turns, %d active day(s) since %s\n",
+		r.LifetimeSpend, r.TotalTurns, r.ActiveDays, r.FirstSeen)
+}
+
+func printRanking(title string, entries []leaderboard.Entry, val func(leaderboard.Entry) string) {
+	fmt.Printf("\n  %s\n", title)
+	if len(entries) == 0 {
+		fmt.Println("    (no qualifying data yet)")
+		return
+	}
+	for i, e := range entries {
+		fmt.Printf("    %d. %-32s %s\n", i+1, trunc(e.Name, 32), val(e))
+	}
+}
+
+func trunc(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	if n <= 1 {
+		return s[:n]
+	}
+	return s[:n-1] + "…"
+}
+
 func runConfig(cfg config.Config, args []string) {
 	if len(args) == 0 {
 		p, _ := config.Path()
@@ -159,11 +228,12 @@ func usage() {
 	fmt.Print(`aipet — local AI-pet companion (zero data leakage, zero token cost)
 
 usage:
-  aipet            launch the interactive pet (TUI)
-  aipet daemon     run the background collector loop
-  aipet status     collect once and print a summary
-  aipet config     show config, or: aipet config <key> <value>
-  aipet version    print version
+  aipet              launch the interactive pet (TUI)
+  aipet daemon       run the background collector loop
+  aipet status       collect once and print a summary
+  aipet leaderboard  rankings + personal records (add --json for scripts)
+  aipet config       show config, or: aipet config <key> <value>
+  aipet version      print version
 
 config keys: daily_budget_usd, collect_interval_min
 `)
