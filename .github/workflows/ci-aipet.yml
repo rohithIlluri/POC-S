@@ -1,0 +1,34 @@
+name: aipet CI
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - "pocs/aipet/**"
+      - ".github/workflows/ci-aipet.yml"
+  pull_request:
+    paths:
+      - "pocs/aipet/**"
+      - ".github/workflows/ci-aipet.yml"
+
+defaults:
+  run:
+    working-directory: pocs/aipet
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: pocs/aipet/go.mod
+          cache-dependency-path: pocs/aipet/go.sum
+      - run: gofmt -l . | tee /tmp/fmt.out && test ! -s /tmp/fmt.out
+      - run: go vet ./...
+      - run: go test -race ./...
+      - name: cross-compile all release targets
+        run: |
+          for t in darwin/arm64 darwin/amd64 linux/arm64 linux/amd64 windows/amd64; do
+            GOOS=${t%/*} GOARCH=${t#*/} go build ./...
+          done

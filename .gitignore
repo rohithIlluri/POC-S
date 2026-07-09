@@ -1,5 +1,8 @@
-# Build output
-/bin/
+# Build output (any POC)
+bin/
+
+# Node (pocs/ccr and future JS POCs)
+node_modules/
 
 # Local companion state (never commit a user's usage data)
 .aipet/
