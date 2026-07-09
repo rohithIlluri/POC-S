@@ -1,5 +1,6 @@
 # Build output (any POC)
 bin/
+dist/
 
 # Node (pocs/ccr and future JS POCs)
 node_modules/
