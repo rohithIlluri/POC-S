@@ -498,7 +498,7 @@
   <em style="color:var(--amber);font-style:normal">how</em> you work — not how much you pay.
   Good engineering hygiene raises a healthy, rare creature.</p>
   <p class="dim">The existing collector/store engine already parses your session logs locally.
-  That engine becomes the game's sensory organ. Everything enterprise-facing gets deleted.</p>
+  That engine becomes the game's sensory organ. Everything cloud/dashboard-facing gets deleted.</p>
 
   <div class="pillars">
     <div class="pillar"><span class="pn">PILLAR 01</span><b>Zero backend</b><span>Everything derives from local files. The only remote surface is GitHub — releases for distribution, gists/files for trading.</span></div>
@@ -512,7 +512,7 @@
 <!-- ================= TEARDOWN ================= -->
 <section id="teardown">
   <div class="sec-head"><span class="sec-num">02</span><h2>Backend teardown</h2></div>
-  <p class="dim">The "backend" is the enterprise feed stack. M0 removes it completely.</p>
+  <p class="dim">The "backend" is the old external feed stack. M0 removes it completely.</p>
   <div class="tbl-scroll" style="margin-top:16px">
   <table>
     <tr><th>Component</th><th>Action</th><th>Detail</th></tr>
@@ -915,7 +915,7 @@ internal/tui/            <span class="new">MORPH</span> <span class="c">game scr
   <div class="sec-head"><span class="sec-num">10</span><h2>Build changelog</h2></div>
   <p class="dim">This sheet is maintained as we progress — every milestone update lands here and on the board above.</p>
   <ul class="clog">
-    <li><span class="ts">2026-07-09</span><b>v1.0.0 shipped.</b> M0 backend teardown landed (enterprise feed stack, feedsign tool, and update command all deleted; daemon &amp; config slimmed; Market tab replaced). New local <b>leaderboard</b> — top projects/models, best cache-reuse days, streaks, and personal records — as an <code>aipet leaderboard</code> command (with <code>--json</code>) and a Records TUI tab. Full <b>security audit</b> (docs/SECURITY_AUDIT.md): one Medium finding — terminal-escape injection from untrusted session-log content — fixed at the collector boundary with tests; path traversal, XSS, and pidfile handling reviewed and cleared. Cross-platform release binaries (darwin/linux/windows × amd64/arm64) with SHA-256 checksums; a latent Windows-build bug (signal 0) was fixed in the process. Suite passes under -race.</li>
+    <li><span class="ts">2026-07-09</span><b>v1.0.0 shipped.</b> M0 backend teardown landed (external feed stack, feedsign tool, and update command all deleted; daemon &amp; config slimmed; Market tab replaced). New local <b>leaderboard</b> — top projects/models, best cache-reuse days, streaks, and personal records — as an <code>aipet leaderboard</code> command (with <code>--json</code>) and a Records TUI tab. Full <b>security audit</b> (docs/SECURITY_AUDIT.md): one Medium finding — terminal-escape injection from untrusted session-log content — fixed at the collector boundary with tests; path traversal, XSS, and pidfile handling reviewed and cleared. Cross-platform release binaries (darwin/linux/windows × amd64/arm64) with SHA-256 checksums; a latent Windows-build bug (signal 0) was fixed in the process. Suite passes under -race.</li>
     <li><span class="ts">2026-07-08</span><b>Sprite redesign v2 applied.</b> All 30 Dex sprites replaced with a cleaner, alignment-safe Unicode set from an external design pass (handoff: <code>design_handoff_codelings_sprites</code>) — softer faces (<code>◕ ◡ ◔ ω ᴥ</code>), fewer strokes, evolution reads as growth (heavier borders, wider crowns). Added per-card idle animation: a gentle bob + blink loop, staggered per card, plus a distinct flicker for the two Mythics (Everfile, Uptimewyrm). Root cause of the old sprites' misalignment was full-width/exotic glyphs breaking per-line centering in the monospace &lt;pre&gt; — new set uses only monospace-safe box-drawing and geometric glyphs.</li>
     <li><span class="ts">2026-07-07</span><b>Design phase complete.</b> All four content docs landed and were director-reviewed: <code>species.md</code> (30-species Dex), <code>rarity.md</code> (odds/economy), <code>moves.md</code> (45 moves + battle algorithm, on its 3rd attempt after two API rate-limits), <code>lore.md</code> (world book + 56 voice lines). Cross-doc issues reconciled: launch roster corrected to 30 species (was "15" in the original sketch), Dex-completion math recomputed against the real N_common=10, four battle-balance calls resolved. Full content folded into this sheet — Dex, economy, and battle sections added.</li>
     <li><span class="ts">2026-07-07</span><b>Design phase opened.</b> Content bible written (docs/design/SPEC.md): hard rules, canon vocabulary, rarity tiers (COMMON→MYTHIC), BST bands, six regions. Four Sonnet designers spawned in parallel — species (D1), rarity/economy (D2), moves/battle (D3), lore (D4) — with a director review loop (D5) to follow.</li>

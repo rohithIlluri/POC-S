@@ -33,11 +33,10 @@ to disk*) and:
 
 ```
 Claude Code / Codex                ~/.aipet/
-  session logs (on disk)             usage.db      append-only event log
-        │                            snapshot.json daemon → TUI state
-        ▼                            config.json   local settings
-                                     scanstate.json per-file collect fingerprints
-                                                   (unchanged logs are skipped)
+  session logs (on disk)             usage.db       append-only event log
+        │                            snapshot.json  daemon → TUI state
+        ▼                            config.json    local settings
+                                     scanstate.json skip-unchanged fingerprints
   ┌───────────┐   collect    ┌──────────┐  advise   ┌──────────┐
   │ collector │ ───────────▶ │  store   │ ────────▶ │ advisor  │
   └───────────┘  (0 tokens)  └──────────┘           └──────────┘

@@ -1,10 +1,10 @@
 # aipet → Codelings: a pocket-monster game for developers
 
-**Pivot:** aipet stops being an enterprise AI-spend companion and becomes a
+**Pivot:** aipet stops being a plain AI-spend dashboard and becomes a
 local, terminal-native creature-raising game. Your real development activity —
 Claude Code and Codex sessions the collectors already parse — is the game's
 energy source. No backend, no servers, no accounts. The repo's collector/store
-engine stays; everything enterprise-facing goes.
+engine stays; everything dashboard-only goes.
 
 > **IP note:** "like Pokémon" means the *genre* (creature collecting, raising,
 > evolving, trading, battling). All names, species, art, and lore below are
