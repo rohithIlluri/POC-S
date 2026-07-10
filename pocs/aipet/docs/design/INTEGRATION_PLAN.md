@@ -307,7 +307,7 @@ This is the only "AI" in the loop and it is optional, local, and free.
 
 | Phase | Deliverable | Gate |
 |---|---|---|
-| **0** | Fix module path (`github.com/enterprise/aipet` → real repo path under `pocs/aipet`); content pipeline (`go generate` + validator + embed) | build fails on SPEC violation |
+| **0** | ~~Fix module path~~ (done — now `github.com/rohithIlluri/POC-S/pocs/aipet`, `go install` works); content pipeline (`go generate` + validator + embed) | build fails on SPEC violation |
 | **1** | `internal/game` reducer skeleton + stat mapping + `game.json` persistence + `aipet pet status` (headless) | determinism + incremental-equivalence tests |
 | **2** | Species assignment, XP/care, bloat, evolution | evolution threshold tests; bloat recovery test |
 | **3** | Encounter rules + Dex + journal | mythic gating tests (no-RNG) |

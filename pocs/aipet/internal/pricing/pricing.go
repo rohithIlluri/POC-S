@@ -6,7 +6,7 @@ package pricing
 import "strings"
 
 // Rate holds per-million-token prices for a model. CacheWrite and CacheRead cover
-// prompt-caching, which is where a lot of "invisible" enterprise spend hides.
+// prompt-caching, which is where a lot of "invisible" token spend hides.
 type Rate struct {
 	Input      float64 `json:"input"`       // per 1M input tokens
 	Output     float64 `json:"output"`      // per 1M output tokens
