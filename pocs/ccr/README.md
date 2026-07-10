@@ -26,7 +26,14 @@ ccr "use codex to add a helper"                           # explicit hint wins
 ccr --dry-run "add a users endpoint"                      # print the decision, don't run
 ccr --verbose "debug the crash in worker.ts"              # show classification reasoning
 ccr "add endpoint" -- --allowed-tools Bash                # args after -- pass through to the tool
+git diff | ccr --dry-run                                  # pipe the prompt in on stdin
+ccr --dry-run < bug-report.txt                            # or redirect it from a file
 ```
+
+The prompt can be passed as arguments **or** piped on stdin — when no positional
+prompt is given and stdin is not a terminal, `ccr` reads the prompt from stdin
+(`git diff | ccr "…"` style piping, or `ccr < prompt.txt`). Positional args win
+when both are present.
 
 | Flag | Effect |
 |---|---|
