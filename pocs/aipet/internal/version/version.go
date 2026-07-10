@@ -4,5 +4,5 @@
 package version
 
 // Version is set at build time via
-// -ldflags "-X github.com/enterprise/aipet/internal/version.Version=1.2.3".
+// -ldflags "-X github.com/rohithIlluri/POC-S/pocs/aipet/internal/version.Version=1.2.3".
 var Version = "1.0.0"

@@ -9,8 +9,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/enterprise/aipet/internal/pricing"
-	"github.com/enterprise/aipet/internal/store"
+	"github.com/rohithIlluri/POC-S/pocs/aipet/internal/pricing"
+	"github.com/rohithIlluri/POC-S/pocs/aipet/internal/store"
 )
 
 // Codex writes rollout/session files as JSONL under ~/.codex/sessions. The schema
@@ -53,7 +53,9 @@ func (u codexUsage) normalize() pricing.Usage {
 }
 
 // CollectCodex scans Codex session files under root for usage-bearing turns.
-func CollectCodex(root string, st *store.Store, prices *pricing.Table) (int, error) {
+// Files whose scan-state fingerprint is unchanged are skipped without being
+// opened; a nil scan disables skipping and forces a full scan.
+func CollectCodex(root string, st *store.Store, prices *pricing.Table, scan *ScanState) (int, error) {
 	var added int
 	var errs fileErrors
 	err := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
@@ -63,9 +65,16 @@ func CollectCodex(root string, st *store.Store, prices *pricing.Table) (int, err
 		if !strings.HasSuffix(path, ".jsonl") && !strings.HasSuffix(path, ".json") {
 			return nil
 		}
+		fi, _ := d.Info() // pre-scan stat; a nil fi just disables skip/mark
+		if scan.unchanged(path, fi) {
+			return nil
+		}
 		n, ferr := collectCodexFile(path, st, prices)
 		added += n
 		errs.add(path, ferr)
+		if ferr == nil {
+			scan.mark(path, fi)
+		}
 		return nil
 	})
 	if err != nil {

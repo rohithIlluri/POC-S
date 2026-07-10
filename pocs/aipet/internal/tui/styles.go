@@ -6,8 +6,8 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/enterprise/aipet/internal/advisor"
-	"github.com/enterprise/aipet/internal/store"
+	"github.com/rohithIlluri/POC-S/pocs/aipet/internal/advisor"
+	"github.com/rohithIlluri/POC-S/pocs/aipet/internal/store"
 )
 
 // Color palette — chosen to read well on both dark and light terminals.

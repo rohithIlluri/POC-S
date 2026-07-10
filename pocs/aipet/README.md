@@ -36,6 +36,8 @@ Claude Code / Codex                ~/.aipet/
   session logs (on disk)             usage.db      append-only event log
         │                            snapshot.json daemon → TUI state
         ▼                            config.json   local settings
+                                     scanstate.json per-file collect fingerprints
+                                                   (unchanged logs are skipped)
   ┌───────────┐   collect    ┌──────────┐  advise   ┌──────────┐
   │ collector │ ───────────▶ │  store   │ ────────▶ │ advisor  │
   └───────────┘  (0 tokens)  └──────────┘           └──────────┘
@@ -56,7 +58,16 @@ Claude Code / Codex                ~/.aipet/
 
 ## Install
 
-Download a binary from the [latest release](https://github.com/rohithIlluri/POC-S/releases/latest)
+One command (needs Go 1.25+):
+
+```bash
+go install github.com/rohithIlluri/POC-S/pocs/aipet/cmd/aipet@latest
+```
+
+Then just run `aipet` — the first launch collects your existing session logs
+and opens the pet. No config, no accounts, no network.
+
+Or download a binary from the [latest release](https://github.com/rohithIlluri/POC-S/releases/latest)
 (darwin/linux/windows × amd64/arm64, with SHA-256 `checksums.txt`), `chmod +x`,
 and put it on your `PATH`.
 

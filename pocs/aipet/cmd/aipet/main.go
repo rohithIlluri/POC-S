@@ -23,11 +23,11 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/enterprise/aipet/internal/config"
-	"github.com/enterprise/aipet/internal/daemon"
-	"github.com/enterprise/aipet/internal/leaderboard"
-	"github.com/enterprise/aipet/internal/tui"
-	"github.com/enterprise/aipet/internal/version"
+	"github.com/rohithIlluri/POC-S/pocs/aipet/internal/config"
+	"github.com/rohithIlluri/POC-S/pocs/aipet/internal/daemon"
+	"github.com/rohithIlluri/POC-S/pocs/aipet/internal/leaderboard"
+	"github.com/rohithIlluri/POC-S/pocs/aipet/internal/tui"
+	"github.com/rohithIlluri/POC-S/pocs/aipet/internal/version"
 )
 
 func main() {

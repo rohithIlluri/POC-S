@@ -5,8 +5,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/enterprise/aipet/internal/pricing"
-	"github.com/enterprise/aipet/internal/store"
+	"github.com/rohithIlluri/POC-S/pocs/aipet/internal/pricing"
+	"github.com/rohithIlluri/POC-S/pocs/aipet/internal/store"
 )
 
 // A minimal but realistic Claude Code transcript: one user line (no usage), one
@@ -29,7 +29,7 @@ func TestCollectClaude(t *testing.T) {
 	defer st.Close()
 
 	prices := pricing.Default()
-	n, err := CollectClaude(dir, st, prices)
+	n, err := CollectClaude(dir, st, prices, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -38,7 +38,7 @@ func TestCollectClaude(t *testing.T) {
 	}
 
 	// Re-running must be idempotent (dedupe by key).
-	n2, _ := CollectClaude(dir, st, prices)
+	n2, _ := CollectClaude(dir, st, prices, nil)
 	if n2 != 0 {
 		t.Errorf("expected 0 new events on re-scan, got %d", n2)
 	}

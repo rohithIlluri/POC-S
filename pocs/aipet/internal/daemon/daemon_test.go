@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/enterprise/aipet/internal/config"
+	"github.com/rohithIlluri/POC-S/pocs/aipet/internal/config"
 )
 
 // isolateHome points HOME at a temp dir so daemon cycles read and write only

@@ -11,7 +11,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/enterprise/aipet/internal/store"
+	"github.com/rohithIlluri/POC-S/pocs/aipet/internal/store"
 )
 
 // Severity ranks how much a suggestion is worth acting on.

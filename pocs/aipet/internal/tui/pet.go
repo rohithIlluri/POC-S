@@ -6,17 +6,18 @@ package tui
 
 import (
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/enterprise/aipet/internal/advisor"
-	"github.com/enterprise/aipet/internal/config"
-	"github.com/enterprise/aipet/internal/daemon"
-	"github.com/enterprise/aipet/internal/leaderboard"
-	"github.com/enterprise/aipet/internal/store"
+	"github.com/rohithIlluri/POC-S/pocs/aipet/internal/advisor"
+	"github.com/rohithIlluri/POC-S/pocs/aipet/internal/config"
+	"github.com/rohithIlluri/POC-S/pocs/aipet/internal/daemon"
+	"github.com/rohithIlluri/POC-S/pocs/aipet/internal/leaderboard"
+	"github.com/rohithIlluri/POC-S/pocs/aipet/internal/store"
 )
 
 // The pet's mood reflects how spend tracks against budget — a quick emotional
@@ -41,6 +42,7 @@ type tickMsg time.Time
 type Model struct {
 	cfg      config.Config
 	snap     *daemon.Snapshot
+	snapMod  time.Time // snapshot file mtime at last parse
 	mood     mood
 	frame    int
 	tab      int // 0 = overview, 1 = suggestions, 2 = records
@@ -53,7 +55,7 @@ type Model struct {
 // New builds the TUI model, loading any existing snapshot immediately.
 func New(cfg config.Config) Model {
 	m := Model{cfg: cfg}
-	m.refresh()
+	m.refresh(true)
 	return m
 }
 
@@ -63,9 +65,21 @@ func tick() tea.Cmd {
 	return tea.Tick(time.Second, func(t time.Time) tea.Msg { return tickMsg(t) })
 }
 
-func (m *Model) refresh() {
-	if s, err := daemon.ReadSnapshot(); err == nil {
-		m.snap = s
+// refresh re-reads daemon state. The snapshot JSON is only re-parsed when the
+// file's mtime moved — the TUI ticks every second for the face animation, and
+// parsing the full snapshot 60x/minute for a file that changes every couple of
+// minutes is wasted work. A cheap stat decides; force skips that check.
+func (m *Model) refresh(force bool) {
+	if p, err := daemon.SnapshotPath(); err == nil {
+		fi, statErr := os.Stat(p)
+		if force || statErr != nil || !fi.ModTime().Equal(m.snapMod) {
+			if s, err := daemon.ReadSnapshot(); err == nil {
+				m.snap = s
+				if statErr == nil {
+					m.snapMod = fi.ModTime()
+				}
+			}
+		}
 	}
 	_, m.daemonUp = daemon.Running()
 	m.mood = m.computeMood()
@@ -98,7 +112,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width, m.height = msg.Width, msg.Height
 	case tickMsg:
 		m.frame++
-		m.refresh()
+		m.refresh(false) // animation tick: stat-check only, parse on change
 		return m, tick()
 	case tea.KeyMsg:
 		switch msg.String() {
@@ -115,7 +129,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "3":
 			m.tab = 2
 		case "r":
-			m.refresh()
+			m.refresh(true)
 		}
 	}
 	return m, nil

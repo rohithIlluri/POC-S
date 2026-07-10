@@ -12,12 +12,12 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/enterprise/aipet/internal/advisor"
-	"github.com/enterprise/aipet/internal/collector"
-	"github.com/enterprise/aipet/internal/config"
-	"github.com/enterprise/aipet/internal/leaderboard"
-	"github.com/enterprise/aipet/internal/pricing"
-	"github.com/enterprise/aipet/internal/store"
+	"github.com/rohithIlluri/POC-S/pocs/aipet/internal/advisor"
+	"github.com/rohithIlluri/POC-S/pocs/aipet/internal/collector"
+	"github.com/rohithIlluri/POC-S/pocs/aipet/internal/config"
+	"github.com/rohithIlluri/POC-S/pocs/aipet/internal/leaderboard"
+	"github.com/rohithIlluri/POC-S/pocs/aipet/internal/pricing"
+	"github.com/rohithIlluri/POC-S/pocs/aipet/internal/store"
 )
 
 // Snapshot is the daemon's published state, read by the TUI and `status`.
@@ -32,11 +32,10 @@ type Snapshot struct {
 }
 
 // Run executes one collect+advise cycle and writes a snapshot. Everything is
-// local: session logs in, suggestions out, no network anywhere.
+// local: session logs in, suggestions out, no network anywhere. One-shot
+// callers (status, TUI launch) pay the store load each time; the daemon loop
+// uses runCycle with a store it keeps open instead.
 func Run(cfg config.Config) (*Snapshot, error) {
-	prices := pricing.Default()
-	snap := &Snapshot{Sources: map[string]bool{}, UpdatedAt: time.Now()}
-
 	dbPath, err := config.DBPath()
 	if err != nil {
 		return nil, err
@@ -46,13 +45,22 @@ func Run(cfg config.Config) (*Snapshot, error) {
 		return nil, err
 	}
 	defer st.Close()
+	return runCycle(cfg, st, loadScanState())
+}
+
+// runCycle collects into an already-open store and publishes a snapshot.
+// The scan state lets unchanged session-log files be skipped entirely; it is
+// saved best-effort after the cycle (a lost save only means re-scanning).
+func runCycle(cfg config.Config, st *store.Store, scan *collector.ScanState) (*Snapshot, error) {
+	prices := pricing.Default()
+	snap := &Snapshot{Sources: map[string]bool{}, UpdatedAt: time.Now()}
 
 	// Collect from whichever tools are present; absence is not an error, but a
 	// real failure (permissions, corrupt tree) is recorded without aborting the
 	// cycle so the other source still refreshes.
 	if dir, ok := config.ClaudeProjectsDir(); ok {
 		snap.Sources["claude-code"] = true
-		n, err := collector.CollectClaude(dir, st, prices)
+		n, err := collector.CollectClaude(dir, st, prices, scan)
 		snap.NewEvents += n
 		if err != nil {
 			snap.CollectErrors = append(snap.CollectErrors, "claude-code: "+err.Error())
@@ -60,11 +68,14 @@ func Run(cfg config.Config) (*Snapshot, error) {
 	}
 	if dir, ok := config.CodexSessionsDir(); ok {
 		snap.Sources["codex"] = true
-		n, err := collector.CollectCodex(dir, st, prices)
+		n, err := collector.CollectCodex(dir, st, prices, scan)
 		snap.NewEvents += n
 		if err != nil {
 			snap.CollectErrors = append(snap.CollectErrors, "codex: "+err.Error())
 		}
+	}
+	if err := scan.Save(); err != nil {
+		snap.CollectErrors = append(snap.CollectErrors, "scan-state: "+err.Error())
 	}
 
 	events, err := st.All()
@@ -83,6 +94,16 @@ func Run(cfg config.Config) (*Snapshot, error) {
 		return snap, err
 	}
 	return snap, nil
+}
+
+// loadScanState loads the collector scan fingerprints from ~/.aipet. A load
+// failure degrades to a full scan, never to an error.
+func loadScanState() *collector.ScanState {
+	d, err := config.Dir()
+	if err != nil {
+		return collector.LoadScanState("")
+	}
+	return collector.LoadScanState(filepath.Join(d, "scanstate.json"))
 }
 
 // SnapshotPath is where the daemon publishes its state.
