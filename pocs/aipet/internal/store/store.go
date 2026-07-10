@@ -41,23 +41,58 @@ type Event struct {
 	CostUSD    float64   `json:"cost"`
 }
 
-// Store is the append-only event log with an in-memory dedupe index.
+// Store is the append-only event log with an in-memory dedupe index. The
+// events themselves are kept in memory too: Open already has to parse the
+// whole file to index keys, so retaining the events makes every later All()
+// free instead of a second full parse from disk. Only this process appends
+// (the daemon holds a PID lock), so memory and disk cannot drift.
 type Store struct {
-	mu   sync.Mutex
-	path string
-	f    *os.File
-	seen map[string]struct{}
+	mu     sync.Mutex
+	path   string
+	f      *os.File
+	seen   map[string]struct{}
+	events []Event
+	names  map[string]string // string intern pool for repeated fields
 }
 
-// Open loads (or creates) the store at path, indexing existing keys for dedupe.
+// intern returns a canonical instance of v so the thousands of events sharing
+// a model, project, session, or source name share one string allocation
+// instead of one per JSON-decoded line. Caller must hold s.mu.
+func (s *Store) intern(v string) string {
+	if v == "" {
+		return ""
+	}
+	if c, ok := s.names[v]; ok {
+		return c
+	}
+	s.names[v] = v
+	return v
+}
+
+// compact rewrites an event's repeated fields through the intern pool. The
+// unique Key is left alone. Caller must hold s.mu.
+func (s *Store) compact(e Event) Event {
+	e.Source = s.intern(e.Source)
+	e.Session = s.intern(e.Session)
+	e.Project = s.intern(e.Project)
+	e.Model = s.intern(e.Model)
+	return e
+}
+
+// Open loads (or creates) the store at path, indexing existing keys for dedupe
+// and caching the parsed events for All.
 func Open(path string) (*Store, error) {
-	s := &Store{path: path, seen: make(map[string]struct{})}
+	s := &Store{path: path, seen: make(map[string]struct{}), names: make(map[string]string)}
 	if f, err := os.Open(path); err == nil {
 		sc := newScanner(f)
 		for sc.Scan() {
 			var e Event
 			if json.Unmarshal(sc.Bytes(), &e) == nil && e.Key != "" {
+				if _, dup := s.seen[e.Key]; dup {
+					continue
+				}
 				s.seen[e.Key] = struct{}{}
+				s.events = append(s.events, s.compact(e))
 			}
 		}
 		closeErr := f.Close()
@@ -101,6 +136,7 @@ func (s *Store) Append(e Event) (bool, error) {
 		return false, err
 	}
 	s.seen[e.Key] = struct{}{}
+	s.events = append(s.events, s.compact(e))
 	return true, nil
 }
 
@@ -112,24 +148,14 @@ func (s *Store) Close() error {
 	return s.f.Close()
 }
 
-// All reads every event back from disk, sorted by timestamp ascending.
+// All returns every event, sorted by timestamp ascending. Events are served
+// from the in-memory cache built at Open and maintained by Append — no disk
+// read and no copy. The returned slice aliases the store's cache: callers must
+// treat it as read-only and must not hold it across a later Append. Both
+// consumers (stats aggregation, the daemon cycle) only iterate.
 func (s *Store) All() ([]Event, error) {
-	f, err := os.Open(s.path)
-	if os.IsNotExist(err) {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, err
-	}
-	defer f.Close()
-	var out []Event
-	sc := newScanner(f)
-	for sc.Scan() {
-		var e Event
-		if json.Unmarshal(sc.Bytes(), &e) == nil && e.Key != "" {
-			out = append(out, e)
-		}
-	}
-	sort.Slice(out, func(i, j int) bool { return out[i].Timestamp.Before(out[j].Timestamp) })
-	return out, sc.Err()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	sort.Slice(s.events, func(i, j int) bool { return s.events[i].Timestamp.Before(s.events[j].Timestamp) })
+	return s.events, nil
 }

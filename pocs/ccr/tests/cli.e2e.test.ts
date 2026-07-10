@@ -1,4 +1,4 @@
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
@@ -10,6 +10,14 @@ function ccr(...args: string[]): string {
   const env = { ...process.env };
   delete env.ANTHROPIC_API_KEY;
   return execFileSync("node", [CLI, ...args], { encoding: "utf8", env });
+}
+
+/** Run ccr with a piped stdin payload; captures stdout, stderr, and exit code. */
+function ccrWithStdin(input: string, ...args: string[]): { stdout: string; stderr: string; status: number } {
+  const env = { ...process.env };
+  delete env.ANTHROPIC_API_KEY;
+  const res = spawnSync("node", [CLI, ...args], { input, encoding: "utf8", env });
+  return { stdout: res.stdout, stderr: res.stderr, status: res.status ?? 0 };
 }
 
 describe("ccr CLI (compiled, dry-run)", () => {
@@ -42,6 +50,29 @@ describe("ccr CLI (compiled, dry-run)", () => {
     expect(parsed.model).toBe("gpt-5.1-codex-mini");
     expect(Array.isArray(parsed.args)).toBe(true);
     expect(parsed.classification.taskType).toBe("docs");
+  });
+
+  it("reads the prompt from stdin when no positional prompt is given", () => {
+    const { stdout, status } = ccrWithStdin("fix typo in README", "--dry-run");
+    expect(status).toBe(0);
+    expect(stdout).toContain("tool:    codex");
+    expect(stdout).toContain("gpt-5.1-codex-mini");
+  });
+
+  it("prefers positional args over stdin", () => {
+    const { stdout, status } = ccrWithStdin(
+      "refactor the entire authentication architecture across the whole repo",
+      "--dry-run",
+      "fix typo in README",
+    );
+    expect(status).toBe(0);
+    expect(stdout).toContain("tool:    codex");
+  });
+
+  it("errors with a clear message when no prompt is given on stdin or args", () => {
+    const { stderr, status } = ccrWithStdin("   \n  ", "--dry-run");
+    expect(status).toBe(1);
+    expect(stderr).toContain("no prompt given");
   });
 
   it("reports the package version", () => {

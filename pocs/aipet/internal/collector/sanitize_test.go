@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/enterprise/aipet/internal/pricing"
-	"github.com/enterprise/aipet/internal/store"
+	"github.com/rohithIlluri/POC-S/pocs/aipet/internal/pricing"
+	"github.com/rohithIlluri/POC-S/pocs/aipet/internal/store"
 )
 
 // hasControl reports whether any rune in s is a C0/C1 control or DEL — the
@@ -79,7 +79,7 @@ func TestCollectStripsEscapesEndToEnd(t *testing.T) {
 	}
 	defer st.Close()
 
-	if _, err := CollectClaude(filepath.Join(home, ".claude", "projects"), st, pricing.Default()); err != nil {
+	if _, err := CollectClaude(filepath.Join(home, ".claude", "projects"), st, pricing.Default(), nil); err != nil {
 		t.Fatal(err)
 	}
 	events, err := st.All()

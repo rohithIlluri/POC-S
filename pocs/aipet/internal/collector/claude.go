@@ -11,8 +11,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/enterprise/aipet/internal/pricing"
-	"github.com/enterprise/aipet/internal/store"
+	"github.com/rohithIlluri/POC-S/pocs/aipet/internal/pricing"
+	"github.com/rohithIlluri/POC-S/pocs/aipet/internal/store"
 )
 
 // claudeLine is the subset of a Claude Code JSONL transcript line we need.
@@ -35,17 +35,26 @@ type claudeLine struct {
 
 // CollectClaude scans every *.jsonl under root, appending unseen assistant turns
 // to the store. It returns the number of new events recorded. Errors on a single
-// file are skipped so one corrupt session never blocks collection.
-func CollectClaude(root string, st *store.Store, prices *pricing.Table) (int, error) {
+// file are skipped so one corrupt session never blocks collection. Files whose
+// scan-state fingerprint is unchanged are skipped without being opened; a nil
+// scan disables skipping and forces a full scan.
+func CollectClaude(root string, st *store.Store, prices *pricing.Table, scan *ScanState) (int, error) {
 	var added int
 	var errs fileErrors
 	err := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
 		if err != nil || d.IsDir() || !strings.HasSuffix(path, ".jsonl") {
 			return nil //nolint:nilerr // skip unreadable entries, keep walking
 		}
+		fi, _ := d.Info() // pre-scan stat; a nil fi just disables skip/mark
+		if scan.unchanged(path, fi) {
+			return nil
+		}
 		n, ferr := collectClaudeFile(path, st, prices)
 		added += n
 		errs.add(path, ferr)
+		if ferr == nil {
+			scan.mark(path, fi)
+		}
 		return nil
 	})
 	if err != nil {

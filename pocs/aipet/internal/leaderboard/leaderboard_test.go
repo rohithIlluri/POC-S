@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/enterprise/aipet/internal/store"
+	"github.com/rohithIlluri/POC-S/pocs/aipet/internal/store"
 )
 
 // day builds a timestamp at noon local time on the given date, so local-day

@@ -1,4 +1,4 @@
-module github.com/enterprise/aipet
+module github.com/rohithIlluri/POC-S/pocs/aipet
 
 go 1.25.6
 

@@ -5,8 +5,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/enterprise/aipet/internal/pricing"
-	"github.com/enterprise/aipet/internal/store"
+	"github.com/rohithIlluri/POC-S/pocs/aipet/internal/pricing"
+	"github.com/rohithIlluri/POC-S/pocs/aipet/internal/store"
 )
 
 func codexStore(t *testing.T) *store.Store {
@@ -46,7 +46,7 @@ func TestCollectCodexTopLevelUsage(t *testing.T) {
 	writeSession(t, dir, "sess1.jsonl", codexTopLevel)
 	st := codexStore(t)
 
-	n, err := CollectCodex(dir, st, pricing.Default())
+	n, err := CollectCodex(dir, st, pricing.Default(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -68,7 +68,7 @@ func TestCollectCodexNestedAliasUsage(t *testing.T) {
 	writeSession(t, dir, "sess2.jsonl", codexNested)
 	st := codexStore(t)
 
-	n, err := CollectCodex(dir, st, pricing.Default())
+	n, err := CollectCodex(dir, st, pricing.Default(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -87,7 +87,7 @@ func TestCollectCodexSkipsNoise(t *testing.T) {
 	writeSession(t, dir, "sess3.jsonl", codexNoise)
 	st := codexStore(t)
 
-	n, err := CollectCodex(dir, st, pricing.Default())
+	n, err := CollectCodex(dir, st, pricing.Default(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -104,10 +104,10 @@ func TestCollectCodexIdempotent(t *testing.T) {
 	st := codexStore(t)
 
 	prices := pricing.Default()
-	if n, _ := CollectCodex(dir, st, prices); n != 2 {
+	if n, _ := CollectCodex(dir, st, prices, nil); n != 2 {
 		t.Fatalf("first scan: expected 2, got %d", n)
 	}
-	if n, _ := CollectCodex(dir, st, prices); n != 0 {
+	if n, _ := CollectCodex(dir, st, prices, nil); n != 0 {
 		t.Fatalf("re-scan must add 0 events, got %d", n)
 	}
 }
@@ -120,7 +120,7 @@ func TestCollectCodexUnknownModelFallback(t *testing.T) {
 		`{"type":"turn","timestamp":"2026-06-30T12:00:00Z","usage":{"input_tokens":100,"output_tokens":10}}`+"\n")
 	st := codexStore(t)
 
-	if n, _ := CollectCodex(dir, st, pricing.Default()); n != 1 {
+	if n, _ := CollectCodex(dir, st, pricing.Default(), nil); n != 1 {
 		t.Fatal("expected fallback event")
 	}
 	events, _ := st.All()

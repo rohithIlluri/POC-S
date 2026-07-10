@@ -1,5 +1,5 @@
 VERSION ?= 1.0.0
-LDFLAGS := -s -w -X github.com/enterprise/aipet/internal/version.Version=$(VERSION)
+LDFLAGS := -s -w -X github.com/rohithIlluri/POC-S/pocs/aipet/internal/version.Version=$(VERSION)
 BIN := bin
 
 .PHONY: all build install test vet fmt clean run daemon status release

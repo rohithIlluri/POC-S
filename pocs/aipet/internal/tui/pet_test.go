@@ -4,9 +4,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/enterprise/aipet/internal/config"
-	"github.com/enterprise/aipet/internal/daemon"
-	"github.com/enterprise/aipet/internal/leaderboard"
+	"github.com/rohithIlluri/POC-S/pocs/aipet/internal/config"
+	"github.com/rohithIlluri/POC-S/pocs/aipet/internal/daemon"
+	"github.com/rohithIlluri/POC-S/pocs/aipet/internal/leaderboard"
 )
 
 // TestViewRenders ensures the pet composes a non-trivial frame even with no

@@ -8,17 +8,34 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/enterprise/aipet/internal/config"
+	"github.com/rohithIlluri/POC-S/pocs/aipet/internal/config"
+	"github.com/rohithIlluri/POC-S/pocs/aipet/internal/store"
 )
 
 // Serve runs the daemon loop until ctx is cancelled, re-collecting every
 // collect_interval_min. It writes a PID file so the TUI can tell whether the
 // companion is alive and so a second daemon refuses to start.
+//
+// The event store and collector scan state are opened once and reused across
+// cycles: the store's dedupe index and event cache make each subsequent cycle
+// incremental (only new log lines are parsed), instead of re-reading the whole
+// event log every interval.
 func Serve(ctx context.Context, cfg config.Config) error {
 	if err := acquireLock(); err != nil {
 		return err
 	}
 	defer releaseLock()
+
+	dbPath, err := config.DBPath()
+	if err != nil {
+		return err
+	}
+	st, err := store.Open(dbPath)
+	if err != nil {
+		return err
+	}
+	defer st.Close()
+	scan := loadScanState()
 
 	// Collection is cheap and local (no network, no model calls), so a short
 	// interval keeps the pet fresh without meaningful cost.
@@ -27,7 +44,7 @@ func Serve(ctx context.Context, cfg config.Config) error {
 		collectEvery = 2 * time.Minute
 	}
 
-	if _, err := Run(cfg); err != nil {
+	if _, err := runCycle(cfg, st, scan); err != nil {
 		fmt.Fprintf(os.Stderr, "aipet: initial cycle: %v\n", err)
 	}
 
@@ -38,7 +55,7 @@ func Serve(ctx context.Context, cfg config.Config) error {
 		case <-ctx.Done():
 			return nil
 		case <-t.C:
-			if _, err := Run(cfg); err != nil {
+			if _, err := runCycle(cfg, st, scan); err != nil {
 				fmt.Fprintf(os.Stderr, "aipet: cycle: %v\n", err)
 			}
 		}

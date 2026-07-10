@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/enterprise/aipet/internal/store"
+	"github.com/rohithIlluri/POC-S/pocs/aipet/internal/store"
 )
 
 func hasID(sugs []Suggestion, id string) bool {
