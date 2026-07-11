@@ -357,6 +357,26 @@
     .stat .sd{grid-column:1/-1}
   }
   ::selection{background:var(--phos);color:#04240e}
+
+  /* ---- mobile ---- */
+  @media (max-width:720px){
+    body{font-size:13px}
+    .pillars,.dist{grid-template-columns:1fr}
+    .species{grid-template-columns:repeat(2,1fr)}
+    .dexgrid{grid-template-columns:repeat(auto-fill,minmax(124px,1fr));gap:8px}
+    .dexcard pre{font-size:11px}
+    .mrow{grid-template-columns:40px 1fr 84px}
+    .mrow .bar{display:none}
+    .mrow>div{padding:11px 10px}
+    .stat{grid-template-columns:58px 1fr;row-gap:2px}
+    .stat .sd{grid-column:1 / -1;margin-top:-4px}
+    .feedlog .fl-row{grid-template-columns:1fr}
+    .feedlog .fl-sig{border-bottom:1px dashed var(--line)}
+  }
+  @media (max-width:420px){
+    .species{grid-template-columns:1fr}
+    .dexgrid{grid-template-columns:repeat(2,1fr)}
+  }
 </style>
 </head>
 <body>
@@ -688,8 +708,382 @@
     <button data-f="rarity" data-v="mythic">Mythic</button>
   </div>
 
-  <div class="dexgrid" id="dexGrid"></div>
-  <div class="dex-count" id="dexCount"></div>
+  <div class="dexgrid" id="dexGrid">
+    <div class="dexcard t-runtime r-common" data-type="runtime" data-rarity="common">
+      <div class="dn">#001</div>
+      <div class="dname">Cindling</div>
+      <pre style="animation:dex-bob 3.00s ease-in-out 0.00s infinite, dex-blink 4.50s ease-in-out 0.00s infinite">▴
+(• ◡ •)
+( ─── )
+˘   ˘</pre>
+      <div class="dtags">
+        <span class="dtag dt-type">runtime</span>
+        <span class="dtag dt-rarity">common</span>
+      </div>
+      <div class="faint" style="font-size:9.5px;margin-top:5px">BST 200 · Runtime Ridge</div>
+    </div>
+    <div class="dexcard t-runtime r-rare" data-type="runtime" data-rarity="rare">
+      <div class="dn">#002</div>
+      <div class="dname">Forgeon</div>
+      <pre style="animation:dex-bob 3.35s ease-in-out 0.40s infinite, dex-blink 5.20s ease-in-out 0.40s infinite">▴▴▴
+(◕ ◡ ◕)
+(═════)
+˘   ˘</pre>
+      <div class="dtags">
+        <span class="dtag dt-type">runtime</span>
+        <span class="dtag dt-rarity">rare</span>
+      </div>
+      <div class="faint" style="font-size:9.5px;margin-top:5px">BST 285 · Runtime Ridge</div>
+    </div>
+    <div class="dexcard t-runtime r-relic" data-type="runtime" data-rarity="relic">
+      <div class="dn">#003</div>
+      <div class="dname">Pyrolith</div>
+      <pre style="animation:dex-bob 3.70s ease-in-out 0.80s infinite, dex-blink 5.90s ease-in-out 0.80s infinite">▲▲▲
+(◆ ◡ ◆)
+(══▣══)
+˘˘   ˘˘</pre>
+      <div class="dtags">
+        <span class="dtag dt-type">runtime</span>
+        <span class="dtag dt-rarity">relic</span>
+      </div>
+      <div class="faint" style="font-size:9.5px;margin-top:5px">BST 345 · Runtime Ridge</div>
+    </div>
+    <div class="dexcard t-stream r-common" data-type="stream" data-rarity="common">
+      <div class="dn">#004</div>
+      <div class="dname">Rivulet</div>
+      <pre style="animation:dex-bob 4.05s ease-in-out 1.20s infinite, dex-blink 6.60s ease-in-out 1.20s infinite">∿∿∿
+≋(° ◡ °)&gt;
+‿‿‿</pre>
+      <div class="dtags">
+        <span class="dtag dt-type">stream</span>
+        <span class="dtag dt-rarity">common</span>
+      </div>
+      <div class="faint" style="font-size:9.5px;margin-top:5px">BST 200 · Streamfall</div>
+    </div>
+    <div class="dexcard t-stream r-rare" data-type="stream" data-rarity="rare">
+      <div class="dn">#005</div>
+      <div class="dname">Cascada</div>
+      <pre style="animation:dex-bob 3.00s ease-in-out 1.60s infinite, dex-blink 7.30s ease-in-out 1.60s infinite">∿∿∿∿
+≋≋(˘ ◡ ˘)&gt;
+‿‿‿‿</pre>
+      <div class="dtags">
+        <span class="dtag dt-type">stream</span>
+        <span class="dtag dt-rarity">rare</span>
+      </div>
+      <div class="faint" style="font-size:9.5px;margin-top:5px">BST 300 · Streamfall</div>
+    </div>
+    <div class="dexcard t-stream r-relic" data-type="stream" data-rarity="relic">
+      <div class="dn">#006</div>
+      <div class="dname">Torrentide</div>
+      <pre style="animation:dex-bob 3.35s ease-in-out 2.00s infinite, dex-blink 4.50s ease-in-out 2.00s infinite">∿∿∿∿∿
+≋≋≋(˘ ◡ ˘)≫
+≈≈≈≈≈</pre>
+      <div class="dtags">
+        <span class="dtag dt-type">stream</span>
+        <span class="dtag dt-rarity">relic</span>
+      </div>
+      <div class="faint" style="font-size:9.5px;margin-top:5px">BST 335 · Streamfall</div>
+    </div>
+    <div class="dexcard t-syntax r-common" data-type="syntax" data-rarity="common">
+      <div class="dn">#007</div>
+      <div class="dname">Glyphit</div>
+      <pre style="animation:dex-bob 3.70s ease-in-out 2.40s infinite, dex-blink 5.20s ease-in-out 2.40s infinite">˖ ˖
+\+ +/
+(• ◡ •)
+/- -\</pre>
+      <div class="dtags">
+        <span class="dtag dt-type">syntax</span>
+        <span class="dtag dt-rarity">common</span>
+      </div>
+      <div class="faint" style="font-size:9.5px;margin-top:5px">BST 200 · Syntax Thicket</div>
+    </div>
+    <div class="dexcard t-syntax r-rare" data-type="syntax" data-rarity="rare">
+      <div class="dn">#008</div>
+      <div class="dname">Polyglyph</div>
+      <pre style="animation:dex-bob 4.05s ease-in-out 0.00s infinite, dex-blink 5.90s ease-in-out 0.00s infinite">˖ ˖
+\\+ +//
+((• ◡ •))
+//- -\\</pre>
+      <div class="dtags">
+        <span class="dtag dt-type">syntax</span>
+        <span class="dtag dt-rarity">rare</span>
+      </div>
+      <div class="faint" style="font-size:9.5px;margin-top:5px">BST 300 · Syntax Thicket</div>
+    </div>
+    <div class="dexcard t-syntax r-relic" data-type="syntax" data-rarity="relic">
+      <div class="dn">#009</div>
+      <div class="dname">Omniglyph</div>
+      <pre style="animation:dex-bob 3.00s ease-in-out 0.40s infinite, dex-blink 6.60s ease-in-out 0.40s infinite">˖ ˖ ˖
+\\\+ +///
+=((◆ ◡ ◆))=
+///- -\\\</pre>
+      <div class="dtags">
+        <span class="dtag dt-type">syntax</span>
+        <span class="dtag dt-rarity">relic</span>
+      </div>
+      <div class="faint" style="font-size:9.5px;margin-top:5px">BST 333 · Syntax Thicket</div>
+    </div>
+    <div class="dexcard t-cache r-common" data-type="cache" data-rarity="common">
+      <div class="dn">#010</div>
+      <div class="dname">Hoardlet</div>
+      <pre style="animation:dex-bob 3.35s ease-in-out 0.80s infinite, dex-blink 7.30s ease-in-out 0.80s infinite">╭─◠─╮
+(o• ◡ •o)
+╰ $ ╯</pre>
+      <div class="dtags">
+        <span class="dtag dt-type">cache</span>
+        <span class="dtag dt-rarity">common</span>
+      </div>
+      <div class="faint" style="font-size:9.5px;margin-top:5px">BST 215 · The Cachefen</div>
+    </div>
+    <div class="dexcard t-cache r-common" data-type="cache" data-rarity="common">
+      <div class="dn">#011</div>
+      <div class="dname">Memoize</div>
+      <pre style="animation:dex-bob 3.70s ease-in-out 1.20s infinite, dex-blink 4.50s ease-in-out 1.20s infinite">╭────╮
+(◕ ◡ ◕)
+╰─◡◡─╯</pre>
+      <div class="dtags">
+        <span class="dtag dt-type">cache</span>
+        <span class="dtag dt-rarity">common</span>
+      </div>
+      <div class="faint" style="font-size:9.5px;margin-top:5px">BST 215 · The Cachefen</div>
+    </div>
+    <div class="dexcard t-cache r-uncommon" data-type="cache" data-rarity="uncommon">
+      <div class="dn">#012</div>
+      <div class="dname">Memoizard</div>
+      <pre style="animation:dex-bob 4.05s ease-in-out 1.60s infinite, dex-blink 5.20s ease-in-out 1.60s infinite">╔════╗
+(◕ ◡ ◕)
+╰─◡◡─╯</pre>
+      <div class="dtags">
+        <span class="dtag dt-type">cache</span>
+        <span class="dtag dt-rarity">uncommon</span>
+      </div>
+      <div class="faint" style="font-size:9.5px;margin-top:5px">BST 255 · The Cachefen</div>
+    </div>
+    <div class="dexcard t-cache r-uncommon" data-type="cache" data-rarity="uncommon">
+      <div class="dn">#013</div>
+      <div class="dname">Pinshell</div>
+      <pre style="animation:dex-bob 3.00s ease-in-out 2.00s infinite, dex-blink 5.90s ease-in-out 2.00s infinite">╭▩▩▩╮
+(◕ ◡ ◕)
+˘╰──╯˘</pre>
+      <div class="dtags">
+        <span class="dtag dt-type">cache</span>
+        <span class="dtag dt-rarity">uncommon</span>
+      </div>
+      <div class="faint" style="font-size:9.5px;margin-top:5px">BST 250 · The Cachefen</div>
+    </div>
+    <div class="dexcard t-cache r-rare" data-type="cache" data-rarity="rare">
+      <div class="dn">#014</div>
+      <div class="dname">Staleout</div>
+      <pre style="animation:dex-bob 3.35s ease-in-out 2.40s infinite, dex-blink 6.60s ease-in-out 2.40s infinite">╭ ╌╌ ╮
+(◔ ╌ ◔)
+╰ ╌╌ ╯</pre>
+      <div class="dtags">
+        <span class="dtag dt-type">cache</span>
+        <span class="dtag dt-rarity">rare</span>
+      </div>
+      <div class="faint" style="font-size:9.5px;margin-top:5px">BST 290 · The Cachefen</div>
+    </div>
+    <div class="dexcard t-context r-common" data-type="context" data-rarity="common">
+      <div class="dn">#015</div>
+      <div class="dname">Widecope</div>
+      <pre style="animation:dex-bob 3.70s ease-in-out 0.00s infinite, dex-blink 7.30s ease-in-out 0.00s infinite">╭─────╮
+(◕ ◕ ◕)
+╰──╥──╯</pre>
+      <div class="dtags">
+        <span class="dtag dt-type">context</span>
+        <span class="dtag dt-rarity">common</span>
+      </div>
+      <div class="faint" style="font-size:9.5px;margin-top:5px">BST 220 · The Contexta Canopy</div>
+    </div>
+    <div class="dexcard t-context r-common" data-type="context" data-rarity="common">
+      <div class="dn">#016</div>
+      <div class="dname">Tabsprout</div>
+      <pre style="animation:dex-bob 4.05s ease-in-out 0.40s infinite, dex-blink 4.50s ease-in-out 0.40s infinite">▐▌ ▐▌
+(˘ ◡ ˘)
+╰───╯</pre>
+      <div class="dtags">
+        <span class="dtag dt-type">context</span>
+        <span class="dtag dt-rarity">common</span>
+      </div>
+      <div class="faint" style="font-size:9.5px;margin-top:5px">BST 205 · The Contexta Canopy</div>
+    </div>
+    <div class="dexcard t-context r-uncommon" data-type="context" data-rarity="uncommon">
+      <div class="dn">#017</div>
+      <div class="dname">Tabgrove</div>
+      <pre style="animation:dex-bob 3.00s ease-in-out 0.80s infinite, dex-blink 5.20s ease-in-out 0.80s infinite">▐▌▐▌▐▌
+(˘ ◡ ˘)
+╰────╯</pre>
+      <div class="dtags">
+        <span class="dtag dt-type">context</span>
+        <span class="dtag dt-rarity">uncommon</span>
+      </div>
+      <div class="faint" style="font-size:9.5px;margin-top:5px">BST 250 · The Contexta Canopy</div>
+    </div>
+    <div class="dexcard t-context r-relic" data-type="context" data-rarity="relic">
+      <div class="dn">#018</div>
+      <div class="dname">Longwindow</div>
+      <pre style="animation:dex-bob 3.35s ease-in-out 1.20s infinite, dex-blink 5.90s ease-in-out 1.20s infinite">▐▌▐▌▐▌▐▌
+(◕ │ ◕)
+╰─────╯</pre>
+      <div class="dtags">
+        <span class="dtag dt-type">context</span>
+        <span class="dtag dt-rarity">relic</span>
+      </div>
+      <div class="faint" style="font-size:9.5px;margin-top:5px">BST 340 · The Contexta Canopy</div>
+    </div>
+    <div class="dexcard t-context r-mythic" data-type="context" data-rarity="mythic">
+      <div class="dn">#019</div>
+      <div class="dname">Everfile</div>
+      <pre style="animation:dex-bob 3.70s ease-in-out 1.60s infinite, dex-blink 6.60s ease-in-out 1.60s infinite, dex-mythflick 3.6s ease-in-out infinite">▐█▐█▐█▐█
+(◆ ║ ◆)
+╚══════╝
+˅      ˅</pre>
+      <div class="dtags">
+        <span class="dtag dt-type">context</span>
+        <span class="dtag dt-rarity">mythic</span>
+      </div>
+      <div class="faint" style="font-size:9.5px;margin-top:5px">BST 400 · The Contexta Canopy</div>
+    </div>
+    <div class="dexcard t-daemon r-uncommon" data-type="daemon" data-rarity="uncommon">
+      <div class="dn">#020</div>
+      <div class="dname">Cronkin</div>
+      <pre style="animation:dex-bob 4.05s ease-in-out 2.00s infinite, dex-blink 7.30s ease-in-out 2.00s infinite">╭─◷─╮
+(• ◡ •)
+╰┬──┬╯</pre>
+      <div class="dtags">
+        <span class="dtag dt-type">daemon</span>
+        <span class="dtag dt-rarity">uncommon</span>
+      </div>
+      <div class="faint" style="font-size:9.5px;margin-top:5px">BST 255 · The Daemon Deep</div>
+    </div>
+    <div class="dexcard t-daemon r-rare" data-type="daemon" data-rarity="rare">
+      <div class="dn">#021</div>
+      <div class="dname">Cronarch</div>
+      <pre style="animation:dex-bob 3.00s ease-in-out 2.40s infinite, dex-blink 4.50s ease-in-out 2.40s infinite">╔═◷═╗
+(◕ ◡ ◕)
+╰┬──┬╯</pre>
+      <div class="dtags">
+        <span class="dtag dt-type">daemon</span>
+        <span class="dtag dt-rarity">rare</span>
+      </div>
+      <div class="faint" style="font-size:9.5px;margin-top:5px">BST 305 · The Daemon Deep</div>
+    </div>
+    <div class="dexcard t-daemon r-common" data-type="daemon" data-rarity="common">
+      <div class="dn">#022</div>
+      <div class="dname">Nightproc</div>
+      <pre style="animation:dex-bob 3.35s ease-in-out 0.00s infinite, dex-blink 5.20s ease-in-out 0.00s infinite">☾
+(˘ ω ˘)
+╰─◡─╯
+ᶻ ᶻ ᶻ</pre>
+      <div class="dtags">
+        <span class="dtag dt-type">daemon</span>
+        <span class="dtag dt-rarity">common</span>
+      </div>
+      <div class="faint" style="font-size:9.5px;margin-top:5px">BST 215 · The Daemon Deep</div>
+    </div>
+    <div class="dexcard t-daemon r-uncommon" data-type="daemon" data-rarity="uncommon">
+      <div class="dn">#023</div>
+      <div class="dname">Zombierun</div>
+      <pre style="animation:dex-bob 3.70s ease-in-out 0.40s infinite, dex-blink 5.90s ease-in-out 0.40s infinite">╭ ╌╌ ╮
+(✕ ╌ ✕)
+╰ ╌╌ ╯
+?  ?</pre>
+      <div class="dtags">
+        <span class="dtag dt-type">daemon</span>
+        <span class="dtag dt-rarity">uncommon</span>
+      </div>
+      <div class="faint" style="font-size:9.5px;margin-top:5px">BST 250 · The Cachefen</div>
+    </div>
+    <div class="dexcard t-daemon r-mythic" data-type="daemon" data-rarity="mythic">
+      <div class="dn">#024</div>
+      <div class="dname">Uptimewyrm</div>
+      <pre style="animation:dex-bob 4.05s ease-in-out 0.80s infinite, dex-blink 6.60s ease-in-out 0.80s infinite, dex-mythflick 3.6s ease-in-out infinite">∿═∿═∿
+(◕ ω ◕)
+∿═∿═∿
+·365·</pre>
+      <div class="dtags">
+        <span class="dtag dt-type">daemon</span>
+        <span class="dtag dt-rarity">mythic</span>
+      </div>
+      <div class="faint" style="font-size:9.5px;margin-top:5px">BST 380 · The Daemon Deep</div>
+    </div>
+    <div class="dexcard t-runtime r-common" data-type="runtime" data-rarity="common">
+      <div class="dn">#025</div>
+      <div class="dname">Stackrail</div>
+      <pre style="animation:dex-bob 3.00s ease-in-out 1.20s infinite, dex-blink 7.30s ease-in-out 1.20s infinite">▤▤▤▤▤
+(• ◡ •)
+(═════)
+ʌ ʌ ʌ ʌ</pre>
+      <div class="dtags">
+        <span class="dtag dt-type">runtime</span>
+        <span class="dtag dt-rarity">common</span>
+      </div>
+      <div class="faint" style="font-size:9.5px;margin-top:5px">BST 200 · Runtime Ridge</div>
+    </div>
+    <div class="dexcard t-runtime r-rare" data-type="runtime" data-rarity="rare">
+      <div class="dn">#026</div>
+      <div class="dname">Threadwolf</div>
+      <pre style="animation:dex-bob 3.35s ease-in-out 1.60s infinite, dex-blink 4.50s ease-in-out 1.60s infinite">▲ ▲  ▲ ▲
+(◕ᴥ◕)(◕ᴥ◕)
+˘ ˘  ˘ ˘</pre>
+      <div class="dtags">
+        <span class="dtag dt-type">runtime</span>
+        <span class="dtag dt-rarity">rare</span>
+      </div>
+      <div class="faint" style="font-size:9.5px;margin-top:5px">BST 280 · The Daemon Deep</div>
+    </div>
+    <div class="dexcard t-stream r-uncommon" data-type="stream" data-rarity="uncommon">
+      <div class="dn">#027</div>
+      <div class="dname">Bufferpup</div>
+      <pre style="animation:dex-bob 3.70s ease-in-out 2.00s infinite, dex-blink 5.20s ease-in-out 2.00s infinite">◠   ◠
+(◕ ᴥ ◕)
+╰─◡─╯
+∪   ∪</pre>
+      <div class="dtags">
+        <span class="dtag dt-type">stream</span>
+        <span class="dtag dt-rarity">uncommon</span>
+      </div>
+      <div class="faint" style="font-size:9.5px;margin-top:5px">BST 245 · Runtime Ridge</div>
+    </div>
+    <div class="dexcard t-stream r-rare" data-type="stream" data-rarity="rare">
+      <div class="dn">#028</div>
+      <div class="dname">Flashecho</div>
+      <pre style="animation:dex-bob 4.05s ease-in-out 2.40s infinite, dex-blink 5.90s ease-in-out 2.40s infinite">≫≫≫
+(&gt; ◡ &lt;)≫
+‿‿‿</pre>
+      <div class="dtags">
+        <span class="dtag dt-type">stream</span>
+        <span class="dtag dt-rarity">rare</span>
+      </div>
+      <div class="faint" style="font-size:9.5px;margin-top:5px">BST 285 · Streamfall</div>
+    </div>
+    <div class="dexcard t-syntax r-common" data-type="syntax" data-rarity="common">
+      <div class="dn">#029</div>
+      <div class="dname">Bracketail</div>
+      <pre style="animation:dex-bob 3.00s ease-in-out 0.00s infinite, dex-blink 6.60s ease-in-out 0.00s infinite">{ [ ] }
+[◕ ◡ ◕]
+{ [ ] }</pre>
+      <div class="dtags">
+        <span class="dtag dt-type">syntax</span>
+        <span class="dtag dt-rarity">common</span>
+      </div>
+      <div class="faint" style="font-size:9.5px;margin-top:5px">BST 225 · Syntax Thicket</div>
+    </div>
+    <div class="dexcard t-syntax r-uncommon" data-type="syntax" data-rarity="uncommon">
+      <div class="dn">#030</div>
+      <div class="dname">Lintmoth</div>
+      <pre style="animation:dex-bob 3.35s ease-in-out 0.40s infinite, dex-blink 7.30s ease-in-out 0.40s infinite">˖ ˖
+\] [/
+(˘ ◡ ˘)
+/] [\</pre>
+      <div class="dtags">
+        <span class="dtag dt-type">syntax</span>
+        <span class="dtag dt-rarity">uncommon</span>
+      </div>
+      <div class="faint" style="font-size:9.5px;margin-top:5px">BST 240 · Syntax Thicket</div>
+    </div>
+  </div>
+  <div class="dex-count" id="dexCount">showing 30 / 30 species</div>
 
   <h3>Rarity tiers &amp; base-stat-total bands</h3>
   <div class="odds-strip">
@@ -727,13 +1121,13 @@
   <p class="faint" style="margin-top:8px;font-size:12px">Roll: <code>SHA256(dna‖date‖"lucent") mod denom</code> — a Keeper working 10 minutes a day maintains streak identically to one working 8 hours a day.</p>
 
   <h3>Anti-frustration guarantees (arithmetic, not vibes)</h3>
-  <table>
+  <div class="tbl-scroll"><table>
     <tr><th>Guarantee</th><th>Mechanism</th><th>Bound</th></tr>
     <tr><td>First RARE+</td><td>whiff-streak pity floors at RARE after 40 whiffs</td><td class="dim">≤40 days worst case · ~9–10 days expected</td></tr>
     <tr><td>First RELIC+</td><td>pity floors at RELIC after 120 whiffs</td><td class="dim">≤120 days worst case</td></tr>
     <tr><td>Casual Dex completion</td><td>uncaught-first species weighting, N_common=10</td><td class="dim">&lt;12 weeks even at 2 active days/week</td></tr>
     <tr><td>Neglect</td><td>hibernation after 7 idle days, wakes happy</td><td class="dim">vacation delays the clock, never rewinds it</td></tr>
-  </table>
+  </table></div>
 
   <h3>Badges — 15 titles, all from real signals</h3>
   <div class="badges">
@@ -767,7 +1161,7 @@
   <p class="dim"><span class="movekind mk-strike">STRIKE</span> direct damage (VIGOR-driven) &nbsp; <span class="movekind mk-hex">HEX</span> status-inflicting (WIT-driven) &nbsp; <span class="movekind mk-guard">GUARD</span> defensive charge &nbsp; <span class="movekind mk-boost">BOOST</span> self-buff charge — 6 per type × 6 types = 36, plus 9 signature moves for the starter lines.</p>
 
   <h3>Sample movepool — RUNTIME</h3>
-  <table>
+  <div class="tbl-scroll"><table>
     <tr><th>Move</th><th>Kind</th><th>Power</th><th>Acc</th><th>Flavor</th></tr>
     <tr><td>Segfault</td><td><span class="movekind mk-strike">STRIKE</span></td><td>80</td><td>5/8</td><td class="dim">Reaches into memory it was never given.</td></tr>
     <tr><td>Force Push</td><td><span class="movekind mk-strike">STRIKE</span></td><td>60</td><td>3/4</td><td class="dim">Overwrites whatever was there. History optional.</td></tr>
@@ -775,10 +1169,10 @@
     <tr><td>Sandbox</td><td><span class="movekind mk-guard">GUARD</span></td><td>—</td><td>1/1</td><td class="dim">Runs the risky part in isolation first.</td></tr>
     <tr><td>Overclock</td><td><span class="movekind mk-boost">BOOST</span></td><td>—</td><td>1/1</td><td class="dim">Pushes the clock past the sane range. Fans scream.</td></tr>
     <tr><td>Panic Unwind</td><td><span class="movekind mk-hex">HEX</span></td><td>30</td><td>7/8</td><td class="dim">Doesn't crash cleanly. Leaves a mess.</td></tr>
-  </table>
+  </table></div>
 
   <h3>Status effects</h3>
-  <table>
+  <div class="tbl-scroll"><table>
     <tr><th>Status</th><th>Duration</th><th>Effect</th></tr>
     <tr><td>DEPRECATED</td><td class="dim">3 turns</td><td class="dim">outgoing power × 3/4</td></tr>
     <tr><td>RATE_LIMITED</td><td class="dim">2 turns</td><td class="dim">1/4 chance to skip the turn</td></tr>
@@ -786,7 +1180,7 @@
     <tr><td>TOKEN_BLOAT</td><td class="dim">until Focus &gt;0</td><td class="dim">incoming damage × 5/4</td></tr>
     <tr><td>HOTPATCHED</td><td class="dim">1 turn</td><td class="dim">next hit against holder is a guaranteed crit</td></tr>
     <tr><td>WARMED_UP</td><td class="dim">1 turn</td><td class="dim">next outgoing power × 3/2</td></tr>
-  </table>
+  </table></div>
 
   <h3>Worked example — Forgeon vs Cascada, both level 20</h3>
   <pre class="flow">
@@ -931,63 +1325,9 @@ internal/tui/            <span class="new">MORPH</span> <span class="c">game scr
 </div>
 
 <script>
-const DEX = [
-  {n:1,id:"cindling",name:"Cindling",type:"runtime",rarity:"common",bst:200,hab:"Runtime Ridge",art:"▴\n(• ◡ •)\n( ─── )\n˘   ˘"},
-  {n:2,id:"forgeon",name:"Forgeon",type:"runtime",rarity:"rare",bst:285,hab:"Runtime Ridge",art:"▴▴▴\n(◕ ◡ ◕)\n(═════)\n˘   ˘"},
-  {n:3,id:"pyrolith",name:"Pyrolith",type:"runtime",rarity:"relic",bst:345,hab:"Runtime Ridge",art:"▲▲▲\n(◆ ◡ ◆)\n(══▣══)\n˘˘   ˘˘"},
-  {n:4,id:"rivulet",name:"Rivulet",type:"stream",rarity:"common",bst:200,hab:"Streamfall",art:"∿∿∿\n≋(° ◡ °)>\n‿‿‿"},
-  {n:5,id:"cascada",name:"Cascada",type:"stream",rarity:"rare",bst:300,hab:"Streamfall",art:"∿∿∿∿\n≋≋(˘ ◡ ˘)>\n‿‿‿‿"},
-  {n:6,id:"torrentide",name:"Torrentide",type:"stream",rarity:"relic",bst:335,hab:"Streamfall",art:"∿∿∿∿∿\n≋≋≋(˘ ◡ ˘)≫\n≈≈≈≈≈"},
-  {n:7,id:"glyphit",name:"Glyphit",type:"syntax",rarity:"common",bst:200,hab:"Syntax Thicket",art:"˖ ˖\n\\+ +/\n(• ◡ •)\n/- -\\"},
-  {n:8,id:"polyglyph",name:"Polyglyph",type:"syntax",rarity:"rare",bst:300,hab:"Syntax Thicket",art:"˖ ˖\n\\\\+ +//\n((• ◡ •))\n//- -\\\\"},
-  {n:9,id:"omniglyph",name:"Omniglyph",type:"syntax",rarity:"relic",bst:333,hab:"Syntax Thicket",art:"˖ ˖ ˖\n\\\\\\+ +///\n=((◆ ◡ ◆))=\n///- -\\\\\\"},
-  {n:10,id:"hoardlet",name:"Hoardlet",type:"cache",rarity:"common",bst:215,hab:"The Cachefen",art:"╭─◠─╮\n(o• ◡ •o)\n╰ $$ ╯"},
-  {n:11,id:"memoize",name:"Memoize",type:"cache",rarity:"common",bst:215,hab:"The Cachefen",art:"╭────╮\n(◕ ◡ ◕)\n╰─◡◡─╯"},
-  {n:12,id:"memoizard",name:"Memoizard",type:"cache",rarity:"uncommon",bst:255,hab:"The Cachefen",art:"╔════╗\n(◕ ◡ ◕)\n╰─◡◡─╯"},
-  {n:13,id:"pinshell",name:"Pinshell",type:"cache",rarity:"uncommon",bst:250,hab:"The Cachefen",art:"╭▩▩▩╮\n(◕ ◡ ◕)\n˘╰──╯˘"},
-  {n:14,id:"staleout",name:"Staleout",type:"cache",rarity:"rare",bst:290,hab:"The Cachefen",art:"╭ ╌╌ ╮\n(◔ ╌ ◔)\n╰ ╌╌ ╯"},
-  {n:15,id:"widecope",name:"Widecope",type:"context",rarity:"common",bst:220,hab:"The Contexta Canopy",art:"╭─────╮\n(◕ ◕ ◕)\n╰──╥──╯"},
-  {n:16,id:"tabsprout",name:"Tabsprout",type:"context",rarity:"common",bst:205,hab:"The Contexta Canopy",art:"▐▌ ▐▌\n(˘ ◡ ˘)\n╰───╯"},
-  {n:17,id:"tabgrove",name:"Tabgrove",type:"context",rarity:"uncommon",bst:250,hab:"The Contexta Canopy",art:"▐▌▐▌▐▌\n(˘ ◡ ˘)\n╰────╯"},
-  {n:18,id:"longwindow",name:"Longwindow",type:"context",rarity:"relic",bst:340,hab:"The Contexta Canopy",art:"▐▌▐▌▐▌▐▌\n(◕ │ ◕)\n╰─────╯"},
-  {n:19,id:"everfile",name:"Everfile",type:"context",rarity:"mythic",bst:400,hab:"The Contexta Canopy",art:"▐█▐█▐█▐█\n(◆ ║ ◆)\n╚══════╝\n˅      ˅"},
-  {n:20,id:"cronkin",name:"Cronkin",type:"daemon",rarity:"uncommon",bst:255,hab:"The Daemon Deep",art:"╭─◷─╮\n(• ◡ •)\n╰┬──┬╯"},
-  {n:21,id:"cronarch",name:"Cronarch",type:"daemon",rarity:"rare",bst:305,hab:"The Daemon Deep",art:"╔═◷═╗\n(◕ ◡ ◕)\n╰┬──┬╯"},
-  {n:22,id:"nightproc",name:"Nightproc",type:"daemon",rarity:"common",bst:215,hab:"The Daemon Deep",art:"☾\n(˘ ω ˘)\n╰─◡─╯\nᶻ ᶻ ᶻ"},
-  {n:23,id:"zombierun",name:"Zombierun",type:"daemon",rarity:"uncommon",bst:250,hab:"The Cachefen",art:"╭ ╌╌ ╮\n(✕ ╌ ✕)\n╰ ╌╌ ╯\n?  ?"},
-  {n:24,id:"uptimewyrm",name:"Uptimewyrm",type:"daemon",rarity:"mythic",bst:380,hab:"The Daemon Deep",art:"∿═∿═∿\n(◕ ω ◕)\n∿═∿═∿\n·365·"},
-  {n:25,id:"stackrail",name:"Stackrail",type:"runtime",rarity:"common",bst:200,hab:"Runtime Ridge",art:"▤▤▤▤▤\n(• ◡ •)\n(═════)\nʌ ʌ ʌ ʌ"},
-  {n:26,id:"threadwolf",name:"Threadwolf",type:"runtime",rarity:"rare",bst:280,hab:"The Daemon Deep",art:"▲ ▲  ▲ ▲\n(◕ᴥ◕)(◕ᴥ◕)\n˘ ˘  ˘ ˘"},
-  {n:27,id:"bufferpup",name:"Bufferpup",type:"stream",rarity:"uncommon",bst:245,hab:"Runtime Ridge",art:"◠   ◠\n(◕ ᴥ ◕)\n╰─◡─╯\n∪   ∪"},
-  {n:28,id:"flashecho",name:"Flashecho",type:"stream",rarity:"rare",bst:285,hab:"Streamfall",art:"≫≫≫\n(> ◡ <)≫\n‿‿‿"},
-  {n:29,id:"bracketail",name:"Bracketail",type:"syntax",rarity:"common",bst:225,hab:"Syntax Thicket",art:"{ [ ] }\n[◕ ◡ ◕]\n{ [ ] }"},
-  {n:30,id:"lintmoth",name:"Lintmoth",type:"syntax",rarity:"uncommon",bst:240,hab:"Syntax Thicket",art:"˖ ˖\n\\] [/\n(˘ ◡ ˘)\n/] [\\"}
-];
-
-function renderDex(){
-  const grid = document.getElementById('dexGrid');
-  grid.innerHTML = DEX.map((s,i) => {
-    const bobDur = (3 + (i%4)*0.35).toFixed(2);
-    const blinkDur = (4.5 + (i%5)*0.7).toFixed(2);
-    const delay = ((i%7)*0.4).toFixed(2);
-    let anim = `dex-bob ${bobDur}s ease-in-out ${delay}s infinite, dex-blink ${blinkDur}s ease-in-out ${delay}s infinite`;
-    if (s.rarity === 'mythic') anim += `, dex-mythflick 3.6s ease-in-out infinite`;
-    return `
-    <div class="dexcard t-${s.type} r-${s.rarity}" data-type="${s.type}" data-rarity="${s.rarity}">
-      <div class="dn">#${String(s.n).padStart(3,'0')}</div>
-      <div class="dname">${s.name}</div>
-      <pre style="animation:${anim}">${s.art}</pre>
-      <div class="dtags">
-        <span class="dtag dt-type">${s.type}</span>
-        <span class="dtag dt-rarity">${s.rarity}</span>
-      </div>
-      <div class="faint" style="font-size:9.5px;margin-top:5px">BST ${s.bst} · ${s.hab}</div>
-    </div>
-  `;
-  }).join('');
-  applyDexFilter();
-}
-
+// The Dex cards are statically rendered above so the page is complete even
+// where scripts don't run (mobile preview panes, strict CSP, no-JS). This
+// script only wires the type/rarity filter buttons.
 let activeType = 'all', activeRarity = 'all';
 function applyDexFilter(){
   const cards = document.querySelectorAll('#dexGrid .dexcard');
@@ -999,23 +1339,18 @@ function applyDexFilter(){
     c.classList.toggle('dex-hidden', !visible);
     if (visible) shown++;
   });
-  document.getElementById('dexCount').textContent = `showing ${shown} / ${DEX.length} species`;
+  document.getElementById('dexCount').textContent = `showing ${shown} / ${cards.length} species`;
 }
-
-document.getElementById('dexTypeFilters').addEventListener('click', e => {
-  if (e.target.tagName !== 'BUTTON') return;
-  activeType = e.target.dataset.v;
-  document.querySelectorAll('#dexTypeFilters button').forEach(b => b.classList.toggle('active', b === e.target));
-  applyDexFilter();
-});
-document.getElementById('dexRarityFilters').addEventListener('click', e => {
-  if (e.target.tagName !== 'BUTTON') return;
-  activeRarity = e.target.dataset.v;
-  document.querySelectorAll('#dexRarityFilters button').forEach(b => b.classList.toggle('active', b === e.target));
-  applyDexFilter();
-});
-
-renderDex();
+function wireFilters(id, set){
+  document.getElementById(id).addEventListener('click', e => {
+    if (e.target.tagName !== 'BUTTON') return;
+    set(e.target.dataset.v);
+    document.querySelectorAll('#' + id + ' button').forEach(b => b.classList.toggle('active', b === e.target));
+    applyDexFilter();
+  });
+}
+wireFilters('dexTypeFilters', v => { activeType = v; });
+wireFilters('dexRarityFilters', v => { activeRarity = v; });
 </script>
 </body>
 </html>
