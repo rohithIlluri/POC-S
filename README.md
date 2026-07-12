@@ -8,6 +8,7 @@ A collection of proof-of-concept projects. Each POC is self-contained in its own
 |---|---|---|
 | [`pocs/ccr`](pocs/ccr) | Multi coding tools router — classifies a coding prompt by task type/complexity and runs it with Claude Code or Codex on a matched model | ✅ Active |
 | [`pocs/aipet`](pocs/aipet) | Local AI-usage companion — a terminal "pet" that reads Claude Code / Codex session logs on-device to coach token spend, rank a local leaderboard, and seed the *Codelings* game. Fully local, zero network surface | ✅ Active (v1.0.0) |
+| [`pocs/pitstop`](pocs/pitstop) | Car maintenance tracker PWA — one dashboard for oil/tires/brakes with mileage-based due-soon alerts, GPS trip logging, and nearby repair shops via OpenStreetMap. Offline-first, zero backend | ✅ Active |
 
 ## Conventions
 

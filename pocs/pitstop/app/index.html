@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Pitstop — car maintenance tracker</title>
+    <meta name="description" content="One dashboard for oil, tires, and brakes: mileage-based due-soon alerts, GPS trip logging, and nearby repair shops." />
+    <meta name="theme-color" content="#0f1216" />
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <link rel="icon" href="./icons/icon-192.png" />
+    <link rel="apple-touch-icon" href="./icons/icon-192.png" />
+    <link rel="stylesheet" href="./css/app.css" />
+  </head>
+  <body>
+    <div id="app">
+      <header class="topbar">
+        <div class="odo-readout">
+          <div>
+            <span class="odo-label">Odometer</span>
+            <span id="odo-value" class="odo-value">— mi</span>
+          </div>
+          <button id="log-reading-btn" class="btn-small">Log reading</button>
+        </div>
+      </header>
+
+      <main id="main">
+        <section class="tab-panel" data-tab="dashboard"></section>
+        <section class="tab-panel" data-tab="trip" hidden></section>
+        <section class="tab-panel" data-tab="shops" hidden></section>
+        <section class="tab-panel" data-tab="settings" hidden></section>
+      </main>
+
+      <nav class="tabbar">
+        <button class="tab-btn active" data-tab="dashboard">
+          <span class="tab-icon">🛠️</span>Dashboard
+        </button>
+        <button class="tab-btn" data-tab="trip">
+          <span class="tab-icon">📍</span>Trip
+        </button>
+        <button class="tab-btn" data-tab="shops">
+          <span class="tab-icon">📌</span>Shops
+        </button>
+        <button class="tab-btn" data-tab="settings">
+          <span class="tab-icon">⚙️</span>Settings
+        </button>
+      </nav>
+
+      <dialog id="modal"></dialog>
+    </div>
+
+    <script type="module" src="./js/ui/app.js"></script>
+  </body>
+</html>

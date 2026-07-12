@@ -1,0 +1,20 @@
+{
+  "name": "pitstop",
+  "version": "0.1.0",
+  "description": "Car maintenance tracker PWA — one dashboard for oil, tires, and brakes with mileage-based due-soon alerts, GPS trip logging, and nearby repair shops via OpenStreetMap",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=20.11"
+  },
+  "scripts": {
+    "lint": "eslint .",
+    "test": "node --test \"test/**/*.test.js\"",
+    "start": "npx -y http-server app -p 8080 -c-1"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.19.0",
+    "eslint": "^9.19.0",
+    "globals": "^15.14.0"
+  }
+}
