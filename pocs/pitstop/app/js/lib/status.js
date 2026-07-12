@@ -81,6 +81,28 @@ export function statusOf(item, ctx) {
   return worstStatus(results);
 }
 
+// Fraction of an item's service interval already consumed: 0 = just serviced,
+// 1 = due now, >1 = overdue. Uses the worst (most-consumed) of the mile and
+// month axes. Null when no axis has both an interval and a baseline.
+export function intervalProgress(item, ctx) {
+  const fractions = [];
+
+  if (item.intervalMiles != null && item.lastServicedMiles != null && item.intervalMiles > 0) {
+    fractions.push((ctx.currentOdometer - item.lastServicedMiles) / item.intervalMiles);
+  }
+
+  if (item.intervalMonths != null && item.lastServicedDateISO != null) {
+    const remaining = daysUntilDue(item, ctx.todayISO);
+    const elapsed = daysBetween(item.lastServicedDateISO, ctx.todayISO);
+    const total = elapsed + remaining;
+    if (total > 0) fractions.push(elapsed / total);
+    else if (remaining <= 0) fractions.push(1);
+  }
+
+  if (fractions.length === 0) return null;
+  return Math.max(0, Math.max(...fractions));
+}
+
 // Average miles driven per day, using readings from the last 90 days when there
 // are enough of them, falling back to the full history. Returns null when there's
 // not enough data to estimate (fewer than 2 readings, or a zero-day span).

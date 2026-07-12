@@ -72,6 +72,16 @@ test("upsertItem adds a custom item and updates an existing one", () => {
   assert.equal(updated.name, "Engine oil & filter");
 });
 
+test("upsertItem generates an id even when the caller passes id: undefined", () => {
+  const store = createStore(fakeStorage());
+  store.load();
+  // the UI form passes an explicit undefined id for new items
+  const created = store.upsertItem({ id: undefined, name: "Spark plugs", intervalMiles: 30000 });
+  assert.ok(created.id, "id must be generated");
+  const doc = store.get();
+  assert.ok(doc.items.find((i) => i.id === created.id));
+});
+
 test("deleteItem removes the item and its notification latch", () => {
   const store = createStore(fakeStorage());
   const doc = store.load();

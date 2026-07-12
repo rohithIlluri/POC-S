@@ -1,4 +1,5 @@
 import { openModal, closeModal } from "./modal.js";
+import { showToast } from "./toast.js";
 
 function escapeAttr(s) {
   return String(s).replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
@@ -48,6 +49,7 @@ export function openItemForm(app, itemId) {
     deleteBtn.addEventListener("click", () => {
       app.store.deleteItem(existing.id);
       closeModal();
+      showToast(`Deleted "${existing.name}"`);
       app.refresh();
     });
   }
@@ -66,6 +68,7 @@ export function openItemForm(app, itemId) {
 
     app.store.upsertItem({ id: existing?.id, name, intervalMiles, intervalMonths, dueSoonMiles });
     closeModal();
+    showToast(existing ? "Item updated" : `Added "${name}"`);
     app.refresh();
   });
 }
@@ -99,6 +102,7 @@ export function openMarkServicedForm(app, itemId) {
     const dateISO = dialog.querySelector("#f-ms-date").value;
     app.store.markServiced(item.id, { miles: Number.isFinite(miles) ? miles : undefined, dateISO });
     closeModal();
+    showToast(`${item.name} marked serviced ✓`);
     app.refresh();
   });
 }

@@ -1,4 +1,5 @@
 import { openModal, closeModal } from "./modal.js";
+import { showToast } from "./toast.js";
 
 export function openLogReadingForm(app) {
   const currentOdo = app.store.currentOdometer();
@@ -26,6 +27,7 @@ export function openLogReadingForm(app) {
     try {
       app.store.addReading({ miles, dateISO, source: "manual" });
       closeModal();
+      showToast(`Odometer updated to ${miles.toLocaleString()} mi`);
       app.refresh();
     } catch (err) {
       dialog.querySelector("#f-odo-error").textContent = err.message;

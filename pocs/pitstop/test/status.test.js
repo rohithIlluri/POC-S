@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { STATUS, statusOf, milesRemaining, daysUntilDue, milesPerDay, projectedDays } from "../app/js/lib/status.js";
+import { STATUS, statusOf, milesRemaining, daysUntilDue, milesPerDay, projectedDays, intervalProgress } from "../app/js/lib/status.js";
 
 const ctx = (currentOdometer, todayISO = "2026-07-12", dueSoonMiles = 500) => ({
   currentOdometer,
@@ -130,4 +130,42 @@ test("projectedDays is null without a remaining figure or a positive rate", () =
 
 test("projectedDays divides remaining miles by the daily rate", () => {
   assert.equal(projectedDays(100, 20), 5);
+});
+
+test("intervalProgress: halfway through a mile interval is 0.5", () => {
+  const item = { intervalMiles: 5000, intervalMonths: null, lastServicedMiles: 40000 };
+  assert.equal(intervalProgress(item, ctx(42500)), 0.5);
+});
+
+test("intervalProgress: overdue exceeds 1", () => {
+  const item = { intervalMiles: 5000, intervalMonths: null, lastServicedMiles: 40000 };
+  assert.ok(intervalProgress(item, ctx(46000)) > 1);
+});
+
+test("intervalProgress: freshly serviced is 0 and never negative", () => {
+  const item = { intervalMiles: 5000, intervalMonths: null, lastServicedMiles: 42000 };
+  assert.equal(intervalProgress(item, ctx(42000)), 0);
+  // odometer below baseline (shouldn't happen, but must not go negative)
+  assert.equal(intervalProgress(item, ctx(41000)), 0);
+});
+
+test("intervalProgress: months-only axis uses elapsed/total days", () => {
+  const item = { intervalMiles: null, intervalMonths: 12, lastServicedDateISO: "2026-01-12" };
+  const p = intervalProgress(item, ctx(0, "2026-07-12"));
+  assert.ok(p > 0.45 && p < 0.55, `expected ~0.5, got ${p}`);
+});
+
+test("intervalProgress: worst of the two axes wins", () => {
+  const item = {
+    intervalMiles: 5000,
+    lastServicedMiles: 41000, // miles axis: 0.2 consumed
+    intervalMonths: 6,
+    lastServicedDateISO: "2020-01-01", // time axis: long overdue
+  };
+  assert.ok(intervalProgress(item, ctx(42000, "2026-07-12")) > 1);
+});
+
+test("intervalProgress: null when no axis has a baseline", () => {
+  const item = { intervalMiles: 5000, intervalMonths: null, lastServicedMiles: null };
+  assert.equal(intervalProgress(item, ctx(42000)), null);
 });

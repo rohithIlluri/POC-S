@@ -19,8 +19,8 @@ function renderShops(container, shops) {
   const list = container.querySelector("#shops-list");
   list.innerHTML = shops
     .map(
-      (s) => `
-    <div class="card shop-card">
+      (s, i) => `
+    <div class="card shop-card" style="--i:${i}">
       <div class="shop-info">
         <div class="shop-name">${escapeHtml(s.name)}</div>
         <div class="shop-meta">${s.kind} · ${s.distanceMi.toFixed(1)} mi${s.address ? ` · ${escapeHtml(s.address)}` : ""}</div>
@@ -42,7 +42,8 @@ async function findShops(container) {
     return;
   }
 
-  container.querySelector("#shops-list").innerHTML = "";
+  container.querySelector("#shops-list").innerHTML =
+    '<div class="skeleton"></div><div class="skeleton"></div><div class="skeleton"></div>';
   setStatus(container, "Getting your location…");
 
   let position;
@@ -51,6 +52,7 @@ async function findShops(container) {
       navigator.geolocation.getCurrentPosition(resolve, reject, { enableHighAccuracy: true, timeout: 15000 })
     );
   } catch (err) {
+    container.querySelector("#shops-list").innerHTML = "";
     setStatus(container, `Couldn't get your location: ${err.message}`, "warn");
     return;
   }
@@ -76,6 +78,7 @@ async function findShops(container) {
       // fall through to the next mirror
     }
   }
+  container.querySelector("#shops-list").innerHTML = "";
   setStatus(container, "Couldn't reach the shop lookup service. Try again in a moment.", "warn");
 }
 

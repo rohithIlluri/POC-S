@@ -1,6 +1,6 @@
 // Bump this on every app-shell change so clients pick up new files instead of
 // serving a stale cached version.
-const CACHE = "pitstop-v1";
+const CACHE = "pitstop-v2";
 
 const SHELL_FILES = [
   "./",
@@ -15,6 +15,8 @@ const SHELL_FILES = [
   "./js/ui/shops.js",
   "./js/ui/settings.js",
   "./js/ui/modal.js",
+  "./js/ui/toast.js",
+  "./js/ui/rings.js",
   "./js/lib/schedule.js",
   "./js/lib/store.js",
   "./js/lib/status.js",

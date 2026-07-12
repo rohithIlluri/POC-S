@@ -1,5 +1,5 @@
 import { createStore } from "../lib/store.js";
-import { statusOf, milesRemaining, daysUntilDue, milesPerDay, projectedDays } from "../lib/status.js";
+import { statusOf, milesRemaining, daysUntilDue, milesPerDay, projectedDays, intervalProgress } from "../lib/status.js";
 import { computeNotifications } from "../lib/notify.js";
 import { openLogReadingForm } from "./odometer.js";
 import * as dashboard from "./dashboard.js";
@@ -37,13 +37,43 @@ function createApp() {
     milesRemaining: (item) => milesRemaining(item, store.currentOdometer() ?? 0),
     daysUntilDue: (item) => daysUntilDue(item, todayISO()),
     milesPerDay: () => milesPerDay(store.get().odometer, todayISO()),
+    intervalProgress: (item) =>
+      intervalProgress(item, { currentOdometer: store.currentOdometer() ?? 0, todayISO: todayISO() }),
     projectedDays,
     refresh,
   };
 
+  let displayedOdo = null;
+  const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
+
   function renderOdo() {
     const cur = store.currentOdometer();
-    odoValueEl.textContent = cur == null ? "— mi" : `${cur.toLocaleString()} mi`;
+    if (cur == null) {
+      displayedOdo = null;
+      odoValueEl.textContent = "— mi";
+      return;
+    }
+    const from = displayedOdo;
+    displayedOdo = cur;
+    if (from == null || from === cur || reducedMotion.matches) {
+      odoValueEl.textContent = `${cur.toLocaleString()} mi`;
+      return;
+    }
+    // count-up animation from the previously shown value
+    const start = performance.now();
+    const duration = 650;
+    const tick = (now) => {
+      if (displayedOdo !== cur) return; // a newer value took over
+      const t = Math.min(1, (now - start) / duration);
+      if (t >= 1) {
+        odoValueEl.textContent = `${cur.toLocaleString()} mi`; // exact, incl. fractions
+        return;
+      }
+      const eased = 1 - Math.pow(1 - t, 3);
+      odoValueEl.textContent = `${Math.round(from + (cur - from) * eased).toLocaleString()} mi`;
+      requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
   }
 
   function renderActive() {
@@ -55,12 +85,20 @@ function createApp() {
   }
 
   function setActiveTab(tab) {
-    activeTab = tab;
-    TABS.forEach((t) => {
-      panels[t].hidden = t !== tab;
-    });
-    tabButtons.forEach((b) => b.classList.toggle("active", b.dataset.tab === tab));
-    renderActive();
+    if (tab === activeTab) return;
+    const apply = () => {
+      activeTab = tab;
+      TABS.forEach((t) => {
+        panels[t].hidden = t !== tab;
+      });
+      tabButtons.forEach((b) => b.classList.toggle("active", b.dataset.tab === tab));
+      renderActive();
+    };
+    if (document.startViewTransition && !reducedMotion.matches) {
+      document.startViewTransition(apply);
+    } else {
+      apply();
+    }
   }
 
   function describeNotification(itemId) {

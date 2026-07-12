@@ -96,7 +96,6 @@ export function createStore(storage, options = {}) {
       return d.items[idx];
     }
     const created = {
-      id: item.id || makeId("item"),
       builtin: false,
       intervalMiles: null,
       intervalMonths: null,
@@ -104,6 +103,9 @@ export function createStore(storage, options = {}) {
       lastServicedMiles: null,
       lastServicedDateISO: null,
       ...item,
+      // resolved last so a caller passing an explicit `id: undefined` can't
+      // wipe out the generated id
+      id: item.id || makeId("item"),
     };
     d.items.push(created);
     persist();

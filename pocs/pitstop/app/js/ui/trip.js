@@ -1,4 +1,5 @@
 import { createTrip, addFix, tripMiles } from "../lib/geo.js";
+import { showToast } from "./toast.js";
 
 // Module-level state so a trip keeps recording across tab switches (the panel
 // is only hidden, not unmounted) but is intentionally lost on page reload —
@@ -88,7 +89,12 @@ function stopTrip(app) {
 
   if (miles > 0.05) {
     const currentOdo = app.store.currentOdometer() ?? 0;
-    app.store.addReading({ miles: currentOdo + miles, dateISO: app.todayISO(), source: "trip" });
+    // round to 0.1 mi so the odometer doesn't accumulate float noise
+    const newOdo = Math.round((currentOdo + miles) * 10) / 10;
+    app.store.addReading({ miles: newOdo, dateISO: app.todayISO(), source: "trip" });
+    showToast(`Trip logged: ${miles.toFixed(1)} mi added to odometer`);
+  } else {
+    showToast("Trip too short to log");
   }
   app.refresh();
 }
@@ -97,6 +103,7 @@ export function render(container, app) {
   container.innerHTML = `
     <div class="section-title">GPS trip</div>
     <div class="card">
+      ${watchId ? '<div class="rec-indicator">Recording</div>' : ""}
       <p class="item-detail">Track a drive to log its miles onto your odometer automatically. Keep this tab open and your device unlocked while tracking — this POC doesn't support background tracking.</p>
       <div class="trip-stats">
         <div class="trip-stat"><div class="value" id="trip-miles">0.00</div><div class="label">Miles</div></div>
@@ -104,7 +111,7 @@ export function render(container, app) {
         <div class="trip-stat"><div class="value" id="trip-fixes">0</div><div class="label">GPS fixes</div></div>
       </div>
       <div id="trip-error" class="banner warn" hidden></div>
-      <button class="btn" id="trip-toggle" style="width:100%;">${watchId ? "Stop trip" : "Start trip"}</button>
+      <button class="btn ${watchId ? "danger" : ""}" id="trip-toggle" style="width:100%;">${watchId ? "Stop & log trip" : "Start trip"}</button>
     </div>
   `;
 
