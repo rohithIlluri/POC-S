@@ -26,6 +26,7 @@ import (
 	"github.com/rohithIlluri/POC-S/pocs/aipet/internal/config"
 	"github.com/rohithIlluri/POC-S/pocs/aipet/internal/daemon"
 	"github.com/rohithIlluri/POC-S/pocs/aipet/internal/leaderboard"
+	"github.com/rohithIlluri/POC-S/pocs/aipet/internal/save"
 	"github.com/rohithIlluri/POC-S/pocs/aipet/internal/tui"
 	"github.com/rohithIlluri/POC-S/pocs/aipet/internal/version"
 )
@@ -49,6 +50,8 @@ func main() {
 		runStatus(cfg)
 	case "leaderboard", "board", "lb":
 		runLeaderboard(cfg, os.Args[2:])
+	case "dex":
+		runDex(cfg)
 	case "config":
 		runConfig(cfg, os.Args[2:])
 	case "version", "-v", "--version":
@@ -60,6 +63,17 @@ func main() {
 		usage()
 		os.Exit(2)
 	}
+}
+
+func runDex(cfg config.Config) {
+	// One collect cycle first so freshly-completed days roll their encounters
+	// before we print — same "fresh data without a daemon" behavior as the TUI.
+	_, _ = daemon.Run(cfg)
+	dex, err := save.LoadDex()
+	if err != nil {
+		fatalf("load dex: %v", err)
+	}
+	fmt.Println(tui.RenderDex(dex))
 }
 
 func runTUI(cfg config.Config) {
@@ -232,6 +246,7 @@ usage:
   aipet daemon       run the background collector loop
   aipet status       collect once and print a summary
   aipet leaderboard  rankings + personal records (add --json for scripts)
+  aipet dex          your Codelings collection — seen, caught, echo essence
   aipet config       show config, or: aipet config <key> <value>
   aipet version      print version
 

@@ -488,18 +488,18 @@
     <div class="st st-done">SHIPPED ✓</div>
   </div>
 
-  <div class="mrow">
+  <div class="mrow is-done">
     <div class="mid">M3</div>
-    <div class="mname">Dex &amp; encounters<small>catch-by-doing wild encounters · Dex tab UI · odds/pity from rarity.md</small></div>
-    <div class="bar">░░░░░░░░░░░░░░░░░░░░ 0%</div>
-    <div class="st st-todo">NEXT</div>
+    <div class="mname">Dex &amp; encounters<small>catch-by-doing encounters · /1024 tier odds + diet shift + whiff pity · uncaught-first · event-gated Mythics · Dex tab + CLI · 141 tests</small></div>
+    <div class="bar"><span class="fill">████████████████████</span> 100%</div>
+    <div class="st st-done">SHIPPED ✓</div>
   </div>
 
   <div class="mrow">
     <div class="mid">M4</div>
     <div class="mname">Trade &amp; battle<small>.codeling files · export / import · Barn · seeded serverless battles</small></div>
     <div class="bar">░░░░░░░░░░░░░░░░░░░░ 0%</div>
-    <div class="st st-todo">PLANNED</div>
+    <div class="st st-todo">NEXT</div>
   </div>
 
   <div class="mrow">
@@ -1309,6 +1309,7 @@ internal/tui/            <span class="new">MORPH</span> <span class="c">game scr
   <div class="sec-head"><span class="sec-num">10</span><h2>Build changelog</h2></div>
   <p class="dim">This sheet is maintained as we progress — every milestone update lands here and on the board above.</p>
   <ul class="clog">
+    <li><span class="ts">2026-07-13</span><b>M3 shipped: wild encounters &amp; the Dex.</b> Once hatched, wild Codelings appear on real events — a first session in a new project, a never-seen model, a balanced-diet day. <code>internal/sim/encounter.go</code> implements rarity.md faithfully: /1024 tier roll (RELIC 8 · RARE 64 · UNCOMMON 256 · COMMON 696), healthy-day band-shift as a post-roll remap, whiff pity floors (40→RARE, 120→RELIC), uncaught-first species weighting sorted by dex number, and event-gated Mythics (uptimewyrm: 365-day streak; everfile: a 2M-token context day) that ignore the odds table entirely. <b>Catch-by-doing:</b> the encounter joins you if its day met the diet bar; otherwise it's seen-only. Duplicates convert to tier-weighted Echo Essence. Encounters sweep only COMPLETED days via a dedicated cursor in <code>dex.json</code> — a design bug caught by tests (rolling inside the pet tick meant daily cycles would never roll anything) plus a second fix where catch-up hatches got wall-clock HatchedAt, suppressing the sweep. New <b>Dex tab</b> (tab 5) and <code>aipet dex</code> CLI: 30 entries, unseen as ???, seen/caught dates, essence. Smoke-tested end to end: a real 3-day history hatched a Glyphit and caught Cascada, Bufferpup, and Flashecho — the diet shift visibly upgrading every roll. <b>141 tests passing, 0 failing</b>, clean under -race across all targets.</li>
     <li><span class="ts">2026-07-09</span><b>M1 + M2 shipped: the pet is real.</b> Codelings went from design docs to a playable companion. New packages: <code>internal/species</code> (all 30 launch species embedded from species.md, self-audited by 8 data-integrity tests — BST bands, exactly 2 Mythics, complete evolution chains); <code>internal/sim</code> (DNA/IVs/Lucent rolls, daily digest computation from raw events, the deterministic <code>Tick()</code> — pure function of (pet, digest, seed), verified by an explicit determinism test); <code>internal/care</code> (the old advisor rules reborn as diet verdicts — junk food, rich food, overeating, foraging cap — driving XP/health/mood); <code>internal/save</code> (atomic pet.json + append-only journal.jsonl, same crash-safe pattern as the daemon snapshot). Daemon now runs one sim tick per calendar day with catch-up for missed days, wired via a new <code>RunCycleAt</code> entry point for deterministic testing. New <b>Pet tab</b> (now tab 1) shows the egg-hatch countdown or, post-hatch, sprite/species/stage/level/XP bar/health bar/live stats/recent journal — Lucent pets get a marker. Caught and fixed a pre-existing dead-code bug in <code>internal/pricing</code> along the way (undefined <code>storeEvent</code> type, unused, now removed). <b>120 tests passing, 0 failing</b>, clean across gofmt/vet/-race and all 5 release targets (darwin/linux/windows × amd64/arm64). Manually smoke-tested end to end: real collected events → egg → active-day tracking → journal entries, verified via the actual built binary.</li>
     <li><span class="ts">2026-07-09</span><b>v1.0.0 shipped.</b> M0 backend teardown landed (external feed stack, feedsign tool, and update command all deleted; daemon &amp; config slimmed; Market tab replaced). New local <b>leaderboard</b> — top projects/models, best cache-reuse days, streaks, and personal records — as an <code>aipet leaderboard</code> command (with <code>--json</code>) and a Records TUI tab. Full <b>security audit</b> (docs/SECURITY_AUDIT.md): one Medium finding — terminal-escape injection from untrusted session-log content — fixed at the collector boundary with tests; path traversal, XSS, and pidfile handling reviewed and cleared. Cross-platform release binaries (darwin/linux/windows × amd64/arm64) with SHA-256 checksums; a latent Windows-build bug (signal 0) was fixed in the process. Suite passes under -race.</li>
     <li><span class="ts">2026-07-08</span><b>Sprite redesign v2 applied.</b> All 30 Dex sprites replaced with a cleaner, alignment-safe Unicode set from an external design pass (handoff: <code>design_handoff_codelings_sprites</code>) — softer faces (<code>◕ ◡ ◔ ω ᴥ</code>), fewer strokes, evolution reads as growth (heavier borders, wider crowns). Added per-card idle animation: a gentle bob + blink loop, staggered per card, plus a distinct flicker for the two Mythics (Everfile, Uptimewyrm). Root cause of the old sprites' misalignment was full-width/exotic glyphs breaking per-line centering in the monospace &lt;pre&gt; — new set uses only monospace-safe box-drawing and geometric glyphs.</li>

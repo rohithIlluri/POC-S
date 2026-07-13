@@ -95,13 +95,15 @@ make release    # cross-platform binaries + checksums into ./bin/release
 aipet status         # one-shot collect + summary (great first run)
 aipet                # launch the interactive pet (TUI)
 aipet leaderboard    # rankings + personal records (add --json for scripts)
+aipet dex            # your Codelings collection — seen, caught, echo essence
 aipet daemon         # run the background watcher
 ```
 
-The TUI has four tabs — **Pet** (your Codeling: egg or hatchling, level, health,
+The TUI has five tabs — **Pet** (your Codeling: egg or hatchling, level, health,
 stats, recent journal), **Overview** (spend, budget bar, top models/projects),
-**Suggestions** (efficiency advice with estimated savings), and **Records** (the
-local leaderboard). Navigate with `tab`/`←→` or `1`–`4`; `q` quits.
+**Suggestions** (efficiency advice with estimated savings), **Records** (the
+local leaderboard), and **Dex** (your collection: 30 species, seen/caught).
+Navigate with `tab`/`←→` or `1`–`5`; `q` quits.
 
 ### Your Codeling
 
@@ -120,8 +122,24 @@ diet — a healthy day is a full-XP "balanced diet," a low-cache-reuse day is
 both a level (12, then 30) and the right dominant stat, so it's earned by
 habit, not by grinding. Neglect never punishes: an idle pet's mood just fades,
 and after 7 days it quietly hibernates — waking up happy, with zero guilt,
-whenever you're back. The full 30-species Dex, rarity tiers, and battle system
-are designed in [`docs/design/`](docs/design/) for a future release.
+whenever you're back.
+
+### Wild encounters & the Dex
+
+Once your pet has hatched, wild Codelings start appearing on real events: your
+first session in a new project, a model you've never used before, or a day
+that meets the balanced-diet bar. Each completed day rolls its encounters with
+the odds designed in [`docs/design/rarity.md`](docs/design/rarity.md) — a
+healthy day shifts every roll one rarity band up, a long dry spell builds pity
+that floors your next find at RARE (40 whiffs) or RELIC (120), and while any
+species in a tier is uncaught, rolls always land on ones you're missing.
+**Catch-by-doing:** the wild Codeling joins you if the day it appeared was a
+clean one; otherwise it's logged as seen and slips away. Duplicates convert to
+echo essence instead of being wasted. The two Mythics ignore the odds table
+entirely — one demands a 365-day streak, the other a truly extraordinary
+context day. Track it all in the **Dex** tab or `aipet dex`. Trading and
+battles ([`docs/design/moves.md`](docs/design/moves.md)) are designed for a
+future release.
 
 ## Configuration
 

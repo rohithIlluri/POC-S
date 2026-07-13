@@ -54,7 +54,7 @@ type Model struct {
 	journalEntries []save.Entry
 }
 
-const tabCount = 4
+const tabCount = 5
 
 // New builds the TUI model, loading any existing snapshot immediately.
 func New(cfg config.Config) Model {
@@ -137,6 +137,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.tab = 2
 		case "4":
 			m.tab = 3
+		case "5":
+			m.tab = 4
 		case "r":
 			m.refresh(true)
 		}
@@ -160,6 +162,8 @@ func (m Model) View() string {
 		b.WriteString(m.suggestions())
 	case 3:
 		b.WriteString(m.records())
+	case 4:
+		b.WriteString(m.dex())
 	}
 	b.WriteString("\n")
 	b.WriteString(m.footer())
@@ -189,7 +193,7 @@ func (m Model) header() string {
 }
 
 func (m Model) tabBar() string {
-	labels := []string{"Pet", "Overview", "Suggestions", "Records"}
+	labels := []string{"Pet", "Overview", "Suggestions", "Records", "Dex"}
 	var tabs []string
 	for i, l := range labels {
 		if i == m.tab {

@@ -58,16 +58,23 @@ func runPetTick(events []store.Event, cfg config.Config, now time.Time) (sim.Pet
 		if err := journalDay(day, now, d, verdict, result); err != nil {
 			return pet, dex, err
 		}
+	}
 
-		// Wild encounters roll only for COMPLETED days (strictly before
-		// today): the diet verdict — which drives both the tier shift and
-		// catch-by-doing — only closes when the day does. Today's triggers
-		// resolve on tomorrow's first cycle. Eggs don't encounter: the
-		// world starts noticing you once something has hatched.
-		if day < today && !pet.IsEgg() {
-			if err := rollDayEncounters(&dex, pet, day, d, cfg, now); err != nil {
+	// Wild-encounter sweep, decoupled from the pet tick: a day's encounters
+	// roll only once the day is COMPLETE (its diet verdict — which drives
+	// both the tier shift and catch-by-doing — closes at midnight), so the
+	// sweep lags one day behind and advances its own cursor. Eggs don't
+	// encounter: the world starts noticing you once something has hatched.
+	if !pet.IsEgg() {
+		hatchDay := pet.HatchedAt.Local().Format("2006-01-02")
+		for _, d := range digests {
+			if d.Day >= today || d.Day <= dex.LastEncounterDay || d.Day < hatchDay {
+				continue
+			}
+			if err := rollDayEncounters(&dex, pet, d.Day, d, cfg, now); err != nil {
 				return pet, dex, err
 			}
+			dex.LastEncounterDay = d.Day
 		}
 	}
 

@@ -167,3 +167,50 @@ func TestPendingDaysAlreadyCaughtUpToday(t *testing.T) {
 		t.Errorf("expected no pending days when already ticked today, got %v", got)
 	}
 }
+
+// TestEncountersRollForCompletedDays drives several active days through the
+// daemon and expects wild encounters recorded in the dex for the completed
+// (pre-today) days — and none double-rolled on re-runs.
+func TestEncountersRollForCompletedDays(t *testing.T) {
+	home := isolateHome(t)
+	cfg := config.Default()
+	base := time.Date(2026, 7, 1, 10, 0, 0, 0, time.Local)
+
+	// Realistic flow: the daemon runs a cycle every day. Days 0-2 hatch the
+	// egg; day 3 introduces a brand-new project and model, so when day 3
+	// completes (i.e. during day 4's cycle) its encounter triggers roll.
+	var snap *Snapshot
+	var err error
+	for day := 0; day < 6; day++ {
+		ts := base.AddDate(0, 0, day)
+		writeClaudeTurn(t, home, "proj", "s1", "claude-opus-4-8", ts, 2000, 800)
+		if day == 3 {
+			writeClaudeTurn(t, home, "newproj", "s2", "claude-haiku-4-5", ts.Add(time.Hour), 500, 200)
+		}
+		snap, err = RunCycleAt(cfg, ts.Add(2*time.Hour))
+		if err != nil {
+			t.Fatalf("cycle day %d: %v", day, err)
+		}
+	}
+	if snap.PetError != "" {
+		t.Fatalf("pet error: %s", snap.PetError)
+	}
+	if snap.Pet.IsEgg() {
+		t.Fatal("pet should have hatched by day 5")
+	}
+	if len(snap.Dex.Seen) == 0 {
+		t.Fatal("expected at least one wild encounter recorded after hatch (new project + new model days)")
+	}
+
+	// Re-running the same cycle must not re-roll the same days.
+	before := len(snap.Dex.Seen)
+	essenceBefore := snap.Dex.EchoEssence
+	snap2, err := RunCycleAt(cfg, base.AddDate(0, 0, 5).Add(3*time.Hour))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(snap2.Dex.Seen) != before || snap2.Dex.EchoEssence != essenceBefore {
+		t.Errorf("re-running a cycle must not re-roll encounters: seen %d->%d essence %d->%d",
+			before, len(snap2.Dex.Seen), essenceBefore, snap2.Dex.EchoEssence)
+	}
+}

@@ -18,6 +18,12 @@ type DexState struct {
 	Caught          map[string]string `json:"caught"` // species id -> YYYY-MM-DD first caught
 	WhiffsSinceRare int               `json:"whiffs_since_rare"`
 	EchoEssence     int               `json:"echo_essence"`
+
+	// LastEncounterDay is the most recent COMPLETED day whose encounters
+	// have been rolled. Encounter sweeps lag the pet tick by one day (a
+	// day's diet verdict — and so its catch outcome — only closes when the
+	// day does), so this cursor advances independently of pet.LastTickDay.
+	LastEncounterDay string `json:"last_encounter_day,omitempty"`
 }
 
 // NewDexState returns an empty collection.

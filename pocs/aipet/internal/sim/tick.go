@@ -53,7 +53,7 @@ func Tick(p Pet, day string, digest Digest, verdict DietVerdict, hatchWindow []D
 			line := PickLine(p.DNA, hatchWindow)
 			starterID, ok := species.LineStarter(line)
 			if ok {
-				p = hatchInto(p, starterID, line, now)
+				p = hatchInto(p, starterID, line, day)
 				res.HatchedNow = true
 			}
 		}
@@ -108,7 +108,11 @@ func WakeFromHibernation(p Pet) Pet {
 	return p
 }
 
-func hatchInto(p Pet, starterID string, line species.Line, now time.Time) Pet {
+// hatchInto births the starter. HatchedAt is the TICK DAY, not wall-clock
+// "now": during multi-day catch-up a pet may hatch on a day several days in
+// the past, and downstream logic (the encounter sweep's "no encounters
+// before hatch" gate) must see the day it actually hatched.
+func hatchInto(p Pet, starterID string, line species.Line, day string) Pet {
 	sp, ok := species.ByID(starterID)
 	if !ok {
 		return p
@@ -121,7 +125,9 @@ func hatchInto(p Pet, starterID string, line species.Line, now time.Time) Pet {
 	p.XP = 0
 	p.Stats = addStats(sp.Base, iv.AsStats())
 	p.Lucent = IsLucent(p.DNA, p.GritStreak)
-	p.HatchedAt = now
+	if t, err := time.ParseInLocation("2006-01-02", day, time.Local); err == nil {
+		p.HatchedAt = t
+	}
 	return p
 }
 
