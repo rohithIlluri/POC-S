@@ -1,0 +1,439 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Codelings — a pocket-monster game for developers</title>
+<meta name="description" content="A terminal pet that grows from how you really code. Reads your Claude Code / Codex session logs locally — zero servers, zero tokens, zero cost.">
+<style>
+  :root{
+    --bg:#070c08; --panel:#0e1710; --panel2:#121d13;
+    --line:#1e3322; --line2:#2a4630;
+    --ink:#c8e6c9; --ink-dim:#7ba382; --ink-faint:#4a6b52;
+    --phos:#54fb7e; --phos-dim:#2f9e50;
+    --amber:#ffc857; --rose:#ff6b7f; --cyan:#5fd7ff; --violet:#b18cff;
+    --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{background:var(--bg);color:var(--ink);font-family:var(--mono);font-size:14px;line-height:1.65;overflow-x:hidden}
+  body::before{content:"";position:fixed;inset:0;pointer-events:none;z-index:100;background:repeating-linear-gradient(0deg,rgba(0,0,0,.22) 0 1px,transparent 1px 3px);mix-blend-mode:multiply}
+  body::after{content:"";position:fixed;inset:0;pointer-events:none;z-index:101;background:radial-gradient(ellipse 120% 90% at 50% 40%,transparent 55%,rgba(0,0,0,.55) 100%)}
+  .wrap{max-width:920px;margin:0 auto;padding:0 24px 120px}
+  a{color:var(--cyan)}
+  code{color:var(--cyan);background:rgba(95,215,255,.07);padding:.1em .35em;border:1px solid rgba(95,215,255,.15);font-size:.92em}
+  .glow{color:var(--phos);text-shadow:0 0 8px rgba(84,251,126,.45),0 0 24px rgba(84,251,126,.18)}
+
+  /* hero */
+  header{padding:64px 0 12px;text-align:center}
+  pre.logo{
+    color:var(--phos);text-shadow:0 0 10px rgba(84,251,126,.5),0 0 40px rgba(84,251,126,.15);
+    font-size:clamp(7px,1.75vw,14px);line-height:1.18;letter-spacing:.02em;
+    animation:flicker 7s infinite;white-space:pre;overflow-x:auto;display:inline-block;text-align:left;
+  }
+  @keyframes flicker{0%,93%,95%,100%{opacity:1}94%{opacity:.72}97%{opacity:.9}}
+  .tagline{margin-top:20px;font-size:clamp(15px,2.4vw,19px);color:var(--ink)}
+  .tagline b{color:var(--amber)}
+  .sub{margin-top:10px;color:var(--ink-dim);font-size:14px}
+  .cursor{display:inline-block;width:.6em;height:1.05em;background:var(--phos);vertical-align:text-bottom;animation:blink 1.05s steps(1) infinite;box-shadow:0 0 8px rgba(84,251,126,.6)}
+  @keyframes blink{50%{opacity:0}}
+
+  .install-hero{
+    margin:34px auto 0;max-width:640px;border:1px solid var(--line2);background:var(--panel);
+    text-align:left;box-shadow:0 0 40px rgba(84,251,126,.06);
+  }
+  .install-hero .ttl{padding:8px 14px;border-bottom:1px solid var(--line);background:var(--panel2);font-size:10.5px;letter-spacing:.22em;color:var(--ink-dim)}
+  .install-hero pre{padding:16px;overflow-x:auto;font-size:13.5px;color:var(--phos)}
+  .install-hero pre .c{color:var(--ink-faint)}
+  .hero-links{margin-top:18px;display:flex;gap:12px;justify-content:center;flex-wrap:wrap}
+  .btn{
+    display:inline-block;padding:9px 18px;border:1px solid var(--phos-dim);color:var(--phos);
+    text-decoration:none;font-size:12px;letter-spacing:.12em;text-transform:uppercase;transition:all .15s;
+  }
+  .btn:hover{background:var(--phos-dim);color:#04240e}
+  .btn.alt{border-color:var(--line2);color:var(--ink-dim)}
+  .btn.alt:hover{background:var(--line2);color:var(--ink)}
+
+  /* sections */
+  section{margin-top:96px}
+  h2{
+    font-size:clamp(19px,2.8vw,25px);font-weight:700;letter-spacing:.06em;color:var(--phos);
+    text-shadow:0 0 12px rgba(84,251,126,.35);text-transform:uppercase;margin-bottom:8px;
+  }
+  .lead{color:var(--ink-dim);max-width:66ch}
+  h3{color:var(--amber);font-size:13.5px;letter-spacing:.12em;text-transform:uppercase;margin:34px 0 12px}
+
+  .cards{display:grid;grid-template-columns:repeat(2,1fr);gap:14px;margin-top:26px}
+  .card{border:1px solid var(--line);background:var(--panel);padding:20px;transition:border-color .2s,transform .2s}
+  .card:hover{border-color:var(--phos-dim);transform:translateY(-2px)}
+  .card b{display:block;color:var(--phos);font-size:15px;margin-bottom:8px}
+  .card span{color:var(--ink-dim);font-size:13px}
+
+  pre.flow{
+    border:1px solid var(--line);background:var(--panel);padding:22px 14px;margin-top:24px;
+    font-size:12.5px;line-height:1.7;color:var(--ink-dim);overflow-x:auto;text-align:center;
+  }
+  pre.flow .hot{color:var(--phos)} pre.flow .warm{color:var(--amber)}
+
+  /* starters */
+  .species{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-top:26px}
+  .sp{border:1px solid var(--line);background:var(--panel);overflow:hidden;transition:border-color .2s,box-shadow .2s}
+  .sp:hover{box-shadow:0 0 30px rgba(84,251,126,.08)}
+  .sp-head{padding:10px 14px;border-bottom:1px solid var(--line);font-size:10.5px;letter-spacing:.18em;display:flex;justify-content:space-between;color:var(--c)}
+  .sp pre{text-align:center;padding:20px 8px 14px;font-size:14px;line-height:1.35;white-space:pre;color:var(--c);text-shadow:0 0 12px color-mix(in srgb,var(--c) 45%,transparent);animation:bob 3.2s ease-in-out infinite}
+  .sp:nth-child(2) pre{animation-delay:.5s} .sp:nth-child(3) pre{animation-delay:1s}
+  @keyframes bob{0%,100%{transform:translateY(0)}50%{transform:translateY(-3px)}}
+  .sp.ember{--c:#ff9d5c} .sp.stream{--c:#5fd7ff} .sp.vector{--c:#b18cff}
+  .sp:hover{border-color:var(--c)}
+  .sp-body{padding:0 14px 16px;font-size:12.5px;color:var(--ink-dim)}
+  .sp-body .chain{color:var(--ink);margin-bottom:8px;font-size:12px}
+  .sp-body .chain b{color:var(--c)}
+  .sp-tag{display:inline-block;border:1px solid var(--line2);color:var(--ink-faint);font-size:9.5px;letter-spacing:.14em;padding:2px 8px;margin-top:10px}
+
+  /* dex */
+  .dexgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px;margin-top:24px}
+  .dexcard{border:1px solid var(--line);border-left:3px solid var(--tc);background:var(--panel);padding:10px;transition:transform .15s}
+  .dexcard:hover{transform:translateY(-2px)}
+  .dexcard .dn{font-size:9.5px;color:var(--ink-faint);letter-spacing:.1em}
+  .dexcard .dname{font-size:12.5px;color:var(--ink);margin:2px 0 4px;font-weight:700}
+  .dexcard pre{font-size:11px;line-height:1.3;white-space:pre;text-align:center;margin:6px 0 4px;min-height:56px;display:flex;flex-direction:column;justify-content:center;color:var(--tc);text-shadow:0 0 8px color-mix(in srgb,var(--tc) 35%,transparent)}
+  .dexcard .dtag{font-size:8px;letter-spacing:.08em;padding:1px 6px;border:1px solid var(--rc);color:var(--rc);text-transform:uppercase}
+  .t-cache{--tc:#54fb7e} .t-context{--tc:#ffc857} .t-runtime{--tc:#ff6b7f}
+  .t-syntax{--tc:#b18cff} .t-stream{--tc:#5fd7ff} .t-daemon{--tc:#c8e6c9}
+  .r-common{--rc:#7ba382} .r-uncommon{--rc:#5fd7ff} .r-rare{--rc:#b18cff}
+  .r-relic{--rc:#ffc857} .r-mythic{--rc:#ff6b7f}
+  .dexcard.r-mythic{box-shadow:0 0 0 1px rgba(255,107,127,.3),0 0 24px rgba(255,107,127,.12)}
+  .dexcard.r-relic{box-shadow:0 0 16px rgba(255,200,87,.08)}
+
+  /* diet table */
+  .feedlog{border:1px solid var(--line);background:var(--panel);margin-top:24px}
+  .fl-row{display:grid;grid-template-columns:180px 1fr;border-bottom:1px solid var(--line)}
+  .fl-row:last-child{border-bottom:0}
+  .fl-row>div{padding:12px 14px;font-size:13px}
+  .fl-sig{color:var(--rose);font-size:12px}
+  .fl-sig.good{color:var(--phos)}
+  .fl-fx{color:var(--ink-dim)} .fl-fx b{color:var(--amber)}
+
+  /* privacy strip */
+  .zero{margin-top:30px;display:flex;flex-wrap:wrap;border:1px solid var(--line2);background:var(--panel)}
+  .zero .z{flex:1;min-width:120px;padding:18px 12px;border-right:1px solid var(--line);text-align:center}
+  .zero .z:last-child{border-right:0}
+  .zero .zk{font-size:9.5px;letter-spacing:.18em;color:var(--ink-faint)}
+  .zero .zv{font-size:22px;color:var(--phos);text-shadow:0 0 10px rgba(84,251,126,.35);margin-top:4px}
+
+  /* install steps */
+  .steps{margin-top:24px;display:grid;gap:14px}
+  .step{border:1px solid var(--line);background:var(--panel)}
+  .step .ttl{padding:8px 14px;border-bottom:1px solid var(--line);background:var(--panel2);font-size:10.5px;letter-spacing:.2em;color:var(--ink-dim)}
+  .step pre{padding:14px 16px;overflow-x:auto;font-size:13px;color:var(--phos)}
+  .step pre .c{color:var(--ink-faint)}
+
+  footer{margin-top:110px;padding-top:26px;border-top:1px solid var(--line);color:var(--ink-faint);font-size:11.5px;letter-spacing:.08em;display:flex;justify-content:space-between;flex-wrap:wrap;gap:10px}
+  footer .fp{color:var(--phos-dim)}
+
+  nav{
+    position:sticky;top:0;z-index:50;background:rgba(7,12,8,.92);backdrop-filter:blur(4px);
+    border-bottom:1px solid var(--line);margin:40px -24px 0;padding:10px 24px;
+    display:flex;gap:18px;overflow-x:auto;font-size:11px;letter-spacing:.14em;white-space:nowrap;justify-content:center;
+  }
+  nav a{color:var(--ink-faint);text-decoration:none;transition:color .15s}
+  nav a:hover{color:var(--phos)}
+
+  @media(max-width:720px){
+    .cards,.species{grid-template-columns:1fr}
+    .dexgrid{grid-template-columns:repeat(auto-fill,minmax(118px,1fr));gap:8px}
+    .fl-row{grid-template-columns:1fr}
+    .fl-sig{border-bottom:1px dashed var(--line)}
+    nav{justify-content:flex-start}
+  }
+  @media(max-width:420px){.dexgrid{grid-template-columns:repeat(2,1fr)}}
+  ::selection{background:var(--phos);color:#04240e}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+<pre class="logo">
+ ██████╗ ██████╗ ██████╗ ███████╗██╗     ██╗███╗   ██╗ ██████╗ ███████╗
+██╔════╝██╔═══██╗██╔══██╗██╔════╝██║     ██║████╗  ██║██╔════╝ ██╔════╝
+██║     ██║   ██║██║  ██║█████╗  ██║     ██║██╔██╗ ██║██║  ███╗███████╗
+██║     ██║   ██║██║  ██║██╔══╝  ██║     ██║██║╚██╗██║██║   ██║╚════██║
+╚██████╗╚██████╔╝██████╔╝███████╗███████╗██║██║ ╚████║╚██████╔╝███████║
+ ╚═════╝ ╚═════╝ ╚═════╝ ╚══════╝╚══════╝╚═╝╚═╝  ╚═══╝ ╚═════╝ ╚══════╝
+</pre>
+  <div class="tagline">a pocket-monster game for developers. <b>your real coding activity is the game.</b><span class="cursor"></span></div>
+  <div class="sub">A terminal pet that hatches, grows, and evolves from how you actually use Claude Code &amp; Codex — entirely on your machine.</div>
+
+  <div class="install-hero">
+    <div class="ttl">INSTALL — ONE COMMAND (GO 1.25+)</div>
+    <pre>go install github.com/rohithIlluri/POC-S/pocs/aipet/cmd/aipet@latest
+<span class="c"># then just run it — no config, no accounts, no network</span>
+aipet</pre>
+  </div>
+  <div class="hero-links">
+    <a class="btn" href="#install">Get started</a>
+    <a class="btn alt" href="#dex">Browse the Dex</a>
+    <a class="btn alt" href="https://github.com/rohithIlluri/POC-S/tree/master/pocs/aipet">GitHub</a>
+  </div>
+</header>
+
+<nav>
+  <a href="#what">WHAT IT IS</a>
+  <a href="#how">HOW IT WORKS</a>
+  <a href="#starters">STARTERS</a>
+  <a href="#dex">THE DEX</a>
+  <a href="#install">INSTALL</a>
+  <a href="#privacy">PRIVACY</a>
+</nav>
+
+<!-- ============ WHAT ============ -->
+<section id="what">
+  <h2>What it is</h2>
+  <p class="lead">A creature lives in your terminal. It feeds on the tokens you already burn, and it thrives on <span class="glow">quality</span>, not volume — good engineering hygiene raises a healthy, rare creature. Wasteful habits make it sluggish. It's a game you play by doing your actual job well.</p>
+  <div class="cards">
+    <div class="card"><b>🐣 Raise a Codeling</b><span>An egg hatches after 3 active days into one of three starter lines — picked from how you actually worked. It levels, grows five stats, and evolves at 12 and 30.</span></div>
+    <div class="card"><b>🪙 Get coached, get savings</b><span>The same engine flags Opus overuse, low cache reuse, and context bloat — with estimated dollar savings. Efficiency advice is your pet's diet.</span></div>
+    <div class="card"><b>🏆 Keep score</b><span>A local leaderboard tracks your top projects, best cache-reuse days, streaks, and personal records. Yours alone — computed on-device.</span></div>
+    <div class="card"><b>🔒 100% local, $0 forever</b><span>It reads the session logs your tools already write to disk. No servers, no accounts, no telemetry — and it never calls a model, so playing costs zero tokens.</span></div>
+  </div>
+</section>
+
+<!-- ============ HOW ============ -->
+<section id="how">
+  <h2>How it works</h2>
+  <p class="lead">Claude Code and Codex already write session logs to your disk. Codelings folds them into a daily "digest," classifies the day's diet, and advances a deterministic simulation — one tick per calendar day.</p>
+<pre class="flow">
+ you work with Claude Code / Codex
+              │
+              ▼  <span class="hot">reads logs already on your disk — 0 tokens, 0 network</span>
+   usage events → daily digest
+              │
+              ▼  <span class="warm">diet verdict: balanced · junk food · rich food · overeating</span>
+ XP · health · mood · stat growth · evolution checks
+              │
+              ▼
+  your terminal: the pet reacts, the journal explains why
+</pre>
+
+  <h3>Tokens are food — the diet</h3>
+  <div class="feedlog">
+    <div class="fl-row"><div class="fl-sig">LOW CACHE REUSE</div><div class="fl-fx"><b>Junk food.</b> Re-sent uncached prompts digest poorly — health dips, pet looks tired.</div></div>
+    <div class="fl-row"><div class="fl-sig">BIG-MODEL OVERUSE</div><div class="fl-fx"><b>Rich food.</b> Fine sometimes; a steady diet makes it lethargic.</div></div>
+    <div class="fl-row"><div class="fl-sig">HUGE CONTEXTS</div><div class="fl-fx"><b>Overeating.</b> "Token bloat" status until habits improve.</div></div>
+    <div class="fl-row"><div class="fl-sig">OVER BUDGET</div><div class="fl-fx"><b>Foraging limit.</b> Past your soft daily budget, extra tokens give zero XP.</div></div>
+    <div class="fl-row"><div class="fl-sig good">HEALTHY DAY</div><div class="fl-fx"><b>Balanced diet.</b> Full XP, mood up, evolution progress.</div></div>
+  </div>
+  <p class="lead" style="margin-top:16px;font-size:12.5px;color:var(--ink-faint)">Kind by design: vacations never hurt. After 7 quiet days your pet hibernates — and wakes up happy, zero guilt, whenever you're back.</p>
+</section>
+
+<!-- ============ STARTERS ============ -->
+<section id="starters">
+  <h2>Three starter lines</h2>
+  <p class="lead">Your first three active days decide the egg. Deep focused sessions, fast cache-heavy iteration, or breadth across projects and models — the egg is watching.</p>
+  <div class="species">
+    <div class="sp ember">
+      <div class="sp-head"><span>EMBER LINE</span><span>DEEP WORK</span></div>
+      <pre>▴
+(• ◡ •)
+( ─── )
+˘   ˘</pre>
+      <div class="sp-body">
+        <div class="chain"><b>Cindling</b> → Forgeon → Pyrolith</div>
+        A coal-colored salamander that naps in warm CPUs. Slow, powerful, hates interruptions.
+        <div class="sp-tag">HATCHES: LONG FOCUSED SESSIONS</div>
+      </div>
+    </div>
+    <div class="sp stream">
+      <div class="sp-head"><span>STREAM LINE</span><span>FAST ITERATION</span></div>
+      <pre>∿∿∿
+≋(° ◡ °)&gt;
+‿‿‿</pre>
+      <div class="sp-body">
+        <div class="chain"><b>Rivulet</b> → Cascada → Torrentide</div>
+        A ribbon-fish of scrolling text. Quick, cheerful, loves cache hits.
+        <div class="sp-tag">HATCHES: MANY CHEAP CACHED TURNS</div>
+      </div>
+    </div>
+    <div class="sp vector">
+      <div class="sp-head"><span>VECTOR LINE</span><span>BREADTH</span></div>
+      <pre>˖ ˖
+\+ +/
+(• ◡ •)
+/- -\</pre>
+      <div class="sp-body">
+        <div class="chain"><b>Glyphit</b> → Polyglyph → Omniglyph</div>
+        A moth whose wings are diff hunks. Curious, flighty, rewarded for variety.
+        <div class="sp-tag">HATCHES: MANY PROJECTS &amp; MODELS</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ DEX ============ -->
+<section id="dex">
+  <h2>The Dex — 30 species</h2>
+  <p class="lead">Six types in a closed effectiveness wheel (Cache → Context → Runtime → Syntax → Stream → Daemon), five rarity tiers, six regions of the Shellwoods. Rare <span style="color:var(--cyan)">Lucent</span> variants roll at 1/512 — better with a streak. Exactly two Mythics exist, earned only by extraordinary real events.</p>
+
+  <div class="dexgrid">
+    <div class="dexcard t-runtime r-common"><div class="dn">#001</div><div class="dname">Cindling</div><pre>▴
+(• ◡ •)
+( ─── )
+˘   ˘</pre><span class="dtag">common</span></div>
+    <div class="dexcard t-runtime r-rare"><div class="dn">#002</div><div class="dname">Forgeon</div><pre>▴▴▴
+(◕ ◡ ◕)
+(═════)
+˘   ˘</pre><span class="dtag">rare</span></div>
+    <div class="dexcard t-runtime r-relic"><div class="dn">#003</div><div class="dname">Pyrolith</div><pre>▲▲▲
+(◆ ◡ ◆)
+(══▣══)
+˘˘   ˘˘</pre><span class="dtag">relic</span></div>
+    <div class="dexcard t-stream r-common"><div class="dn">#004</div><div class="dname">Rivulet</div><pre>∿∿∿
+≋(° ◡ °)&gt;
+‿‿‿</pre><span class="dtag">common</span></div>
+    <div class="dexcard t-stream r-rare"><div class="dn">#005</div><div class="dname">Cascada</div><pre>∿∿∿∿
+≋≋(˘ ◡ ˘)&gt;
+‿‿‿‿</pre><span class="dtag">rare</span></div>
+    <div class="dexcard t-stream r-relic"><div class="dn">#006</div><div class="dname">Torrentide</div><pre>∿∿∿∿∿
+≋≋≋(˘ ◡ ˘)≫
+≈≈≈≈≈</pre><span class="dtag">relic</span></div>
+    <div class="dexcard t-syntax r-common"><div class="dn">#007</div><div class="dname">Glyphit</div><pre>˖ ˖
+\+ +/
+(• ◡ •)
+/- -\</pre><span class="dtag">common</span></div>
+    <div class="dexcard t-syntax r-rare"><div class="dn">#008</div><div class="dname">Polyglyph</div><pre>˖ ˖
+\\+ +//
+((• ◡ •))
+//- -\\</pre><span class="dtag">rare</span></div>
+    <div class="dexcard t-syntax r-relic"><div class="dn">#009</div><div class="dname">Omniglyph</div><pre>˖ ˖ ˖
+\\\+ +///
+=((◆ ◡ ◆))=
+///- -\\\</pre><span class="dtag">relic</span></div>
+    <div class="dexcard t-cache r-common"><div class="dn">#010</div><div class="dname">Hoardlet</div><pre>╭─◠─╮
+(o• ◡ •o)
+╰ $$ ╯</pre><span class="dtag">common</span></div>
+    <div class="dexcard t-cache r-common"><div class="dn">#011</div><div class="dname">Memoize</div><pre>╭────╮
+(◕ ◡ ◕)
+╰─◡◡─╯</pre><span class="dtag">common</span></div>
+    <div class="dexcard t-cache r-uncommon"><div class="dn">#012</div><div class="dname">Memoizard</div><pre>╔════╗
+(◕ ◡ ◕)
+╰─◡◡─╯</pre><span class="dtag">uncommon</span></div>
+    <div class="dexcard t-cache r-uncommon"><div class="dn">#013</div><div class="dname">Pinshell</div><pre>╭▩▩▩╮
+(◕ ◡ ◕)
+˘╰──╯˘</pre><span class="dtag">uncommon</span></div>
+    <div class="dexcard t-cache r-rare"><div class="dn">#014</div><div class="dname">Staleout</div><pre>╭ ╌╌ ╮
+(◔ ╌ ◔)
+╰ ╌╌ ╯</pre><span class="dtag">rare</span></div>
+    <div class="dexcard t-context r-common"><div class="dn">#015</div><div class="dname">Widecope</div><pre>╭─────╮
+(◕ ◕ ◕)
+╰──╥──╯</pre><span class="dtag">common</span></div>
+    <div class="dexcard t-context r-common"><div class="dn">#016</div><div class="dname">Tabsprout</div><pre>▐▌ ▐▌
+(˘ ◡ ˘)
+╰───╯</pre><span class="dtag">common</span></div>
+    <div class="dexcard t-context r-uncommon"><div class="dn">#017</div><div class="dname">Tabgrove</div><pre>▐▌▐▌▐▌
+(˘ ◡ ˘)
+╰────╯</pre><span class="dtag">uncommon</span></div>
+    <div class="dexcard t-context r-relic"><div class="dn">#018</div><div class="dname">Longwindow</div><pre>▐▌▐▌▐▌▐▌
+(◕ │ ◕)
+╰─────╯</pre><span class="dtag">relic</span></div>
+    <div class="dexcard t-context r-mythic"><div class="dn">#019</div><div class="dname">Everfile</div><pre>▐█▐█▐█▐█
+(◆ ║ ◆)
+╚══════╝
+˅      ˅</pre><span class="dtag">mythic</span></div>
+    <div class="dexcard t-daemon r-uncommon"><div class="dn">#020</div><div class="dname">Cronkin</div><pre>╭─◷─╮
+(• ◡ •)
+╰┬──┬╯</pre><span class="dtag">uncommon</span></div>
+    <div class="dexcard t-daemon r-rare"><div class="dn">#021</div><div class="dname">Cronarch</div><pre>╔═◷═╗
+(◕ ◡ ◕)
+╰┬──┬╯</pre><span class="dtag">rare</span></div>
+    <div class="dexcard t-daemon r-common"><div class="dn">#022</div><div class="dname">Nightproc</div><pre>☾
+(˘ ω ˘)
+╰─◡─╯
+ᶻ ᶻ ᶻ</pre><span class="dtag">common</span></div>
+    <div class="dexcard t-daemon r-uncommon"><div class="dn">#023</div><div class="dname">Zombierun</div><pre>╭ ╌╌ ╮
+(✕ ╌ ✕)
+╰ ╌╌ ╯
+?  ?</pre><span class="dtag">uncommon</span></div>
+    <div class="dexcard t-daemon r-mythic"><div class="dn">#024</div><div class="dname">Uptimewyrm</div><pre>∿═∿═∿
+(◕ ω ◕)
+∿═∿═∿
+·365·</pre><span class="dtag">mythic</span></div>
+    <div class="dexcard t-runtime r-common"><div class="dn">#025</div><div class="dname">Stackrail</div><pre>▤▤▤▤▤
+(• ◡ •)
+(═════)
+ʌ ʌ ʌ ʌ</pre><span class="dtag">common</span></div>
+    <div class="dexcard t-runtime r-rare"><div class="dn">#026</div><div class="dname">Threadwolf</div><pre>▲ ▲  ▲ ▲
+(◕ᴥ◕)(◕ᴥ◕)
+˘ ˘  ˘ ˘</pre><span class="dtag">rare</span></div>
+    <div class="dexcard t-stream r-uncommon"><div class="dn">#027</div><div class="dname">Bufferpup</div><pre>◠   ◠
+(◕ ᴥ ◕)
+╰─◡─╯
+∪   ∪</pre><span class="dtag">uncommon</span></div>
+    <div class="dexcard t-stream r-rare"><div class="dn">#028</div><div class="dname">Flashecho</div><pre>≫≫≫
+(&gt; ◡ &lt;)≫
+‿‿‿</pre><span class="dtag">rare</span></div>
+    <div class="dexcard t-syntax r-common"><div class="dn">#029</div><div class="dname">Bracketail</div><pre>{ [ ] }
+[◕ ◡ ◕]
+{ [ ] }</pre><span class="dtag">common</span></div>
+    <div class="dexcard t-syntax r-uncommon"><div class="dn">#030</div><div class="dname">Lintmoth</div><pre>˖ ˖
+\] [/
+(˘ ◡ ˘)
+/] [\</pre><span class="dtag">uncommon</span></div>
+  </div>
+  <p class="lead" style="margin-top:18px;font-size:12px;color:var(--ink-faint)">Encounters are catch-by-doing: a wild Codeling appears on real events — a new project, a new model, an unusually clean day — and joins you if you finish the day well. The odds only ever improve with better habits, never with more spend.</p>
+</section>
+
+<!-- ============ INSTALL ============ -->
+<section id="install">
+  <h2>Install &amp; play</h2>
+  <div class="steps">
+    <div class="step">
+      <div class="ttl">OPTION A — GO INSTALL (RECOMMENDED)</div>
+      <pre>go install github.com/rohithIlluri/POC-S/pocs/aipet/cmd/aipet@latest</pre>
+    </div>
+    <div class="step">
+      <div class="ttl">OPTION B — PREBUILT BINARY</div>
+      <pre><span class="c"># darwin / linux / windows × amd64 / arm64, with SHA-256 checksums</span>
+<a href="https://github.com/rohithIlluri/POC-S/releases/latest">github.com/rohithIlluri/POC-S/releases/latest</a></pre>
+    </div>
+    <div class="step">
+      <div class="ttl">FIRST RUN</div>
+      <pre>aipet status      <span class="c"># one-shot: collects your existing logs + summary</span>
+aipet             <span class="c"># the pet (TUI): Pet · Overview · Suggestions · Records</span>
+aipet daemon      <span class="c"># background watcher — keeps the pet growing</span>
+aipet leaderboard <span class="c"># rankings + personal records (--json for scripts)</span></pre>
+    </div>
+    <div class="step">
+      <div class="ttl">OPTIONAL CONFIG</div>
+      <pre>aipet config daily_budget_usd 15      <span class="c"># soft budget — the pet's "foraging limit"</span>
+aipet config collect_interval_min 5   <span class="c"># daemon re-scan cadence</span></pre>
+    </div>
+  </div>
+  <p class="lead" style="margin-top:16px;font-size:12.5px">An egg starts warming on your first run. Three active days later, it hatches. What it becomes is up to how you work.</p>
+</section>
+
+<!-- ============ PRIVACY ============ -->
+<section id="privacy">
+  <h2>Private by construction</h2>
+  <p class="lead">Codelings reads the session logs Claude Code and Codex <em>already write to your disk</em> (<code>~/.claude/projects</code>, <code>~/.codex/sessions</code>). No proxy, no interception — your code and prompts never leave the machine. All state lives in <code>~/.aipet</code>. Session-log content is treated as untrusted input and sanitized before display.</p>
+  <div class="zero">
+    <div class="z"><div class="zk">SERVERS</div><div class="zv">0</div></div>
+    <div class="z"><div class="zk">ACCOUNTS</div><div class="zv">0</div></div>
+    <div class="z"><div class="zk">TELEMETRY</div><div class="zv">0</div></div>
+    <div class="z"><div class="zk">TOKENS SPENT</div><div class="zv">0</div></div>
+    <div class="z"><div class="zk">PRICE</div><div class="zv">$0</div></div>
+  </div>
+</section>
+
+<footer>
+  <span><span class="fp">CODELINGS</span> · feed the mind, not the meter</span>
+  <span>
+    <a href="https://github.com/rohithIlluri/POC-S/tree/master/pocs/aipet">source</a> ·
+    <a href="https://github.com/rohithIlluri/POC-S/releases/latest">releases</a> ·
+    <a href="https://github.com/rohithIlluri/POC-S/blob/master/pocs/aipet/docs/GAME_DESIGN.md">design</a>
+  </span>
+</footer>
+
+</div>
+</body>
+</html>
