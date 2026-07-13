@@ -22,6 +22,7 @@ type Digest struct {
 	Projects     int // distinct Project values touched this day
 	Models       int // distinct Model values touched this day
 	NewModels    int // models seen today that were never seen on an earlier day
+	NewProjects  int // projects touched today that were never seen on an earlier day
 	TokensIn     int64
 	TokensOut    int64
 	CacheRead    int64
@@ -59,18 +60,20 @@ func Digests(events []store.Event) []Digest {
 	sort.Strings(days)
 
 	seenModels := map[string]bool{}
+	seenProjects := map[string]bool{}
 	out := make([]Digest, 0, len(days))
 	for _, day := range days {
 		evs := byDay[day]
-		out = append(out, digestOneDay(day, evs, seenModels))
+		out = append(out, digestOneDay(day, evs, seenModels, seenProjects))
 		for _, e := range evs {
 			seenModels[e.Model] = true
+			seenProjects[e.Project] = true
 		}
 	}
 	return out
 }
 
-func digestOneDay(day string, evs []store.Event, seenBefore map[string]bool) Digest {
+func digestOneDay(day string, evs []store.Event, seenModels, seenProjects map[string]bool) Digest {
 	d := Digest{Day: day, Turns: len(evs)}
 	sessions := map[string][]store.Event{}
 	projects := map[string]bool{}
@@ -85,9 +88,6 @@ func digestOneDay(day string, evs []store.Event, seenBefore map[string]bool) Dig
 		d.CacheRead += e.CacheRead
 		d.CacheWrite += e.CacheWrite
 		d.CostUSD += e.CostUSD
-		if !seenBefore[e.Model] {
-			d.NewModels++
-		}
 		hour := e.Timestamp.Local().Hour()
 		if hour >= 0 && hour < 5 {
 			d.NightSession = true
@@ -96,6 +96,18 @@ func digestOneDay(day string, evs []store.Event, seenBefore map[string]bool) Dig
 	d.Projects = len(projects)
 	d.Models = len(models)
 	d.Sessions = len(sessions)
+	// Count DISTINCT first-ever names, not events: three turns on one brand
+	// new model is still one new model.
+	for m := range models {
+		if !seenModels[m] {
+			d.NewModels++
+		}
+	}
+	for p := range projects {
+		if !seenProjects[p] {
+			d.NewProjects++
+		}
+	}
 
 	for _, se := range sessions {
 		if len(se) <= 2 {

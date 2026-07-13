@@ -7,6 +7,7 @@ import (
 	"github.com/rohithIlluri/POC-S/pocs/aipet/internal/config"
 	"github.com/rohithIlluri/POC-S/pocs/aipet/internal/save"
 	"github.com/rohithIlluri/POC-S/pocs/aipet/internal/sim"
+	"github.com/rohithIlluri/POC-S/pocs/aipet/internal/species"
 	"github.com/rohithIlluri/POC-S/pocs/aipet/internal/store"
 )
 
@@ -19,10 +20,14 @@ import (
 //
 // events is the full history (already collected this cycle); cfg supplies
 // the soft daily budget for the foraging-cap diet signal.
-func runPetTick(events []store.Event, cfg config.Config, now time.Time) (sim.Pet, error) {
+func runPetTick(events []store.Event, cfg config.Config, now time.Time) (sim.Pet, save.DexState, error) {
 	pet, err := save.LoadPet(now)
 	if err != nil {
-		return sim.Pet{}, err
+		return sim.Pet{}, save.DexState{}, err
+	}
+	dex, err := save.LoadDex()
+	if err != nil {
+		return pet, save.DexState{}, err
 	}
 
 	digests := sim.Digests(events)
@@ -51,14 +56,84 @@ func runPetTick(events []store.Event, cfg config.Config, now time.Time) (sim.Pet
 		pet = result.Pet
 
 		if err := journalDay(day, now, d, verdict, result); err != nil {
-			return pet, err
+			return pet, dex, err
+		}
+
+		// Wild encounters roll only for COMPLETED days (strictly before
+		// today): the diet verdict — which drives both the tier shift and
+		// catch-by-doing — only closes when the day does. Today's triggers
+		// resolve on tomorrow's first cycle. Eggs don't encounter: the
+		// world starts noticing you once something has hatched.
+		if day < today && !pet.IsEgg() {
+			if err := rollDayEncounters(&dex, pet, day, d, cfg, now); err != nil {
+				return pet, dex, err
+			}
 		}
 	}
 
-	if err := save.SavePet(pet); err != nil {
-		return pet, err
+	if err := save.SaveDex(dex); err != nil {
+		return pet, dex, err
 	}
-	return pet, nil
+	if err := save.SavePet(pet); err != nil {
+		return pet, dex, err
+	}
+	return pet, dex, nil
+}
+
+// rollDayEncounters resolves one completed day's wild encounters and mythic
+// gates against the collection, journaling each appearance.
+func rollDayEncounters(dex *save.DexState, pet sim.Pet, day string, d sim.Digest, cfg config.Config, now time.Time) error {
+	healthy := care.IsHealthyDiet(d, cfg.DailyBudgetUSD)
+	view := sim.DexView{
+		Caught:          caughtSet(dex),
+		WhiffsSinceRare: dex.WhiffsSinceRare,
+		GritStreak:      pet.GritStreak,
+	}
+
+	encounters, whiffs := sim.RollEncounters(pet.DNA, day, d, healthy, view)
+	dex.WhiffsSinceRare = whiffs
+	if m := sim.MythicEncounter(day, d, pet.GritStreak, view.Caught); m != nil {
+		encounters = append(encounters, *m)
+	}
+
+	for _, e := range encounters {
+		essence := dex.Record(e.SpeciesID, e.Day, string(e.Rarity), e.Caught)
+		if err := journalEncounter(e, essence, now); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func caughtSet(dex *save.DexState) map[string]bool {
+	out := make(map[string]bool, len(dex.Caught))
+	for id := range dex.Caught {
+		out[id] = true
+	}
+	return out
+}
+
+func journalEncounter(e sim.Encounter, essence int, now time.Time) error {
+	name := e.SpeciesID
+	if sp, ok := species.ByID(e.SpeciesID); ok {
+		name = sp.Name
+	}
+	entry := save.Entry{Day: e.Day, At: now, Kind: "encounter"}
+	switch {
+	case e.Mythic:
+		entry.VoiceID = "encounter_rare_glimpse"
+		entry.Text = "Something impossible happened. " + name + " was there — and stayed."
+	case essence > 0:
+		entry.VoiceID = "encounter_settled_01"
+		entry.Text = "A wild " + name + " appeared — an old friend. Its echo joined the collection."
+	case e.Caught:
+		entry.VoiceID = "encounter_bold_01"
+		entry.Text = "A wild " + name + " appeared — and after a clean day, it joined you!"
+	default:
+		entry.VoiceID = "encounter_cautious_01"
+		entry.Text = "A wild " + name + " appeared… and slipped away. A cleaner day might tempt it."
+	}
+	return save.AppendJournal(entry)
 }
 
 // pendingDays returns every calendar day from the pet's last ticked day (or

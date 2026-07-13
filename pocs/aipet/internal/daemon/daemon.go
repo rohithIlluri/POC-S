@@ -17,6 +17,7 @@ import (
 	"github.com/rohithIlluri/POC-S/pocs/aipet/internal/config"
 	"github.com/rohithIlluri/POC-S/pocs/aipet/internal/leaderboard"
 	"github.com/rohithIlluri/POC-S/pocs/aipet/internal/pricing"
+	"github.com/rohithIlluri/POC-S/pocs/aipet/internal/save"
 	"github.com/rohithIlluri/POC-S/pocs/aipet/internal/sim"
 	"github.com/rohithIlluri/POC-S/pocs/aipet/internal/store"
 )
@@ -28,6 +29,7 @@ type Snapshot struct {
 	Suggestions   []advisor.Suggestion `json:"suggestions"`
 	Board         leaderboard.Board    `json:"board"`
 	Pet           sim.Pet              `json:"pet"`
+	Dex           save.DexState        `json:"dex"`
 	Sources       map[string]bool      `json:"sources"` // detected tool dirs
 	NewEvents     int                  `json:"new_events"`
 	CollectErrors []string             `json:"collect_errors,omitempty"` // non-fatal per-source errors
@@ -104,13 +106,14 @@ func runCycle(cfg config.Config, st *store.Store, scan *collector.ScanState, now
 	}, advisor.DefaultRules())
 	snap.Board = leaderboard.Compute(events, now)
 
-	pet, err := runPetTick(events, cfg, now)
+	pet, dex, err := runPetTick(events, cfg, now)
 	if err != nil {
 		// The pet is gameplay, not the companion's core coaching function —
 		// a tick failure must never block spend advice or the leaderboard.
 		snap.PetError = err.Error()
 	} else {
 		snap.Pet = pet
+		snap.Dex = dex
 	}
 
 	if err := writeSnapshot(snap); err != nil {
