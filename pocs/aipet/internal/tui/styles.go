@@ -33,17 +33,6 @@ var (
 	activeTabStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("231")).Background(cBlue)
 )
 
-func faceStyle(m mood) lipgloss.Style {
-	switch m {
-	case moodWorried:
-		return lipgloss.NewStyle().Bold(true).Foreground(cRed)
-	case moodThinking:
-		return lipgloss.NewStyle().Bold(true).Foreground(cYellow)
-	default:
-		return lipgloss.NewStyle().Bold(true).Foreground(cGreen)
-	}
-}
-
 func severityBadge(s advisor.Severity) string {
 	switch s {
 	case advisor.Warn:

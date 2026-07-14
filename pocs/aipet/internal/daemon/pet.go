@@ -11,12 +11,19 @@ import (
 	"github.com/rohithIlluri/POC-S/pocs/aipet/internal/store"
 )
 
-// runPetTick advances the pet by at most one calendar day, catching up any
-// days that were missed while the machine was off — GAME_DESIGN.md §5.4:
-// "runs at most one sim tick per calendar day (catch-up ticks if the
-// machine was off)". It never runs more than one tick per call for TODAY,
-// since today's digest is necessarily partial until the day ends; only
-// strictly-past days are caught up in full.
+// runPetTick advances the pet through every day of activity implied by
+// events, up to and including "today." Strictly-past days are ticked once
+// each and sealed permanently (GAME_DESIGN.md §5.4: "runs at most one sim
+// tick per calendar day"). "Today" is different: it may be re-processed
+// many times in a single calendar day (the TUI's background collector runs
+// every couple of minutes, `aipet daemon` runs continuously, `aipet
+// status` can be invoked repeatedly) as new activity keeps arriving before
+// midnight closes the day out. Tick's own cumulative fields (ActiveDayCount,
+// GritStreak, XP, EggSessionCount, Stats) only tolerate being applied ONCE
+// per calendar day, so "today" is always replayed from a sealed
+// end-of-yesterday snapshot (pet.PreTodayPet) rather than accumulated onto
+// directly — see sim.Pet's PreTodayPet/PreTodayDay doc comment for the full
+// contract this maintains.
 //
 // events is the full history (already collected this cycle); cfg supplies
 // the soft daily budget for the foraging-cap diet signal.
@@ -35,30 +42,72 @@ func runPetTick(events []store.Event, cfg config.Config, now time.Time) (sim.Pet
 	for _, d := range digests {
 		byDay[d.Day] = d
 	}
-
 	today := now.Local().Format("2006-01-02")
-	wokeFromSleep := pet.Mood == sim.MoodAsleep
 
-	for _, day := range pendingDays(pet.LastTickDay, pet.EggStartedAt, today, byDay) {
+	// 1. Seal every strictly-past pending day onto the persisted pet, exactly
+	// once each, same as before. After this loop `pet` is a true end-of-
+	// yesterday state — it becomes the baseline "today" replays from.
+	sealedAny := false
+	for _, day := range pastPendingDays(pet.LastTickDay, pet.EggStartedAt, today, byDay) {
 		d, active := byDay[day]
 		if !active {
 			pet = sim.AdvanceIdle(pet, day)
 			continue
 		}
+		wokeFromSleep := pet.Mood == sim.MoodAsleep
 		if wokeFromSleep {
 			pet = sim.WakeFromHibernation(pet)
-			wokeFromSleep = false
 		}
-
 		verdict := care.Evaluate(d, 0, 0, cfg.DailyBudgetUSD)
 		window := hatchWindow(byDay, pet.EggStartedAt, day)
 		result := sim.Tick(pet, day, d, verdict.AsSimVerdict(), window, now)
 		pet = result.Pet
-
+		sealedAny = true
 		if err := journalDay(day, now, d, verdict, result); err != nil {
 			return pet, dex, err
 		}
 	}
+
+	// 2. Establish/refresh the sealed pre-today baseline. If a new calendar
+	// day has started since we last replayed today (or this is the very
+	// first tick ever), the pet as it stands right now — after step 1's
+	// seal — IS the clean end-of-yesterday baseline.
+	if pet.PreTodayDay != today {
+		baseline := pet // shallow copy is fine: PreTodayPet is not set on pet yet
+		baseline.PreTodayPet = nil
+		baseline.PreTodayDay = ""
+		pet.PreTodayPet = &baseline
+		pet.PreTodayDay = today
+	}
+
+	// 3. Replay "today" fresh from the sealed baseline every cycle, so
+	// re-collecting later the same day reflects new activity instead of
+	// silently no-op'ing. This is a REPLACE of today's state, not an
+	// accumulation: ActiveDayCount/GritStreak/XP/EggSessionCount/Stats each
+	// advance by exactly one day's worth no matter how many times this
+	// cycle runs today.
+	todayBaseline := *pet.PreTodayPet
+	replayed := todayBaseline
+	if d, active := byDay[today]; active {
+		wokeFromSleep := replayed.Mood == sim.MoodAsleep
+		if wokeFromSleep {
+			replayed = sim.WakeFromHibernation(replayed)
+		}
+		verdict := care.Evaluate(d, 0, 0, cfg.DailyBudgetUSD)
+		window := hatchWindow(byDay, replayed.EggStartedAt, today)
+		result := sim.Tick(replayed, today, d, verdict.AsSimVerdict(), window, now)
+		replayed = result.Pet
+		if err := journalDayOnce(today, now, d, verdict, result); err != nil {
+			return pet, dex, err
+		}
+	} else if sealedAny || replayed.LastTickDay != today {
+		// No activity today (yet): only advance idle bookkeeping once per
+		// day, mirroring the old idle-day semantics, not on every re-run.
+		replayed = sim.AdvanceIdle(replayed, today)
+	}
+	replayed.PreTodayPet = pet.PreTodayPet
+	replayed.PreTodayDay = today
+	pet = replayed
 
 	// Wild-encounter sweep, decoupled from the pet tick: a day's encounters
 	// roll only once the day is COMPLETE (its diet verdict — which drives
@@ -143,27 +192,23 @@ func journalEncounter(e sim.Encounter, essence int, now time.Time) error {
 	return save.AppendJournal(entry)
 }
 
-// pendingDays returns every calendar day from the pet's last ticked day (or
-// egg start, if never ticked) up to and including today, in ascending
-// order — the exact set of days the catch-up loop must visit. Only days
-// strictly before today are guaranteed complete; today is included so an
-// active day-in-progress still grows the pet, matching how the rest of the
-// companion (advisor, leaderboard) already treats "today" as live data.
-func pendingDays(lastTickDay string, eggStartedAt time.Time, today string, byDay map[string]sim.Digest) []string {
+// pastPendingDays returns every calendar day STRICTLY BEFORE today, from
+// the pet's last ticked day (or egg start, if never ticked), in ascending
+// order — the days the seal loop must visit exactly once each. "Today"
+// itself is deliberately excluded: it's handled separately by the
+// replay-from-baseline step in runPetTick, which is safe to re-run.
+func pastPendingDays(lastTickDay string, eggStartedAt time.Time, today string, byDay map[string]sim.Digest) []string {
 	start := eggStartedAt.Local().Format("2006-01-02")
 	if lastTickDay != "" {
 		start = nextDay(lastTickDay)
 	}
-	if start > today {
+	if start >= today {
 		return nil
 	}
 
 	var out []string
-	for d := start; d <= today; d = nextDay(d) {
+	for d := start; d < today; d = nextDay(d) {
 		out = append(out, d)
-		if d == today {
-			break
-		}
 	}
 	return out
 }
@@ -211,6 +256,53 @@ func journalDay(day string, now time.Time, d sim.Digest, v care.Verdict, r sim.T
 		}
 	}
 	if !r.Pet.IsEgg() && len(v.Reasons) > 0 {
+		if err := save.AppendJournal(save.Entry{
+			Day: day, At: now, Kind: "diet", VoiceID: voiceForSignals(v),
+			Text: v.Reasons[0],
+		}); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// journalDayOnce is journalDay for "today," which — unlike sealed past
+// days — can be ticked many times in the same calendar day as the replay
+// step re-runs. Without de-duplication every re-collection would append a
+// fresh "hatched into X" / "evolved into X" / diet line, spamming the
+// journal. Entries are de-duplicated by (day, kind) against what's already
+// on disk; "diet" is allowed to have at most one entry per day too, since
+// it's meant to be that day's single summary, not a running log.
+func journalDayOnce(day string, now time.Time, d sim.Digest, v care.Verdict, r sim.TickResult) error {
+	existing, err := save.ReadJournal()
+	if err != nil {
+		return err
+	}
+	already := make(map[string]bool, len(existing))
+	for _, e := range existing {
+		if e.Day == day {
+			already[e.Kind] = true
+		}
+	}
+
+	if r.HatchedNow && !already["hatched"] {
+		sp := r.Pet.SpeciesID
+		if err := save.AppendJournal(save.Entry{
+			Day: day, At: now, Kind: "hatched", VoiceID: "hatch_general_02",
+			Text: "Cracked, blinked, looked around. Hatched into " + sp + ".",
+		}); err != nil {
+			return err
+		}
+	}
+	if r.EvolvedNote != "" && !already["evolved"] {
+		if err := save.AppendJournal(save.Entry{
+			Day: day, At: now, Kind: "evolved", VoiceID: r.EvolvedNote,
+			Text: "Evolved into " + r.Pet.SpeciesID + ".",
+		}); err != nil {
+			return err
+		}
+	}
+	if !r.Pet.IsEgg() && len(v.Reasons) > 0 && !already["diet"] {
 		if err := save.AppendJournal(save.Entry{
 			Day: day, At: now, Kind: "diet", VoiceID: voiceForSignals(v),
 			Text: v.Reasons[0],

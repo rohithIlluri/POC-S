@@ -13,38 +13,49 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/rohithIlluri/POC-S/pocs/aipet/internal/advisor"
 	"github.com/rohithIlluri/POC-S/pocs/aipet/internal/config"
 	"github.com/rohithIlluri/POC-S/pocs/aipet/internal/daemon"
 	"github.com/rohithIlluri/POC-S/pocs/aipet/internal/leaderboard"
 	"github.com/rohithIlluri/POC-S/pocs/aipet/internal/save"
+	"github.com/rohithIlluri/POC-S/pocs/aipet/internal/sim"
 	"github.com/rohithIlluri/POC-S/pocs/aipet/internal/store"
 )
 
-// The pet's mood reflects how spend tracks against budget — a quick emotional
-// read before the user even looks at numbers.
-type mood int
-
-const (
-	moodHappy mood = iota
-	moodThinking
-	moodWorried
-)
-
-var faces = map[mood][]string{
-	moodHappy:    {"( ^_^ )", "( ^.^ )"},
-	moodThinking: {"( o_o )", "( -_o )"},
-	moodWorried:  {"( >_< )", "( ;_; )"},
+// headerFaces maps the pet's OWN mood (sim.Mood — grown from real diet and
+// health, not from budget math) to a two-frame blinking face. Pre-hatch has
+// its own egg-specific frames, keyed separately since there's no sim.Mood
+// yet worth showing.
+var headerFaces = map[sim.Mood][]string{
+	sim.MoodCheerful: {"( ^_^ )", "( ^.^ )"},
+	sim.MoodContent:  {"( o_o )", "( -_o )"},
+	sim.MoodTired:    {"( -_- )", "( u_u )"},
+	sim.MoodWorried:  {"( ;_; )", "( >_< )"},
+	sim.MoodAsleep:   {"( -.- )zzz", "( u.u )zzz"},
 }
 
+var eggFaces = []string{"( • )", "( ° )"}
+
 type tickMsg time.Time
+
+// collectTickMsg fires on a timer to say "time to run another collection
+// cycle." collectDoneMsg fires once that cycle (run off the UI thread via a
+// tea.Cmd) actually finishes. Splitting these two lets the collect itself —
+// parsing potentially-large JSONL files — run without blocking Bubble Tea's
+// event loop or the 1s animation tick.
+//
+// This whole loop exists because the TUI process has no external `aipet
+// daemon` running by default: without it, opening `aipet` and coding for
+// hours would never grow the pet past its initial snapshot. Collection is
+// just parsing session logs already on disk (0 tokens, 0 network), so
+// running it from inside the TUI process costs nothing extra.
+type collectTickMsg time.Time
+type collectDoneMsg struct{}
 
 // Model is the Bubble Tea model for the pet.
 type Model struct {
 	cfg            config.Config
 	snap           *daemon.Snapshot
 	snapMod        time.Time // snapshot file mtime at last parse
-	mood           mood
 	frame          int
 	tab            int // 0 = pet, 1 = overview, 2 = suggestions, 3 = records
 	width          int
@@ -63,10 +74,45 @@ func New(cfg config.Config) Model {
 	return m
 }
 
-func (m Model) Init() tea.Cmd { return tick() }
+func (m Model) Init() tea.Cmd {
+	// A collection cycle already ran once in runTUI (cmd/aipet/main.go)
+	// before the program starts, so Init's job is only to arm the repeating
+	// collect timer, not to collect again immediately.
+	return tea.Batch(tick(), m.scheduleCollectTick())
+}
 
 func tick() tea.Cmd {
 	return tea.Tick(time.Second, func(t time.Time) tea.Msg { return tickMsg(t) })
+}
+
+// collectInterval is how often the TUI's own background loop re-collects,
+// mirroring cfg.CollectIntervalMin (the same cadence `aipet daemon` would
+// use) so the two paths behave consistently.
+func (m Model) collectInterval() time.Duration {
+	interval := time.Duration(m.cfg.CollectIntervalMin) * time.Minute
+	if interval <= 0 {
+		interval = 2 * time.Minute
+	}
+	return interval
+}
+
+// scheduleCollectTick waits one collectInterval, then fires collectTickMsg
+// (time to collect again).
+func (m Model) scheduleCollectTick() tea.Cmd {
+	return tea.Tick(m.collectInterval(), func(t time.Time) tea.Msg { return collectTickMsg(t) })
+}
+
+// runCollect performs one collection cycle (parsing session logs already on
+// disk — no network, no tokens) as a Bubble Tea Cmd, off the UI thread, then
+// reports completion via collectDoneMsg. This is what makes `aipet` (bare)
+// grow the pet on its own, without requiring the user to also run `aipet
+// daemon` in a second terminal.
+func (m Model) runCollect() tea.Cmd {
+	cfg := m.cfg
+	return func() tea.Msg {
+		_, _ = daemon.Run(cfg)
+		return collectDoneMsg{}
+	}
 }
 
 // refresh re-reads daemon state. The snapshot JSON is only re-parsed when the
@@ -89,28 +135,18 @@ func (m *Model) refresh(force bool) {
 		m.journalEntries = j
 	}
 	_, m.daemonUp = daemon.Running()
-	m.mood = m.computeMood()
 }
 
-func (m Model) computeMood() mood {
-	if m.snap == nil {
-		return moodThinking
+// overBudget reports whether today's spend has passed the soft daily
+// budget — shown as a small inline warning in the header, but no longer
+// drives the pet's face: the pet's own sim.Mood (grown from its diet and
+// health) does that now. Budget pressure is real, useful information, it
+// just isn't the pet's emotional state.
+func (m Model) overBudget() bool {
+	if m.snap == nil || m.cfg.DailyBudgetUSD <= 0 {
+		return false
 	}
-	if m.cfg.DailyBudgetUSD > 0 {
-		r := m.snap.Stats.TodayCost / m.cfg.DailyBudgetUSD
-		switch {
-		case r >= 1.0:
-			return moodWorried
-		case r >= 0.75:
-			return moodThinking
-		}
-	}
-	for _, s := range m.snap.Suggestions {
-		if s.Severity == advisor.Warn {
-			return moodWorried
-		}
-	}
-	return moodHappy
+	return m.snap.Stats.TodayCost >= m.cfg.DailyBudgetUSD
 }
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -121,6 +157,15 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.frame++
 		m.refresh(false) // animation tick: stat-check only, parse on change
 		return m, tick()
+	case collectTickMsg:
+		// Timer fired: run the actual (potentially slower) collection off
+		// the UI thread rather than blocking Update.
+		return m, m.runCollect()
+	case collectDoneMsg:
+		// The background collect cycle just finished; re-read whatever it
+		// published, then arm the next cycle.
+		m.refresh(true)
+		return m, m.scheduleCollectTick()
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "q", "ctrl+c", "esc":
@@ -140,7 +185,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "5":
 			m.tab = 4
 		case "r":
+			// A real collect-then-refresh, not just a snapshot re-stat —
+			// "refresh" should actually go look for new activity.
 			m.refresh(true)
+			return m, m.runCollect()
 		}
 	}
 	return m, nil
@@ -171,25 +219,60 @@ func (m Model) View() string {
 }
 
 func (m Model) header() string {
-	face := faces[m.mood][m.frame%2]
-	name := titleStyle.Render(" aipet ")
-	faceCol := faceStyle(m.mood).Render(face)
+	name := titleStyle.Render(" Codelings ")
 
-	status := dimStyle.Render("daemon: off")
+	face, bubble, faceSt := m.faceAndBubble()
+	faceCol := faceSt.Render(face)
+
+	status := dimStyle.Render("daemon: off (r or 'aipet daemon' grows it)")
 	if m.daemonUp {
 		status = okStyle.Render("daemon: live")
 	}
-	var bubble string
-	switch m.mood {
-	case moodWorried:
-		bubble = warnStyle.Render("Let's trim some spend!")
-	case moodThinking:
-		bubble = tipStyle.Render("Watching your usage...")
-	default:
-		bubble = okStyle.Render("Looking efficient!")
+	if m.overBudget() {
+		status = warnStyle.Render("budget: over") + "  " + status
 	}
+
 	line := lipgloss.JoinHorizontal(lipgloss.Center, faceCol, "  ", name, "  ", bubble)
 	return lipgloss.JoinHorizontal(lipgloss.Center, line, "   ", status)
+}
+
+// faceAndBubble picks the header's face + speech bubble + style from the
+// PET'S OWN state: still an egg, hatched with a real sim.Mood, or no data
+// collected yet at all. Budget/spend concerns live in the Overview and
+// Suggestions tabs, not the pet's face.
+func (m Model) faceAndBubble() (face, bubble string, st lipgloss.Style) {
+	if m.snap == nil {
+		return eggFaces[m.frame%2], tipStyle.Render("Getting to know your machine..."), moodStyle[sim.MoodContent]
+	}
+	if m.snap.PetError != "" {
+		return eggFaces[m.frame%2], warnStyle.Render("Something's off — check the Pet tab."), moodStyle[sim.MoodWorried]
+	}
+	p := m.snap.Pet
+	if p.IsEgg() {
+		return eggFaces[m.frame%2], tipStyle.Render("Warming up..."), moodStyle[sim.MoodContent]
+	}
+	frames, ok := headerFaces[p.Mood]
+	if !ok {
+		frames = headerFaces[sim.MoodContent]
+	}
+	return frames[m.frame%2], moodStyle[p.Mood].Render(moodBubble(p.Mood)), moodStyle[p.Mood]
+}
+
+// moodBubble is the pet's own one-line status, in its voice — matching the
+// warm, explainable tone of the journal (docs/design/lore.md).
+func moodBubble(mo sim.Mood) string {
+	switch mo {
+	case sim.MoodCheerful:
+		return "Feeling great — keep it up!"
+	case sim.MoodTired:
+		return "A little worn out today."
+	case sim.MoodWorried:
+		return "Something's not sitting right..."
+	case sim.MoodAsleep:
+		return "Sleeping — no rush, I'll be here."
+	default:
+		return "Just here, watching your work."
+	}
 }
 
 func (m Model) tabBar() string {

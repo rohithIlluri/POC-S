@@ -60,6 +60,31 @@ type Pet struct {
 	ActiveDayCount int       `json:"active_day_count"`        // total days that ever produced a tick
 	IdleDays       int       `json:"idle_days"`               // consecutive days since the last active tick
 	GritStreak     int       `json:"grit_streak"`             // consecutive ACTIVE days, resets on any idle day
+
+	// EggSessionCount is how many qualifying sessions have been folded into
+	// this egg since it started (see QualifyingSessions in tick.go). Hatch
+	// gates on THIS, not on calendar days — a single enthusiastic sitting
+	// with several sessions can hatch the same day it starts, while a
+	// casual user still hatches within their first couple of real days.
+	// Unused once hatched.
+	EggSessionCount int `json:"egg_session_count,omitempty"`
+
+	// PreTodayPet + PreTodayDay make "today" safely re-tickable multiple
+	// times per calendar day (e.g. once per background collection cycle)
+	// without double-counting Tick's cumulative fields (ActiveDayCount,
+	// GritStreak, XP, EggSessionCount, Stats). PreTodayPet is a sealed
+	// snapshot of the pet as of the END of the last COMPLETED day — i.e.
+	// the clean baseline "today" is replayed from every time. PreTodayDay
+	// names which calendar day that baseline is for; when it no longer
+	// matches "today", the baseline is stale and gets re-sealed from the
+	// (now-completed) former "today" before a new one starts.
+	//
+	// PreTodayPet is always a fully sealed past state: its own
+	// PreTodayPet/PreTodayDay are left zero, never nested. Both fields are
+	// internal replay bookkeeping — save/load and every external reader
+	// should treat the OUTER Pet as the only one that matters.
+	PreTodayPet *Pet   `json:"pre_today_pet,omitempty"`
+	PreTodayDay string `json:"pre_today_day,omitempty"`
 }
 
 // NewEgg creates a freshly-laid egg from a new DNA seed. No species is
@@ -75,9 +100,19 @@ func NewEgg(dna DNA, now time.Time) Pet {
 	}
 }
 
-// HatchWindowDays is how many active days an egg needs before it hatches,
-// per GAME_DESIGN.md §4.4 ("hatches after ~3 active days").
-const HatchWindowDays = 3
+// HatchSessionThreshold is how many qualifying sessions (see
+// QualifyingSessions in tick.go) an egg needs before it hatches. Activity-
+// based rather than calendar-based: an enthusiastic single sitting with
+// several real sessions hatches the same day, while a casual user still
+// hatches within their first couple of real days — the species-line pick
+// still reads a genuine multi-session playstyle signal either way.
+const HatchSessionThreshold = 5
+
+// HatchWindowDays is retained as a fallback safety valve, not the primary
+// gate: an egg that's been active on this many distinct calendar days
+// always hatches even if it fell short of HatchSessionThreshold (e.g. many
+// single-session days), so a real week of casual use is never stuck.
+const HatchWindowDays = 5
 
 // Level thresholds for stage evolution, per GAME_DESIGN.md §4.4.
 const (

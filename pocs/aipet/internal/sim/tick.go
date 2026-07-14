@@ -49,7 +49,8 @@ func Tick(p Pet, day string, digest Digest, verdict DietVerdict, hatchWindow []D
 	p.Mood = moodFor(p, verdict)
 
 	if p.IsEgg() {
-		if p.ActiveDayCount >= HatchWindowDays {
+		p.EggSessionCount += QualifyingSessions(digest)
+		if p.EggSessionCount >= HatchSessionThreshold || p.ActiveDayCount >= HatchWindowDays {
 			line := PickLine(p.DNA, hatchWindow)
 			starterID, ok := species.LineStarter(line)
 			if ok {
@@ -106,6 +107,28 @@ func WakeFromHibernation(p Pet) Pet {
 		p.Mood = MoodCheerful
 	}
 	return p
+}
+
+// QualifyingSessions counts a day's sessions toward the egg's hatch
+// threshold: a session counts once it has produced at least 2 turns, so a
+// single stray API call doesn't trivially inflate the count. All of a day's
+// qualifying sessions count at once (not just the first) — an enthusiastic
+// multi-session sitting is exactly what should hatch the egg fast.
+func QualifyingSessions(d Digest) int {
+	if d.Sessions == 0 {
+		return 0
+	}
+	perSession := d.Turns / d.Sessions
+	if perSession < 2 {
+		// Coarse fallback when sessions are lopsided (Digest doesn't carry
+		// a per-session turn breakdown): treat the day as at most one
+		// qualifying session once it clears a small total-turns floor.
+		if d.Turns >= 2 {
+			return 1
+		}
+		return 0
+	}
+	return d.Sessions
 }
 
 // hatchInto births the starter. HatchedAt is the TICK DAY, not wall-clock

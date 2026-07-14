@@ -165,3 +165,38 @@ func TestPetFilePermissions(t *testing.T) {
 		t.Errorf("pet.json should be 0600, got %o", perm)
 	}
 }
+
+// TestPreTodayPetRoundtrips confirms the nested PreTodayPet baseline
+// pointer (used by the daemon's same-day replay fix) survives a save/load
+// cycle intact — a regression guard since it's the one field in Pet that
+// isn't a flat value type.
+func TestPreTodayPetRoundtrips(t *testing.T) {
+	isolateHome(t)
+	baseline := sim.NewEgg(sim.NewDNA([]byte("baseline")), time.Now())
+	baseline.ActiveDayCount = 2
+
+	pet := baseline
+	pet.ActiveDayCount = 3
+	pet.PreTodayPet = &baseline
+	pet.PreTodayDay = "2026-07-13"
+
+	if err := SavePet(pet); err != nil {
+		t.Fatal(err)
+	}
+	got, ok, err := TryLoadPet()
+	if err != nil || !ok {
+		t.Fatalf("expected a saved pet: ok=%v err=%v", ok, err)
+	}
+	if got.PreTodayDay != "2026-07-13" {
+		t.Errorf("PreTodayDay lost: got %q", got.PreTodayDay)
+	}
+	if got.PreTodayPet == nil {
+		t.Fatal("PreTodayPet baseline lost across save/load")
+	}
+	if got.PreTodayPet.ActiveDayCount != 2 {
+		t.Errorf("PreTodayPet.ActiveDayCount = %d, want 2", got.PreTodayPet.ActiveDayCount)
+	}
+	if got.PreTodayPet.PreTodayPet != nil {
+		t.Error("the baseline itself must never nest another baseline")
+	}
+}

@@ -14,16 +14,20 @@ func newTestEgg() Pet {
 	return NewEgg(NewDNA([]byte("test-pet")), now)
 }
 
-func TestTickDoesNotHatchBeforeWindow(t *testing.T) {
+func TestTickDoesNotHatchBeforeThreshold(t *testing.T) {
 	p := newTestEgg()
-	d := Digest{Turns: 40, Sessions: 2, CacheRead: 1000, TokensIn: 9000}
+	// 1 qualifying session/day (2 sessions but few turns each -> falls back
+	// to the coarse "at most 1 qualifying session" path), well under the
+	// 5-session threshold across a few days.
+	d := Digest{Turns: 3, Sessions: 2, CacheRead: 1000, TokensIn: 9000}
+	window := []Digest{d, d, d}
 	v := DietVerdict{XPMultiplier: 1.0}
 
-	for day := 1; day < HatchWindowDays; day++ {
-		res := Tick(p, itoa(day), d, v, []Digest{d, d, d}, now)
+	for day := 1; day < HatchSessionThreshold; day++ {
+		res := Tick(p, itoa(day), d, v, window, now)
 		p = res.Pet
 		if res.HatchedNow {
-			t.Fatalf("hatched too early on day %d", day)
+			t.Fatalf("hatched too early on day %d (session count %d)", day, p.EggSessionCount)
 		}
 		if !p.IsEgg() {
 			t.Fatalf("pet should still be an egg on day %d", day)
@@ -31,19 +35,40 @@ func TestTickDoesNotHatchBeforeWindow(t *testing.T) {
 	}
 }
 
-func TestTickHatchesAtWindow(t *testing.T) {
+func TestTickHatchesSameDayFromEnthusiasticSession(t *testing.T) {
+	// A single day with many real sessions (>= HatchSessionThreshold, each
+	// with several turns) should hatch immediately — the whole point of
+	// switching off calendar-day pacing.
 	p := newTestEgg()
-	d := Digest{Turns: 40, Sessions: 2, CacheRead: 1000, TokensIn: 9000}
+	d := Digest{Turns: 30, Sessions: HatchSessionThreshold, CacheRead: 1000, TokensIn: 9000}
 	v := DietVerdict{XPMultiplier: 1.0}
+
+	res := Tick(p, "day1", d, v, []Digest{d}, now)
+	if !res.HatchedNow {
+		t.Fatalf("expected same-day hatch from %d qualifying sessions, got EggSessionCount=%d", HatchSessionThreshold, res.Pet.EggSessionCount)
+	}
+	if res.Pet.IsEgg() {
+		t.Fatal("pet should no longer be an egg after hatching")
+	}
+}
+
+func TestTickHatchesAtSessionThresholdAcrossDays(t *testing.T) {
+	p := newTestEgg()
+	// 2 qualifying sessions/day (well-formed: 10 turns / 2 sessions = 5
+	// turns/session, clears the qualifying-session floor).
+	d := Digest{Turns: 10, Sessions: 2, CacheRead: 1000, TokensIn: 9000}
 	window := []Digest{d, d, d}
 
 	var res TickResult
-	for day := 1; day <= HatchWindowDays; day++ {
-		res = Tick(p, itoa(day), d, v, window, now)
+	for day := 1; ; day++ {
+		res = Tick(p, itoa(day), d, DietVerdict{XPMultiplier: 1.0}, window, now)
 		p = res.Pet
+		if res.HatchedNow || day > HatchWindowDays+2 {
+			break
+		}
 	}
 	if !res.HatchedNow {
-		t.Fatal("expected hatch on the 3rd active day")
+		t.Fatal("expected hatch once accumulated qualifying sessions cross HatchSessionThreshold")
 	}
 	if p.IsEgg() {
 		t.Fatal("pet should no longer be an egg after hatching")
@@ -54,6 +79,46 @@ func TestTickHatchesAtWindow(t *testing.T) {
 	sp, ok := species.ByID(p.SpeciesID)
 	if !ok || sp.Stage != 1 {
 		t.Fatalf("hatched species %q should be a stage-1 starter", p.SpeciesID)
+	}
+}
+
+func TestTickHatchesViaCalendarSafetyValve(t *testing.T) {
+	// Many days, each with a single-turn "session" that never clears the
+	// qualifying-session bar at all (Turns < 2) -> EggSessionCount stays 0
+	// forever, so only the calendar-day fallback can hatch this egg.
+	p := newTestEgg()
+	d := Digest{Turns: 1, Sessions: 1}
+	window := []Digest{d, d, d, d, d}
+
+	var res TickResult
+	for day := 1; day <= HatchWindowDays; day++ {
+		res = Tick(p, itoa(day), d, DietVerdict{XPMultiplier: 1.0}, window, now)
+		p = res.Pet
+	}
+	if res.Pet.EggSessionCount != 0 {
+		t.Fatalf("test setup invalid: expected 0 qualifying sessions accumulated, got %d", res.Pet.EggSessionCount)
+	}
+	if !res.HatchedNow {
+		t.Fatal("expected the calendar-day safety valve to hatch the egg despite zero qualifying sessions")
+	}
+}
+
+func TestQualifyingSessions(t *testing.T) {
+	cases := []struct {
+		name string
+		d    Digest
+		want int
+	}{
+		{"no sessions", Digest{}, 0},
+		{"one short session", Digest{Turns: 1, Sessions: 1}, 0},
+		{"one session, two turns", Digest{Turns: 2, Sessions: 1}, 1},
+		{"two well-formed sessions", Digest{Turns: 10, Sessions: 2}, 2},
+		{"lopsided sessions, floor applies", Digest{Turns: 3, Sessions: 3}, 1},
+	}
+	for _, c := range cases {
+		if got := QualifyingSessions(c.d); got != c.want {
+			t.Errorf("%s: QualifyingSessions(%+v) = %d, want %d", c.name, c.d, got, c.want)
+		}
 	}
 }
 

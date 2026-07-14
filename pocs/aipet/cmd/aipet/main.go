@@ -27,6 +27,8 @@ import (
 	"github.com/rohithIlluri/POC-S/pocs/aipet/internal/daemon"
 	"github.com/rohithIlluri/POC-S/pocs/aipet/internal/leaderboard"
 	"github.com/rohithIlluri/POC-S/pocs/aipet/internal/save"
+	"github.com/rohithIlluri/POC-S/pocs/aipet/internal/sim"
+	"github.com/rohithIlluri/POC-S/pocs/aipet/internal/species"
 	"github.com/rohithIlluri/POC-S/pocs/aipet/internal/tui"
 	"github.com/rohithIlluri/POC-S/pocs/aipet/internal/version"
 )
@@ -100,6 +102,11 @@ func runStatus(cfg config.Config) {
 	if err != nil {
 		fatalf("status: %v", err)
 	}
+	if len(snap.Sources) == 0 {
+		printColdStart(cfg)
+		return
+	}
+
 	s := snap.Stats
 	fmt.Printf("aipet status — %s\n", snap.UpdatedAt.Format("2006-01-02 15:04"))
 	fmt.Printf("  sources:   %s\n", sourcesLine(snap.Sources))
@@ -112,6 +119,7 @@ func runStatus(cfg config.Config) {
 	for _, ce := range snap.CollectErrors {
 		fmt.Printf("  ! collect: %s\n", ce)
 	}
+	printPetStatusLine(snap)
 	if len(snap.Suggestions) > 0 {
 		fmt.Println("\n  suggestions:")
 		shown := 0
@@ -123,6 +131,52 @@ func runStatus(cfg config.Config) {
 			}
 		}
 	}
+}
+
+// printColdStart runs when no Claude Code / Codex session logs have ever
+// been found. A brand-new user running `aipet status` on an empty machine
+// otherwise sees an all-zero spend report and has no idea a pet/game exists
+// at all — this makes the concept and the next step discoverable.
+func printColdStart(cfg config.Config) {
+	fmt.Println("No Claude Code or Codex sessions found yet on this machine.")
+	fmt.Println()
+	fmt.Println("aipet grows a coding companion (a \"Codeling\") from your real session")
+	fmt.Println("activity — cache reuse, model routing, session hygiene. Nothing to")
+	fmt.Println("configure, no network, no tokens spent.")
+	fmt.Println()
+	if p, ok, _ := save.TryLoadPet(); ok && p.IsEgg() {
+		fmt.Println("Your egg is already warming, waiting for that activity to begin.")
+	} else {
+		fmt.Println("An egg will start warming the moment you run aipet again with some")
+		fmt.Println("Claude Code or Codex activity on disk.")
+	}
+	fmt.Println()
+	fmt.Println("  aipet          open the pet (grows itself while it's open)")
+	fmt.Println("  aipet daemon   grow it in the background instead")
+	fmt.Println()
+	fmt.Println("Start (or keep) coding with Claude Code or Codex and run this again.")
+	_ = cfg // no config-dependent copy yet, kept for signature symmetry with other run* funcs
+}
+
+// printPetStatusLine gives `aipet status` a one-line pet summary so the
+// companion stays visible even for users who never open the TUI.
+func printPetStatusLine(snap *daemon.Snapshot) {
+	if snap.PetError != "" {
+		return
+	}
+	p := snap.Pet
+	fmt.Println()
+	if p.IsEgg() {
+		fmt.Printf("  pet:       egg warming — %d/%d qualifying sessions (run `aipet` to watch)\n",
+			min(p.EggSessionCount, sim.HatchSessionThreshold), sim.HatchSessionThreshold)
+		return
+	}
+	sp, ok := species.ByID(p.SpeciesID)
+	name := p.SpeciesID
+	if ok {
+		name = sp.Name
+	}
+	fmt.Printf("  pet:       %s (level %d, %s) — run `aipet` to see it\n", name, p.Level, p.Mood)
 }
 
 func runLeaderboard(cfg config.Config, args []string) {

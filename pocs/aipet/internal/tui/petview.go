@@ -38,7 +38,7 @@ func (m Model) pet() string {
 	if p.IsEgg() {
 		body = eggView(p)
 	} else {
-		body = hatchlingView(p)
+		body = hatchlingView(p, m.width)
 	}
 	if j := m.journal(); j != "" {
 		body += "\n" + sectionStyle.Render("Journal") + "\n" + j
@@ -53,19 +53,22 @@ func eggView(p sim.Pet) string {
 	b.WriteString("\n\n")
 	b.WriteString(petNameStyle.Render("An egg, warming."))
 	b.WriteString("\n\n")
-	remaining := sim.HatchWindowDays - p.ActiveDayCount
-	if remaining < 0 {
-		remaining = 0
-	}
 	b.WriteString(dimStyle.Render(fmt.Sprintf(
-		"Hatches after %d active day(s) — %d so far. It'll pick a line from how you've been working.",
-		sim.HatchWindowDays, p.ActiveDayCount)))
+		"Egg warming: %d/%d qualifying sessions. Keep coding with Claude Code or Codex —",
+		min(p.EggSessionCount, sim.HatchSessionThreshold), sim.HatchSessionThreshold)))
 	b.WriteString("\n")
-	b.WriteString(hatchProgressBar(p.ActiveDayCount, sim.HatchWindowDays))
+	b.WriteString(dimStyle.Render("it hatches from your real activity, no clicking required."))
+	b.WriteString("\n")
+	b.WriteString(hatchProgressBar(p.EggSessionCount, sim.HatchSessionThreshold))
+	if p.ActiveDayCount > 0 {
+		b.WriteString("\n")
+		b.WriteString(dimStyle.Render(fmt.Sprintf(
+			"(%d active day(s) so far — a real week of casual use always hatches too)", p.ActiveDayCount)))
+	}
 	return b.String()
 }
 
-func hatchlingView(p sim.Pet) string {
+func hatchlingView(p sim.Pet, width int) string {
 	sp, ok := species.ByID(p.SpeciesID)
 	if !ok {
 		return warnStyle.Render("Unknown species: " + p.SpeciesID)
@@ -110,7 +113,11 @@ func hatchlingView(p sim.Pet) string {
 	b.WriteString(statLine("SPARK", p.Stats.Spark))
 	b.WriteString("\n")
 
-	b.WriteString(dimStyle.Render(sp.DexEntry))
+	entryWidth := width - 2
+	if entryWidth < 40 {
+		entryWidth = 72 // sane default when the window size hasn't been reported yet (e.g. in tests)
+	}
+	b.WriteString(dimStyle.Render(wrap(sp.DexEntry, entryWidth)))
 	b.WriteString("\n\n")
 	b.WriteString(dimStyle.Render(fmt.Sprintf("streak %d day(s) · %d active day(s) total", p.GritStreak, p.ActiveDayCount)))
 
