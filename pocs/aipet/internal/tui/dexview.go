@@ -2,7 +2,6 @@ package tui
 
 import (
 	"fmt"
-	"strings"
 
 	"github.com/charmbracelet/lipgloss"
 
@@ -10,66 +9,85 @@ import (
 	"github.com/rohithIlluri/POC-S/pocs/aipet/internal/species"
 )
 
-var (
-	dexCaughtStyle = lipgloss.NewStyle().Foreground(cGreen)
-	dexSeenStyle   = lipgloss.NewStyle().Foreground(cYellow)
-	dexUnknown     = lipgloss.NewStyle().Foreground(cGray)
-	rarityStyles   = map[species.Rarity]lipgloss.Style{
-		species.Common:   lipgloss.NewStyle().Foreground(cGray),
-		species.Uncommon: lipgloss.NewStyle().Foreground(cBlue),
-		species.Rare:     lipgloss.NewStyle().Foreground(cPurple),
-		species.Relic:    lipgloss.NewStyle().Foreground(cYellow),
-		species.Mythic:   lipgloss.NewStyle().Foreground(cRed).Bold(true),
-	}
-)
+var rarityStyle = map[species.Rarity]lipgloss.Style{
+	species.Common:   sMuted,
+	species.Uncommon: sAccent,
+	species.Rare:     sBrand,
+	species.Relic:    sWarn,
+	species.Mythic:   sDanger,
+}
 
-// dex renders the Dex tab: all 30 species in dex order with seen/caught
-// markers. Unseen species show as ??? — you have to meet them first.
-func (m Model) dex() string {
+// dex renders the Dex tab: all 30 species as a responsive grid with
+// seen/caught markers. Unseen species show as a faint dash — you have to
+// meet them first.
+func (m Model) dex(w int) string {
 	if m.snap == nil {
-		return dimStyle.Render("No data yet. Start the daemon with `aipet daemon` or run `aipet status`.")
+		return sMuted.Render("No data yet. Start the daemon with `aipet daemon` or run `aipet status`.")
 	}
-	return RenderDex(m.snap.Dex)
+	return RenderDex(m.snap.Dex, w)
 }
 
 // RenderDex is the shared Dex listing used by both the TUI tab and the
-// `aipet dex` CLI command.
-func RenderDex(dex save.DexState) string {
-	var b strings.Builder
-
+// `aipet dex` CLI command. It lays species out as a grid — at 30 entries,
+// mostly unseen, a single column wastes most of a screen's height.
+func RenderDex(dex save.DexState, w int) string {
 	caught, seen := 0, 0
 	for _, sp := range species.All {
-		if _, ok := dex.Caught[sp.ID]; ok {
+		switch {
+		case has(dex.Caught, sp.ID):
 			caught++
-		} else if _, ok := dex.Seen[sp.ID]; ok {
+		case has(dex.Seen, sp.ID):
 			seen++
 		}
 	}
-	b.WriteString(sectionStyle.Render(fmt.Sprintf("Dex — %d/%d caught · %d seen", caught, len(species.All), seen)))
-	if dex.EchoEssence > 0 {
-		b.WriteString(dimStyle.Render(fmt.Sprintf("   ✦ %d echo essence", dex.EchoEssence)))
-	}
-	b.WriteString("\n\n")
+	header := spread(
+		sSection.Render("Dex")+sMuted.Render(fmt.Sprintf("  %d/%d caught · %d seen", caught, len(species.All), seen)),
+		essenceLabel(dex.EchoEssence),
+		w,
+	)
 
-	for _, sp := range species.All {
-		rs := rarityStyles[sp.Rarity]
-		switch {
-		case dex.Caught[sp.ID] != "":
-			b.WriteString(fmt.Sprintf("  %s #%03d %-12s %s  %s\n",
-				dexCaughtStyle.Render("●"), sp.Dex, sp.Name,
-				rs.Render(fmt.Sprintf("%-8s", sp.Rarity)),
-				dimStyle.Render("caught "+dex.Caught[sp.ID])))
-		case dex.Seen[sp.ID] != "":
-			b.WriteString(fmt.Sprintf("  %s #%03d %-12s %s  %s\n",
-				dexSeenStyle.Render("◐"), sp.Dex, sp.Name,
-				rs.Render(fmt.Sprintf("%-8s", sp.Rarity)),
-				dimStyle.Render("seen "+dex.Seen[sp.ID])))
-		default:
-			b.WriteString(dexUnknown.Render(fmt.Sprintf("  ○ #%03d %-12s", sp.Dex, "???")))
-			b.WriteString("\n")
-		}
+	const cellW = 30
+	cols := (w + 2) / (cellW + 2)
+	if cols < 1 {
+		cols = 1
 	}
-	b.WriteString("\n")
-	b.WriteString(dimStyle.Render("wild Codelings appear on real events — new projects, new models, clean days.\nthey join you when the day they appeared met the balanced-diet bar."))
-	return b.String()
+	if cols > 4 {
+		cols = 4
+	}
+
+	cells := make([]string, 0, len(species.All))
+	for _, sp := range species.All {
+		cells = append(cells, dexCell(sp, dex))
+	}
+
+	footer := sFaint.Render("wild Codelings appear on real events — new projects, new models, clean days.")
+	return stack(header, grid(cells, cellW, cols), footer)
+}
+
+func essenceLabel(n int) string {
+	if n <= 0 {
+		return ""
+	}
+	return sBrand.Render(fmt.Sprintf("✦ %d echo essence", n))
+}
+
+func dexCell(sp species.Species, dex save.DexState) string {
+	num := sFaint.Render(fmt.Sprintf("%03d", sp.Dex))
+	switch {
+	case has(dex.Caught, sp.ID):
+		line1 := sSuccess.Render("●") + " " + num + " " + sValue.Render(sp.Name)
+		line2 := rarityStyle[sp.Rarity].Render(string(sp.Rarity)) + sFaint.Render(" · caught "+dex.Caught[sp.ID])
+		return line1 + "\n" + line2
+	case has(dex.Seen, sp.ID):
+		line1 := sWarn.Render("◐") + " " + num + " " + sBody.Render(sp.Name)
+		line2 := rarityStyle[sp.Rarity].Render(string(sp.Rarity)) + sFaint.Render(" · seen "+dex.Seen[sp.ID])
+		return line1 + "\n" + line2
+	default:
+		return sFaint.Render("○ "+fmt.Sprintf("%03d", sp.Dex)+" —") + "\n"
+	}
+}
+
+func has(m map[string]string, key string) bool {
+	_, ok := m[key]
+	return ok
 }

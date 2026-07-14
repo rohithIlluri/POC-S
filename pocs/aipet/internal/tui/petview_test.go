@@ -39,7 +39,7 @@ func TestPetTabRendersHatchling(t *testing.T) {
 	m.snap = &daemon.Snapshot{Pet: egg}
 
 	out := m.View()
-	for _, want := range []string{"Cindling", "CHEERFUL", "GRIT", "Curls up"} {
+	for _, want := range []string{"Cindling", "cheerful", "grit", "Curls up"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("Pet tab missing %q; got:\n%s", want, out)
 		}
