@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"github.com/rohithIlluri/POC-S/pocs/aipet/internal/config"
+	"github.com/rohithIlluri/POC-S/pocs/aipet/internal/sim"
+	"github.com/rohithIlluri/POC-S/pocs/aipet/internal/species"
 	"github.com/rohithIlluri/POC-S/pocs/aipet/internal/store"
 )
 
@@ -44,8 +46,10 @@ func Serve(ctx context.Context, cfg config.Config) error {
 		collectEvery = 2 * time.Minute
 	}
 
-	if _, err := runCycle(cfg, st, scan, time.Now()); err != nil {
+	if snap, err := runCycle(cfg, st, scan, time.Now()); err != nil {
 		fmt.Fprintf(os.Stderr, "aipet: initial cycle: %v\n", err)
+	} else {
+		heartbeat(snap)
 	}
 
 	t := time.NewTicker(collectEvery)
@@ -57,11 +61,37 @@ func Serve(ctx context.Context, cfg config.Config) error {
 		case <-t.C:
 			// Fresh time.Now() per tick keeps the pet's calendar-day logic
 			// correct across midnight in a long-lived daemon process.
-			if _, err := runCycle(cfg, st, scan, time.Now()); err != nil {
+			if snap, err := runCycle(cfg, st, scan, time.Now()); err != nil {
 				fmt.Fprintf(os.Stderr, "aipet: cycle: %v\n", err)
+			} else {
+				heartbeat(snap)
 			}
 		}
 	}
+}
+
+// heartbeat prints one line per collection cycle so the foreground daemon
+// visibly does something — without it the process prints a single startup
+// line and then sits silent for hours, indistinguishable from hung.
+func heartbeat(snap *Snapshot) {
+	line := fmt.Sprintf("%s  +%d events", snap.UpdatedAt.Format("15:04:05"), snap.NewEvents)
+	switch {
+	case snap.PetError != "":
+		line += " · pet: " + snap.PetError
+	case snap.Pet.IsEgg():
+		n := snap.Pet.EggSessionCount
+		if n > sim.HatchSessionThreshold {
+			n = sim.HatchSessionThreshold
+		}
+		line += fmt.Sprintf(" · egg %d/%d sessions", n, sim.HatchSessionThreshold)
+	default:
+		name := snap.Pet.SpeciesID
+		if sp, ok := species.ByID(snap.Pet.SpeciesID); ok {
+			name = sp.Name
+		}
+		line += fmt.Sprintf(" · %s lv %d · %s", name, snap.Pet.Level, snap.Pet.Mood)
+	}
+	fmt.Println(line)
 }
 
 func pidPath() (string, error) {
