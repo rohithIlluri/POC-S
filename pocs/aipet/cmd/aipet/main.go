@@ -19,7 +19,9 @@ import (
 	"os"
 	"os/signal"
 	"strconv"
+	"strings"
 	"syscall"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -56,6 +58,10 @@ func main() {
 		runDex(cfg)
 	case "config":
 		runConfig(cfg, os.Args[2:])
+	case "card":
+		runCard(cfg, os.Args[2:])
+	case "collect":
+		runCollect(cfg, os.Args[2:])
 	case "version", "-v", "--version":
 		fmt.Printf("aipet %s\n", version.Version)
 	case "help", "-h", "--help":
@@ -76,6 +82,101 @@ func runDex(cfg config.Config) {
 		fatalf("load dex: %v", err)
 	}
 	fmt.Println(tui.RenderDex(dex, 80))
+}
+
+// runCard implements `aipet card [view] [--width N] [--no-collect]`, the
+// one-shot plain-text renderer hosts embed in chat (the Claude Code slash
+// command and the Codex prompt both shell out to this). It runs a normal
+// (non-forced) CollectOnce first so the card is fresh without a daemon —
+// same "collect before showing yourself" contract the TUI and `aipet dex`
+// already follow — but a failed collect must never block the render: the
+// card falls back to whatever snapshot already exists on disk.
+func runCard(cfg config.Config, args []string) {
+	view := ""
+	width := 0
+	noCollect := false
+	for i := 0; i < len(args); i++ {
+		switch a := args[i]; {
+		case a == "--no-collect":
+			noCollect = true
+		case a == "--width":
+			i++
+			if i >= len(args) {
+				fatalf("--width requires a value")
+			}
+			n, err := strconv.Atoi(args[i])
+			if err != nil {
+				fatalf("invalid --width: %v", err)
+			}
+			width = n
+		case strings.HasPrefix(a, "--width="):
+			n, err := strconv.Atoi(strings.TrimPrefix(a, "--width="))
+			if err != nil {
+				fatalf("invalid --width: %v", err)
+			}
+			width = n
+		case strings.HasPrefix(a, "-"):
+			fmt.Fprintf(os.Stderr, "usage: aipet card [pet|dex|records|overview] [--width N] [--no-collect]\n")
+			os.Exit(2)
+		case view == "":
+			view = a
+		default:
+			fmt.Fprintf(os.Stderr, "usage: aipet card [pet|dex|records|overview] [--width N] [--no-collect]\n")
+			os.Exit(2)
+		}
+	}
+
+	if !noCollect {
+		// Errors are intentionally ignored here: a card render must degrade
+		// to the last known snapshot rather than fail a chat turn because a
+		// session log was briefly unreadable.
+		_, _, _ = daemon.CollectOnce(cfg, false, time.Now())
+	}
+
+	snap, err := daemon.ReadSnapshot()
+	if err != nil {
+		snap = nil // no snapshot on disk at all yet — Card renders its cold-start copy for this
+	}
+	journal, _ := save.ReadJournal()
+
+	out, err := tui.Card(view, snap, journal, width)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "aipet: %v\n\n", err)
+		fmt.Fprintf(os.Stderr, "usage: aipet card [pet|dex|records|overview] [--width N] [--no-collect]\n")
+		os.Exit(2)
+	}
+	fmt.Println(out)
+}
+
+// runCollect implements `aipet collect [--quiet] [--force]`, the hook-facing
+// entry point (Claude Code's Stop/SessionStart hooks run `aipet collect
+// --quiet`). --quiet means genuinely silent on success — a hook's stdout
+// becomes noise in the host — but errors still go to stderr so a broken
+// install is debuggable.
+func runCollect(cfg config.Config, args []string) {
+	quiet := false
+	force := false
+	for _, a := range args {
+		switch a {
+		case "--quiet":
+			quiet = true
+		case "--force":
+			force = true
+		default:
+			fmt.Fprintf(os.Stderr, "usage: aipet collect [--quiet] [--force]\n")
+			os.Exit(2)
+		}
+	}
+
+	snap, ran, err := daemon.CollectOnce(cfg, force, time.Now())
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "aipet: collect: %v\n", err)
+		os.Exit(1)
+	}
+	if quiet || !ran {
+		return
+	}
+	fmt.Println(daemon.HeartbeatLine(snap))
 }
 
 func runTUI(cfg config.Config) {
