@@ -16,6 +16,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"os/signal"
 	"strconv"
@@ -24,6 +25,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/mattn/go-isatty"
 
 	"github.com/rohithIlluri/POC-S/pocs/aipet/internal/config"
 	"github.com/rohithIlluri/POC-S/pocs/aipet/internal/daemon"
@@ -62,6 +64,8 @@ func main() {
 		runCard(cfg, os.Args[2:])
 	case "collect":
 		runCollect(cfg, os.Args[2:])
+	case "statusline":
+		runStatusLine(cfg)
 	case "version", "-v", "--version":
 		fmt.Printf("aipet %s\n", version.Version)
 	case "help", "-h", "--help":
@@ -177,6 +181,36 @@ func runCollect(cfg config.Config, args []string) {
 		return
 	}
 	fmt.Println(daemon.HeartbeatLine(snap))
+}
+
+// runStatusLine implements `aipet statusline`, Claude Code's statusLine
+// hook: it runs on every render of every session, so it must be fast and it
+// must never hang or crash a session's UI over pet state.
+//
+// Two host-integration constraints drive its shape (§4.2, R4):
+//   - it reads ONLY the last published snapshot — never collects, never
+//     scans logs — so latency is a single stat+read regardless of how much
+//     session history exists;
+//   - any failure (missing snapshot, unreadable config) degrades to the
+//     friendly no-pet line and exit 0, never a non-zero exit or stderr
+//     noise that could surface as a broken statusline in the host UI.
+func runStatusLine(cfg config.Config) {
+	// Claude Code pipes session JSON on stdin for the statusline command to
+	// (optionally) read; we don't use it, but an unread pipe can leave the
+	// host's writer blocked, so it must be drained. A human invoking this
+	// directly in a terminal has no pipe behind stdin at all — do not read
+	// there, or the command would hang waiting for input that will never
+	// come.
+	if !isatty.IsTerminal(os.Stdin.Fd()) {
+		_, _ = io.Copy(io.Discard, os.Stdin)
+	}
+
+	snap, err := daemon.ReadSnapshot()
+	if err != nil {
+		fmt.Println(tui.StatusLine(nil, cfg.DailyBudgetUSD))
+		return
+	}
+	fmt.Println(tui.StatusLine(snap, cfg.DailyBudgetUSD))
 }
 
 func runTUI(cfg config.Config) {
