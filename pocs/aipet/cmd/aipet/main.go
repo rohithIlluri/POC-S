@@ -2,14 +2,18 @@
 // you use Claude Code and Codex and helps you spend fewer tokens and work more
 // efficiently — all on-device, with no data ever leaving the machine.
 //
-// Subcommands:
+// The primary surface (see docs/design/HOST_INTEGRATION.md) is now `/aipet`
+// inside Claude Code or Codex, installed once via the bare `aipet` command:
 //
-//	aipet              launch the interactive pet (TUI)
-//	aipet daemon       run the background collector loop (foreground process)
-//	aipet status       run one collection cycle and print a summary
-//	aipet leaderboard  print rankings and personal records (--json for scripts)
-//	aipet config       view or set local configuration
+//	aipet              first run: setup wizard; later: pet card + a hint
+//	aipet tui          the full interactive app
+//	aipet setup        install/inspect/remove the host integration
 //	aipet version      print version
+//
+// `aipet card`, `aipet statusline`, and `aipet collect` are plumbing the
+// installed integration calls; a human rarely types them directly.
+// `daemon`/`status`/`dex`/`leaderboard`/`config` still work exactly as
+// before but are no longer the front door — see usage() and R9 in the plan.
 package main
 
 import (
@@ -29,6 +33,7 @@ import (
 
 	"github.com/rohithIlluri/POC-S/pocs/aipet/internal/config"
 	"github.com/rohithIlluri/POC-S/pocs/aipet/internal/daemon"
+	"github.com/rohithIlluri/POC-S/pocs/aipet/internal/host"
 	"github.com/rohithIlluri/POC-S/pocs/aipet/internal/leaderboard"
 	"github.com/rohithIlluri/POC-S/pocs/aipet/internal/save"
 	"github.com/rohithIlluri/POC-S/pocs/aipet/internal/sim"
@@ -48,7 +53,9 @@ func main() {
 	}
 
 	switch cmd {
-	case "", "tui", "pet":
+	case "":
+		runBare(cfg)
+	case "tui", "pet":
 		runTUI(cfg)
 	case "daemon":
 		runDaemon(cfg)
@@ -66,6 +73,8 @@ func main() {
 		runCollect(cfg, os.Args[2:])
 	case "statusline":
 		runStatusLine(cfg)
+	case "setup":
+		runSetup(os.Args[2:])
 	case "version", "-v", "--version":
 		fmt.Printf("aipet %s\n", version.Version)
 	case "help", "-h", "--help":
@@ -75,6 +84,145 @@ func main() {
 		usage()
 		os.Exit(2)
 	}
+}
+
+// runBare implements the R9 dispatch for `aipet` with no arguments — the
+// only command most users ever type in a shell (the README one-liner):
+//
+//   - no ~/.aipet/setup.json yet: offer to install the host integration.
+//     Interactively (a real terminal) this is a yes/no prompt; piped/
+//     scripted (no TTY) it must never block waiting for input that will
+//     never come, so it just prints the manual steps and exits cleanly.
+//   - already installed: print the pet card plus a one-line hint pointing
+//     at /aipet — bare `aipet` is no longer the primary way to see the pet.
+func runBare(cfg config.Config) {
+	_, installed, err := host.LoadManifest()
+	if err != nil {
+		fatalf("load setup state: %v", err)
+	}
+	if !installed {
+		runFirstRunWizard()
+		return
+	}
+
+	_, _, _ = daemon.CollectOnce(cfg, false, time.Now())
+	snap, _ := daemon.ReadSnapshot()
+	journal, _ := save.ReadJournal()
+	out, err := tui.Card("pet", snap, journal, 0)
+	if err != nil {
+		fatalf("card: %v", err)
+	}
+	fmt.Println(out)
+	fmt.Println()
+	fmt.Println("type /aipet inside Claude Code · full app: aipet tui")
+}
+
+// runFirstRunWizard is bare `aipet`'s first-ever invocation on a machine: it
+// offers to install the host integration so the README one-liner
+// (`go install ... && aipet`) is genuinely the whole setup. A non-interactive
+// invocation (piped stdin — CI, a script, a non-terminal harness) must never
+// block on a prompt nobody can answer, so it prints the same instructions
+// and returns instead of asking.
+func runFirstRunWizard() {
+	fmt.Println("aipet grows a coding companion (a \"Codeling\") from your real Claude Code")
+	fmt.Println("and Codex session activity — cache reuse, model routing, session hygiene.")
+	fmt.Println("Nothing to configure, no network, no tokens spent.")
+	fmt.Println()
+
+	if !isatty.IsTerminal(os.Stdin.Fd()) || !isatty.IsTerminal(os.Stdout.Fd()) {
+		printManualSetupInstructions()
+		return
+	}
+
+	fmt.Print("Install /aipet into Claude Code / Codex? [Y/n] ")
+	answer, _ := readLine(os.Stdin)
+	answer = strings.ToLower(strings.TrimSpace(answer))
+	if answer != "" && answer != "y" && answer != "yes" {
+		fmt.Println()
+		printManualSetupInstructions()
+		return
+	}
+
+	fmt.Println()
+	runSetup(nil)
+}
+
+// readLine reads one line from r without pulling in bufio.Scanner's 64KB
+// default limits or a full bufio.Reader dependency elsewhere in main — a
+// user's yes/no answer is at most a few bytes.
+func readLine(r io.Reader) (string, error) {
+	var b strings.Builder
+	buf := make([]byte, 1)
+	for {
+		n, err := r.Read(buf)
+		if n > 0 {
+			if buf[0] == '\n' {
+				return b.String(), nil
+			}
+			b.WriteByte(buf[0])
+		}
+		if err != nil {
+			return b.String(), err
+		}
+	}
+}
+
+// printManualSetupInstructions is shown when the wizard can't (or the user
+// chose not to) run interactively.
+func printManualSetupInstructions() {
+	fmt.Println("Run `aipet setup` any time to install /aipet into Claude Code and/or Codex.")
+	fmt.Println("  aipet setup --print    preview exactly what it would write")
+	fmt.Println("  aipet tui              open the full interactive app now")
+}
+
+// runSetup implements `aipet setup [--claude] [--codex] [--remove] [--print]`.
+func runSetup(args []string) {
+	var opts host.Options
+	remove := false
+	for _, a := range args {
+		switch a {
+		case "--claude":
+			opts.Claude = true
+		case "--codex":
+			opts.Codex = true
+		case "--print":
+			opts.Print = true
+		case "--remove":
+			remove = true
+		default:
+			fmt.Fprintf(os.Stderr, "usage: aipet setup [--claude] [--codex] [--remove] [--print]\n")
+			os.Exit(2)
+		}
+	}
+
+	if remove {
+		res, err := host.Remove()
+		if err != nil {
+			fatalf("setup --remove: %v", err)
+		}
+		for _, n := range res.Notes {
+			fmt.Println(n)
+		}
+		return
+	}
+
+	res, err := host.Install(opts)
+	if err != nil {
+		if _, ok := err.(*host.AbortError); ok {
+			fmt.Fprintf(os.Stderr, "aipet setup: %v\n", err)
+			os.Exit(1)
+		}
+		fatalf("setup: %v", err)
+	}
+	for _, n := range res.Notes {
+		fmt.Println(n)
+	}
+	if res.WindowsSkip || res.NoHosts || opts.Print {
+		return
+	}
+	fmt.Println()
+	fmt.Println("Done. Type /aipet inside Claude Code (or Codex) to see your pet.")
+	fmt.Println("Undo any time with: aipet setup --remove")
 }
 
 func runDex(cfg config.Config) {
@@ -225,6 +373,12 @@ func runTUI(cfg config.Config) {
 func runDaemon(cfg config.Config) {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
+	// R9: hooks installed via `aipet setup` fully replace the daemon for
+	// Claude Code users (§5 of the plan) — this still works for anyone who
+	// wants it (or doesn't use Claude Code), but the note keeps people who
+	// stumble onto it from running two collection paths without realizing
+	// there's a simpler option.
+	fmt.Println("note: with /aipet installed, hooks replace the daemon — see aipet setup")
 	fmt.Printf("aipet daemon starting (collect every %dm)…\n", cfg.CollectIntervalMin)
 	if err := daemon.Serve(ctx, cfg); err != nil {
 		fatalf("daemon: %v", err)
@@ -431,15 +585,14 @@ func usage() {
 	fmt.Print(`aipet — local AI-pet companion (zero data leakage, zero token cost)
 
 usage:
-  aipet              launch the interactive pet (TUI)
-  aipet daemon       run the background collector loop
-  aipet status       collect once and print a summary
-  aipet leaderboard  rankings + personal records (add --json for scripts)
-  aipet dex          your Codelings collection — seen, caught, echo essence
-  aipet config       show config, or: aipet config <key> <value>
+  aipet              first run: install /aipet; later: pet card + a hint
+  /aipet [view]      inside Claude Code or Codex — pet | dex | records | overview
+  aipet tui          the full interactive app
+  aipet setup        install/inspect/remove the host integration
+                       --claude / --codex   restrict to one host
+                       --print              preview writes without touching disk
+                       --remove             undo a previous setup
   aipet version      print version
-
-config keys: daily_budget_usd, collect_interval_min
 `)
 }
 
