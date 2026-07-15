@@ -11,7 +11,7 @@ to disk*) and:
 - ⚡ **improves efficiency** — model-routing tips, session hygiene, prompt caching
 - 🏆 **keeps score** — a local leaderboard of your top projects, models, best cache-reuse days, and streaks
 - 🐣 **raises a Codeling** — a real pocket-monster-style companion that hatches
-  from an egg after 3 active days, grows stats from how you actually work
+  from an egg as you code, grows stats from how you actually work
   (cache reuse, model routing, streaks, variety), and evolves — the same
   advisor rules that produce Suggestions double as its diet
   (see [`docs/GAME_DESIGN.md`](docs/GAME_DESIGN.md) and [`docs/design/`](docs/design/) for the full 30-species Dex, economy, and lore)
@@ -67,14 +67,27 @@ Claude Code / Codex                ~/.aipet/
 
 ## Install
 
-One command (needs Go 1.25+):
+One line (needs Go 1.25+):
 
 ```bash
-go install github.com/rohithIlluri/POC-S/pocs/aipet/cmd/aipet@latest
+go install github.com/rohithIlluri/POC-S/pocs/aipet/cmd/aipet@latest && aipet
 ```
 
-Then just run `aipet` — the first launch collects your existing session logs
-and opens the pet. No config, no accounts, no network.
+That's the whole setup. The first `aipet` run offers to install the host
+integration, and from then on **the pet lives inside Claude Code**:
+
+- **`/aipet`** in any Claude Code (or Codex) session shows your pet in chat —
+  sprite, mood, level, hatch progress — and Claude adds one line in the
+  pet's own voice. `/aipet dex`, `/aipet records`, `/aipet overview` for
+  the other views.
+- **The status line** of every Claude Code session shows it persistently:
+  `( ^.^ ) Cindling lv4 · cheerful · $0.42 today`.
+- **Growth is automatic** — a hook runs a silent incremental collect after
+  every completed turn. No daemon, no second terminal.
+
+`aipet setup --print` previews exactly what gets written;
+`aipet setup --remove` reverses it completely. Everything setup touches is
+backed up first, and it never overwrites another tool's settings.
 
 Or download a binary from the [latest release](https://github.com/rohithIlluri/POC-S/releases/latest)
 (darwin/linux/windows × amd64/arm64, with SHA-256 `checksums.txt`), `chmod +x`,
@@ -92,11 +105,9 @@ make release    # cross-platform binaries + checksums into ./bin/release
 ## Quick start
 
 ```bash
-aipet status         # one-shot collect + summary (great first run)
-aipet                # launch the interactive pet (TUI)
-aipet leaderboard    # rankings + personal records (add --json for scripts)
-aipet dex            # your Codelings collection — seen, caught, echo essence
-aipet daemon         # run the background watcher
+aipet                # first run: setup wizard · after: pet card + hint
+/aipet               # inside Claude Code or Codex — the pet, in chat
+aipet tui            # the full interactive terminal app
 ```
 
 The TUI has five tabs — **Pet** (your Codeling: egg or hatchling, level, health,
@@ -107,9 +118,11 @@ Navigate with `tab`/`←→` or `1`–`5`; `q` quits.
 
 ### Your Codeling
 
-An egg starts warming the first time the daemon (or `aipet status`) runs. After
-3 active days, it hatches — which of the three starter lines it picks depends
-on how those days looked:
+An egg starts warming the first time aipet sees any session activity. It
+hatches from **real coding sessions** — five qualifying sessions, which an
+enthusiastic single sitting can finish same-day (a real week of casual use
+always hatches too). Which of the three starter lines it picks depends on how
+that activity looked:
 
 - **Ember** (long, focused sessions) → Cindling → Forgeon → Pyrolith
 - **Stream** (fast, cache-heavy iteration) → Rivulet → Cascada → Torrentide
@@ -184,8 +197,10 @@ make fmt      # gofmt
 
 ## Status
 
-**v1.0.0.** The collectors, store, advisor, leaderboard, daemon, and TUI are
-fully functional against real Claude Code data, fully local, with a completed
-[security audit](docs/SECURITY_AUDIT.md). The next chapter is *Codelings* — the
-game layer designed in [`docs/GAME_DESIGN.md`](docs/GAME_DESIGN.md) and the
-[`docs/design/`](docs/design/) content bible.
+**v1.1.** Fully functional against real Claude Code data, fully local, with a
+completed [security audit](docs/SECURITY_AUDIT.md). The Codelings game layer
+(hatching, care, evolution, wild encounters, the 30-species Dex) is shipped,
+and the pet now lives inside Claude Code and Codex via `/aipet`
+([`docs/design/HOST_INTEGRATION.md`](docs/design/HOST_INTEGRATION.md)).
+Trading and battles ([`docs/design/moves.md`](docs/design/moves.md)) are
+designed for a future release.
