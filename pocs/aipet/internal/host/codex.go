@@ -7,15 +7,19 @@ import (
 	"time"
 )
 
-// codexPromptMD is byte-exact with HOST_INTEGRATION.md §4.4 item 4. Codex
-// has no pre-execution/allowed-tools mechanism like Claude Code's slash
-// commands (§2 "Codex CLI (one surface)"), so the prompt just instructs the
-// agent to shell out to `aipet card` itself.
-const codexPromptMD = `Run the shell command ` + "`aipet card \"$ARGUMENTS\"`" + ` (view defaults to "pet").
+// codexPromptContent renders HOST_INTEGRATION.md §4.4 item 4 with the
+// running binary's absolute path substituted (§8 R11 — same PATH rationale
+// as the Claude command file). Codex has no pre-execution/allowed-tools
+// mechanism like Claude Code's slash commands (§2 "Codex CLI (one
+// surface)"), so the prompt just instructs the agent to shell out to the
+// card command itself.
+func codexPromptContent() string {
+	return `Run the shell command ` + "`" + aipetPath + ` card "$ARGUMENTS"` + "`" + ` (view defaults to "pet").
 Show its output verbatim in a fenced code block, then add one short line
 in the pet's voice matching its mood. If the command is missing, tell the
 user to run: go install github.com/rohithIlluri/POC-S/pocs/aipet/cmd/aipet@latest
 `
+}
 
 // CodexDir returns ~/.codex. Presence is how setup detects the host.
 func CodexDir() (string, error) {
@@ -40,7 +44,7 @@ func InstallCodex(codexDir string, m *Manifest, now time.Time, dryPrint func(str
 		return nil, []string{"~/.codex/prompts/aipet.md: already installed"}, nil
 	}
 	if dryPrint != nil {
-		dryPrint(fmt.Sprintf("WOULD WRITE %s:\n%s", path, codexPromptMD))
+		dryPrint(fmt.Sprintf("WOULD WRITE %s:\n%s", path, codexPromptContent()))
 		return nil, []string{"~/.codex/prompts/aipet.md: would install"}, nil
 	}
 	e, err := writeCommandFile(path, "codex", now)

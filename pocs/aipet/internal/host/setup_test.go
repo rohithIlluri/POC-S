@@ -12,10 +12,18 @@ import (
 // state — mirrors internal/daemon's isolateHome helper (R7: every
 // setup/collect/card test must isolate HOME; no test may touch the real
 // ~/.claude or ~/.codex).
+//
+// It also pins aipetPath to a fixed fake: os.Executable() inside `go test`
+// is the compiled test binary (host.test), whose base name the
+// isOurCommand matcher rightly rejects — and whose path would make every
+// content assertion machine-dependent.
 func isolateHome(t *testing.T) string {
 	t.Helper()
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	old := aipetPath
+	aipetPath = "/testbin/aipet"
+	t.Cleanup(func() { aipetPath = old })
 	return home
 }
 
@@ -69,14 +77,14 @@ func TestInstallFreshWritesAllFiles(t *testing.T) {
 	cmdPath := filepath.Join(home, ".claude", "commands", "aipet.md")
 	if b, err := os.ReadFile(cmdPath); err != nil {
 		t.Errorf("command file not written: %v", err)
-	} else if string(b) != claudeCommandMD {
+	} else if string(b) != claudeCommandContent() {
 		t.Errorf("command file content mismatch:\n%s", string(b))
 	}
 
 	settingsPath := filepath.Join(home, ".claude", "settings.json")
 	settings := readJSON(t, settingsPath)
 	sl, ok := settings["statusLine"].(map[string]any)
-	if !ok || sl["command"] != "aipet statusline" {
+	if !ok || sl["command"] != ourStatusLineCommand() {
 		t.Errorf("statusLine not installed: %+v", settings["statusLine"])
 	}
 	hooks, ok := settings["hooks"].(map[string]any)
@@ -93,7 +101,7 @@ func TestInstallFreshWritesAllFiles(t *testing.T) {
 	codexPath := filepath.Join(home, ".codex", "prompts", "aipet.md")
 	if b, err := os.ReadFile(codexPath); err != nil {
 		t.Errorf("codex prompt not written: %v", err)
-	} else if string(b) != codexPromptMD {
+	} else if string(b) != codexPromptContent() {
 		t.Errorf("codex prompt content mismatch:\n%s", string(b))
 	}
 
@@ -241,7 +249,7 @@ func TestInstallAppendsToForeignHooks(t *testing.T) {
 
 	ourGroup := stopArr[1].(map[string]any)
 	ourInner := ourGroup["hooks"].([]any)[0].(map[string]any)
-	if ourInner["command"] != "aipet collect --quiet" {
+	if ourInner["command"] != ourHookCommand() {
 		t.Errorf("our hook entry not appended correctly: %+v", ourInner)
 	}
 }
@@ -418,5 +426,59 @@ func TestClaudeOnlyFlagRestrictsHost(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(home, ".codex", "prompts", "aipet.md")); !os.IsNotExist(err) {
 		t.Error("codex prompt should NOT be installed when --claude is passed alone")
+	}
+}
+
+// TestLegacyBareCommandsRecognized covers installs written before §8 R11,
+// when setup wrote bare "aipet ..." commands instead of absolute paths: a
+// re-run must treat them as already installed (no duplicate hook entries,
+// no statusLine abort), and removal must strip them, path or no path.
+func TestLegacyBareCommandsRecognized(t *testing.T) {
+	home := isolateHome(t)
+	mkClaudeDir(t, home)
+
+	settingsPath := filepath.Join(home, ".claude", "settings.json")
+	legacy := `{
+  "statusLine": {"type": "command", "command": "aipet statusline"},
+  "hooks": {
+    "Stop": [{"hooks": [{"type": "command", "command": "aipet collect --quiet", "timeout": 30}]}]
+  }
+}`
+	if err := os.WriteFile(settingsPath, []byte(legacy), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := Install(Options{Now: time.Date(2026, 7, 1, 0, 0, 0, 0, time.UTC)}); err != nil {
+		t.Fatalf("install over a legacy bare-command config must not abort: %v", err)
+	}
+	settings := readJSON(t, settingsPath)
+	sl, _ := settings["statusLine"].(map[string]any)
+	if sl["command"] != "aipet statusline" {
+		t.Errorf("legacy statusLine should be left as-is (recognized as ours), got %+v", sl)
+	}
+	hooks, _ := settings["hooks"].(map[string]any)
+	stop, _ := hooks["Stop"].([]any)
+	if len(stop) != 1 {
+		t.Errorf("legacy Stop hook should not be duplicated, got %d entries", len(stop))
+	}
+
+	if !isOurCommand("aipet statusline", "statusline") {
+		t.Error("bare legacy form must match")
+	}
+	if !isOurCommand("/Users/x/go/bin/aipet statusline", "statusline") {
+		t.Error("absolute-path form must match")
+	}
+	if isOurCommand("notaipet statusline", "statusline") {
+		t.Error("a different binary must not match")
+	}
+	if isOurCommand("aipet statusline --extra", "statusline") {
+		t.Error("extra arguments must not match")
+	}
+
+	if removed := removeStatusLine(settings); !removed {
+		t.Error("removeStatusLine must strip the legacy bare form")
+	}
+	if removed := removeHookEntry(settings, "Stop"); !removed {
+		t.Error("removeHookEntry must strip the legacy bare form")
 	}
 }

@@ -7,20 +7,23 @@ import (
 	"time"
 )
 
-// claudeCommandMD is byte-exact with HOST_INTEGRATION.md §4.4 item 1: the
-// slash command's frontmatter, its pre-execution `aipet card` call (scoped
-// by allowed-tools to exactly that command, R2), and the instructions for
-// how Claude should present the card. Any drift from the doc here is a
-// silent behavior change to what ships, so this stays a literal constant
-// rather than being reconstructed with fmt.Sprintf.
-const claudeCommandMD = `---
+// claudeCommandContent renders HOST_INTEGRATION.md §4.4 item 1 — the slash
+// command's frontmatter, its pre-execution card call (scoped by
+// allowed-tools to exactly that command, R2), and the instructions for how
+// Claude should present the card — with the running binary's absolute path
+// substituted for both the pre-execution line and the allowed-tools grant
+// (§8 R11: the host's command environment can't be assumed to have aipet on
+// PATH). Only the path is templated; the prose stays literal so any drift
+// from the doc remains visible in review.
+func claudeCommandContent() string {
+	return `---
 description: Your Codeling — the pet that grows from your coding sessions
 argument-hint: [pet|dex|records|overview]
-allowed-tools: Bash(aipet card:*)
+allowed-tools: Bash(` + aipetPath + ` card:*)
 ---
 
 ## Context
-- Pet card: !` + "`aipet card \"$ARGUMENTS\"`" + `
+- Pet card: !` + "`" + aipetPath + ` card "$ARGUMENTS"` + "`" + `
 
 ## Your task
 Show the pet card above verbatim in a fenced code block. Then add ONE short
@@ -29,6 +32,7 @@ a little odd, never sycophantic). If the card shows a warning (worried mood,
 junk-food diet, budget over), briefly say why in plain words and name the
 one habit that would fix it. Nothing else.
 `
+}
 
 // ClaudeDir returns ~/.claude. Presence is how setup detects the host.
 func ClaudeDir() (string, error) {
@@ -79,7 +83,7 @@ func InstallClaude(claudeDir string, m *Manifest, now time.Time, dryPrint func(s
 	if m.HasEntry(cmdPath, "") {
 		notes = append(notes, "~/.claude/commands/aipet.md: already installed")
 	} else if dryPrint != nil {
-		dryPrint(fmt.Sprintf("WOULD WRITE %s:\n%s", cmdPath, claudeCommandMD))
+		dryPrint(fmt.Sprintf("WOULD WRITE %s:\n%s", cmdPath, claudeCommandContent()))
 	} else {
 		e, err := writeCommandFile(cmdPath, "claude", now)
 		if err != nil {
@@ -199,13 +203,14 @@ func writeCommandFile(path, hostName string, now time.Time) (Entry, error) {
 }
 
 // claudeCommandMDFor returns the command-file content for a host. Codex's
-// content differs (§4.4 item 4); Claude's is claudeCommandMD. Centralized
-// so writeCommandFile stays a single implementation for both hosts.
+// content differs (§4.4 item 4); Claude's is claudeCommandContent.
+// Centralized so writeCommandFile stays a single implementation for both
+// hosts.
 func claudeCommandMDFor(hostName string) string {
 	if hostName == "codex" {
-		return codexPromptMD
+		return codexPromptContent()
 	}
-	return claudeCommandMD
+	return claudeCommandContent()
 }
 
 // RemoveClaude reverses every Claude-host entry in the manifest: deletes

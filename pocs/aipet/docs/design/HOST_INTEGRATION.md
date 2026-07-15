@@ -318,6 +318,19 @@ section wins.**
 - **R10 · Golden tests are the H1 gate.** Fixture snapshots under
   `internal/tui/testdata/`, golden outputs per view × (egg, hatched,
   worried, empty), regenerated via `go test -run TestCard -update`.
+- **R11 · Absolute binary paths in everything setup writes** *(found during
+  H4 live verification)*. The host's statusline/hook commands run in an
+  environment where the go-install bin dir is not necessarily on PATH — on
+  the first real machine tested, `~/go/bin` wasn't, so every bare `aipet …`
+  command in settings.json would have been "command not found" inside
+  Claude Code while working fine in the user's own shell. Setup therefore
+  resolves `os.Executable()` and writes the absolute path into the
+  statusLine command, both hook entries, the slash command's pre-execution
+  line AND its `allowed-tools` grant, and the Codex prompt. Recognition
+  (idempotence, `--remove`) matches any command whose binary base name is
+  `aipet` with the exact expected arguments, so legacy bare-form installs
+  and moved binaries are still recognized. §4.4's file contents are
+  templates in this one respect; the prose is literal.
 
 ## 9. Acceptance checklist
 

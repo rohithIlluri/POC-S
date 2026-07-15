@@ -55,6 +55,7 @@ func writeSettingsJSON(path string, m map[string]any, now time.Time) (backup str
 	if err != nil {
 		return "", err
 	}
+	b = append(b, '\n')
 	tmp := path + ".tmp"
 	if err := os.WriteFile(tmp, b, 0o600); err != nil {
 		return "", err
@@ -65,9 +66,10 @@ func writeSettingsJSON(path string, m map[string]any, now time.Time) (backup str
 	return backup, nil
 }
 
-// ourStatusLineCommand is the exact statusLine value setup writes, and the
-// only one it considers "already ours" on a repeat run or during --remove.
-const ourStatusLineCommand = "aipet statusline"
+// ourStatusLineCommand is the statusLine command setup writes — the running
+// binary's absolute path (see aipetPath in exec.go), so the host can invoke
+// it without aipet being on the host process's PATH.
+func ourStatusLineCommand() string { return aipetPath + " statusline" }
 
 // ensureStatusLine sets settings["statusLine"] to aipet's command, merging
 // (never clobbering) per R6: a statusLine already present that isn't ours
@@ -84,10 +86,13 @@ func ensureStatusLine(m map[string]any) (changed bool, priorRaw any, err error) 
 		}
 		return false, existing, &AbortError{Msg: "settings.json already has a custom statusLine — refusing to overwrite it (see: aipet setup --print)"}
 	}
-	m["statusLine"] = map[string]any{"type": "command", "command": ourStatusLineCommand}
+	m["statusLine"] = map[string]any{"type": "command", "command": ourStatusLineCommand()}
 	return true, nil, nil
 }
 
+// isOurStatusLine recognizes any aipet-written statusLine, past or present —
+// path-tolerant via isOurCommand so a reinstall from a different location
+// (or a legacy bare-"aipet" install) still reads as ours.
 func isOurStatusLine(v any) bool {
 	obj, ok := v.(map[string]any)
 	if !ok {
@@ -95,12 +100,13 @@ func isOurStatusLine(v any) bool {
 	}
 	cmd, _ := obj["command"].(string)
 	typ, _ := obj["type"].(string)
-	return typ == "command" && cmd == ourStatusLineCommand
+	return typ == "command" && isOurCommand(cmd, "statusline")
 }
 
-// ourHookCommand is the exact hook command setup appends to hooks.Stop and
-// hooks.SessionStart.
-const ourHookCommand = "aipet collect --quiet"
+// ourHookCommand is the hook command setup appends to hooks.Stop and
+// hooks.SessionStart — absolute-path form, same PATH rationale as
+// ourStatusLineCommand.
+func ourHookCommand() string { return aipetPath + " collect --quiet" }
 
 // ensureHookEntry appends aipet's hook group to settings["hooks"][event]
 // (event is "Stop" or "SessionStart") without touching any existing entry.
@@ -138,7 +144,7 @@ func ensureHookEntry(m map[string]any, event string) (changed bool, err error) {
 
 	entry := map[string]any{
 		"hooks": []any{
-			map[string]any{"type": "command", "command": ourHookCommand, "timeout": float64(30)},
+			map[string]any{"type": "command", "command": ourHookCommand(), "timeout": float64(30)},
 		},
 	}
 	hooksObj[event] = append(eventArr, entry)
@@ -164,7 +170,7 @@ func hasOurHookEntry(arr []any) bool {
 			if !ok {
 				continue
 			}
-			if cmd, _ := h["command"].(string); cmd == ourHookCommand {
+			if cmd, _ := h["command"].(string); isOurCommand(cmd, "collect --quiet") {
 				return true
 			}
 		}
@@ -214,7 +220,7 @@ func removeHookEntry(m map[string]any, event string) (changed bool) {
 		for _, hRaw := range inner {
 			h, ok := hRaw.(map[string]any)
 			if ok {
-				if cmd, _ := h["command"].(string); cmd == ourHookCommand {
+				if cmd, _ := h["command"].(string); isOurCommand(cmd, "collect --quiet") {
 					changed = true
 					continue
 				}
