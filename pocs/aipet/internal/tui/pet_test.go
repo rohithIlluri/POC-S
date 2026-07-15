@@ -21,7 +21,7 @@ func TestViewRenders(t *testing.T) {
 	if len(out) < 50 {
 		t.Fatalf("View() too short: %d bytes", len(out))
 	}
-	if !strings.Contains(out, "Codelings") {
+	if !strings.Contains(out, "aipet") {
 		t.Errorf("View() missing title; got:\n%s", out)
 	}
 	for _, want := range []string{"Pet", "Overview", "Suggestions", "Records"} {

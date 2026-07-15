@@ -24,7 +24,9 @@ import (
 // headerFaces maps the pet's OWN mood (sim.Mood — grown from real diet and
 // health, not from budget math) to a two-frame blinking face. Pre-hatch has
 // its own egg-specific frames, keyed separately since there's no sim.Mood
-// yet worth showing.
+// yet worth showing. The header suppresses this face on the Pet tab itself
+// (see header()) so the sprite card owns the animation there instead of two
+// faces blinking at once.
 var headerFaces = map[sim.Mood][]string{
 	sim.MoodCheerful: {"( ^_^ )", "( ^.^ )"},
 	sim.MoodContent:  {"( o_o )", "( -_o )"},
@@ -57,7 +59,7 @@ type Model struct {
 	snap           *daemon.Snapshot
 	snapMod        time.Time // snapshot file mtime at last parse
 	frame          int
-	tab            int // 0 = pet, 1 = overview, 2 = suggestions, 3 = records
+	tab            int // 0 = pet, 1 = overview, 2 = suggestions, 3 = records, 4 = dex
 	width          int
 	height         int
 	daemonUp       bool
@@ -66,6 +68,7 @@ type Model struct {
 }
 
 const tabCount = 5
+const minWidth = 40
 
 // New builds the TUI model, loading any existing snapshot immediately.
 func New(cfg config.Config) Model {
@@ -194,46 +197,70 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-// View composes the whole frame: pet header, tab bar, and the active tab body.
-func (m Model) View() string {
-	var b strings.Builder
-	b.WriteString(m.header())
-	b.WriteString("\n")
-	b.WriteString(m.tabBar())
-	b.WriteString("\n\n")
-	switch m.tab {
-	case 0:
-		b.WriteString(m.pet())
-	case 1:
-		b.WriteString(m.overview())
-	case 2:
-		b.WriteString(m.suggestions())
-	case 3:
-		b.WriteString(m.records())
-	case 4:
-		b.WriteString(m.dex())
+// contentWidth is the width the frame renders at: clamped to a sane minimum
+// before the first WindowSizeMsg arrives, and capped so tables don't stretch
+// illegibly across an ultrawide terminal.
+func (m Model) contentWidth() int {
+	w := m.width
+	if w <= 0 {
+		w = 80
 	}
-	b.WriteString("\n")
-	b.WriteString(m.footer())
-	return b.String()
+	if w > 110 {
+		w = 110
+	}
+	return w
 }
 
-func (m Model) header() string {
-	name := titleStyle.Render(" Codelings ")
+// View composes the whole frame: header, tab bar, a rule, the active tab's
+// body (padded and, when the terminal is tall enough, stretched so the
+// footer sits pinned to the bottom), another rule, and the footer.
+func (m Model) View() string {
+	if m.width > 0 && m.width < minWidth {
+		return sMuted.Render(fmt.Sprintf("aipet needs a wider terminal — resize to at least %d columns.", minWidth))
+	}
+	w := m.contentWidth()
 
+	head := lipgloss.JoinVertical(lipgloss.Left, m.header(w), m.tabBar(w), rule(w))
+	foot := lipgloss.JoinVertical(lipgloss.Left, rule(w), m.footer(w))
+
+	bw := w - 4 // body width inside the 2-col gutter on each side
+	var content string
+	switch m.tab {
+	case 0:
+		content = m.pet(bw)
+	case 1:
+		content = m.overview(bw)
+	case 2:
+		content = m.suggestions(bw)
+	case 3:
+		content = m.records(bw)
+	case 4:
+		content = m.dex(bw)
+	}
+	body := lipgloss.NewStyle().Padding(1, 2).Width(w).Render(content)
+
+	if m.height > 0 {
+		bodyH := m.height - lipgloss.Height(head) - lipgloss.Height(foot)
+		if bodyH > lipgloss.Height(body) {
+			body = lipgloss.Place(w, bodyH, lipgloss.Left, lipgloss.Top, body)
+		}
+	}
+
+	return lipgloss.JoinVertical(lipgloss.Left, head, body, foot)
+}
+
+// header shows the app title, daemon status, and (everywhere except the Pet
+// tab) the pet's face + mood bubble. On the Pet tab the sprite card owns
+// that same face/bubble, so showing it twice would mean two things blinking
+// independently — the header collapses to just title + daemon status there.
+func (m Model) header(w int) string {
+	if m.tab == 0 {
+		left := sTitle.Render("aipet")
+		return spread(left, m.daemonStatus(), w)
+	}
 	face, bubble, faceSt := m.faceAndBubble()
-	faceCol := faceSt.Render(face)
-
-	status := dimStyle.Render("daemon: off (r or 'aipet daemon' grows it)")
-	if m.daemonUp {
-		status = okStyle.Render("daemon: live")
-	}
-	if m.overBudget() {
-		status = warnStyle.Render("budget: over") + "  " + status
-	}
-
-	line := lipgloss.JoinHorizontal(lipgloss.Center, faceCol, "  ", name, "  ", bubble)
-	return lipgloss.JoinHorizontal(lipgloss.Center, line, "   ", status)
+	left := faceSt.Render(face) + "  " + sTitle.Render("aipet") + sFaint.Render(" · ") + bubble
+	return spread(left, m.daemonStatus(), w)
 }
 
 // faceAndBubble picks the header's face + speech bubble + style from the
@@ -242,14 +269,14 @@ func (m Model) header() string {
 // Suggestions tabs, not the pet's face.
 func (m Model) faceAndBubble() (face, bubble string, st lipgloss.Style) {
 	if m.snap == nil {
-		return eggFaces[m.frame%2], tipStyle.Render("Getting to know your machine..."), moodStyle[sim.MoodContent]
+		return eggFaces[m.frame%2], sAccent.Render("Getting to know your machine..."), moodStyle[sim.MoodContent]
 	}
 	if m.snap.PetError != "" {
-		return eggFaces[m.frame%2], warnStyle.Render("Something's off — check the Pet tab."), moodStyle[sim.MoodWorried]
+		return eggFaces[m.frame%2], sDanger.Render("Something's off — check the Pet tab."), moodStyle[sim.MoodWorried]
 	}
 	p := m.snap.Pet
 	if p.IsEgg() {
-		return eggFaces[m.frame%2], tipStyle.Render("Warming up..."), moodStyle[sim.MoodContent]
+		return eggFaces[m.frame%2], sAccent.Render("Warming up..."), moodStyle[sim.MoodContent]
 	}
 	frames, ok := headerFaces[p.Mood]
 	if !ok {
@@ -275,133 +302,234 @@ func moodBubble(mo sim.Mood) string {
 	}
 }
 
-func (m Model) tabBar() string {
+func (m Model) daemonStatus() string {
+	if m.daemonUp {
+		return sSuccess.Render("●") + " " + sMuted.Render("daemon live")
+	}
+	status := sFaint.Render("○") + " " + sMuted.Render("daemon off")
+	if m.overBudget() {
+		status = sWarn.Render("budget: over") + "  " + status
+	}
+	return status
+}
+
+func (m Model) tabBar(w int) string {
 	labels := []string{"Pet", "Overview", "Suggestions", "Records", "Dex"}
+	narrow := w < 60
 	var tabs []string
 	for i, l := range labels {
+		t := l
+		if !narrow {
+			t = fmt.Sprintf("%d %s", i+1, l)
+		}
 		if i == m.tab {
-			tabs = append(tabs, activeTabStyle.Render(fmt.Sprintf(" %d %s ", i+1, l)))
+			tabs = append(tabs, sTabOn.Render(t))
 		} else {
-			tabs = append(tabs, tabStyle.Render(fmt.Sprintf(" %d %s ", i+1, l)))
+			tabs = append(tabs, sTab.Render(t))
 		}
 	}
-	return lipgloss.JoinHorizontal(lipgloss.Bottom, tabs...)
+	return strings.Join(tabs, "   ")
 }
 
-func (m Model) overview() string {
+func (m Model) footer(w int) string {
+	hint := func(key, action string) string {
+		return sKeyHint.Render(key) + " " + sMuted.Render(action)
+	}
+	switchHint := "tab/←→"
+	if w < 60 {
+		switchHint = "tab"
+	}
+	left := strings.Join([]string{
+		hint(switchHint, "switch"),
+		hint("r", "refresh"),
+		hint("q", "quit"),
+	}, "   ")
+
+	right := sFaint.Render("updated " + m.snapTime())
+	if m.snap != nil {
+		if n := len(m.snap.CollectErrors); n > 0 {
+			noun := "error"
+			if n != 1 {
+				noun = "errors"
+			}
+			right = sWarn.Render(fmt.Sprintf("%d collect %s", n, noun))
+		}
+	}
+	return spread(left, right, w)
+}
+
+func (m Model) snapTime() string {
 	if m.snap == nil {
-		return dimStyle.Render("No data yet. Start the daemon with `aipet daemon` or run `aipet status`.")
+		return "—"
+	}
+	return m.snap.UpdatedAt.Format("15:04")
+}
+
+// overview renders spend at a glance: the budget bar, key usage stats, and
+// the top models/projects by cost. On wide terminals usage and rankings sit
+// side by side; otherwise they stack.
+func (m Model) overview(w int) string {
+	if m.snap == nil {
+		return emptyState(eggFaces[0], "I haven't seen any sessions yet. Run a Claude Code session and I'll start counting.")
 	}
 	s := m.snap.Stats
-	var b strings.Builder
 
-	// Budget bar for today.
+	var budget string
 	if m.cfg.DailyBudgetUSD > 0 {
-		b.WriteString(budgetBar(s.TodayCost, m.cfg.DailyBudgetUSD, m.width))
-		b.WriteString("\n\n")
+		budget = stack(sSection.Render("Today's budget"), budgetBar(s.TodayCost, m.cfg.DailyBudgetUSD, w))
 	}
 
-	b.WriteString(kv("Today", fmt.Sprintf("$%.2f", s.TodayCost)))
-	b.WriteString(kv("All-time", fmt.Sprintf("$%.2f", s.TotalCost)))
-	b.WriteString(kv("Turns", fmt.Sprintf("%d", s.Turns)))
-	b.WriteString(kv("Tokens in/out", fmt.Sprintf("%s / %s", human(s.TokensIn), human(s.TokensOut))))
-	b.WriteString(kv("Cache reuse", cacheReuse(s)))
-	b.WriteString("\n")
+	wide := w >= 90
+	colW := w
+	if wide {
+		colW = w/2 - 2
+	}
 
-	b.WriteString(sectionStyle.Render("Top models"))
-	b.WriteString("\n")
-	for _, kvp := range store.TopN(s.ByModel, 3) {
-		b.WriteString(fmt.Sprintf("  %-28s $%6.2f\n", trunc(kvp.Key, 28), kvp.Value))
+	usage := stack(sSection.Render("Usage"), strings.Join([]string{
+		kvRow("Today", sValue.Render(money(s.TodayCost)), colW),
+		kvRow("All-time", sValue.Render(money(s.TotalCost)), colW),
+		kvRow("Turns", sValue.Render(commas(int64(s.Turns))), colW),
+		kvRow("Tokens in / out", sValue.Render(human(s.TokensIn)+" / "+human(s.TokensOut)), colW),
+		kvRow("Cache reuse", cacheReuse(s), colW),
+	}, "\n"))
+
+	models := stack(sSection.Render("Top models"), moneyRowsOrHint(store.TopN(s.ByModel, 3), colW,
+		"nothing yet; keep coding and this fills in."))
+	projects := stack(sSection.Render("Top projects"), moneyRowsOrHint(store.TopN(s.ByProject, 3), colW,
+		"nothing yet; keep coding and this fills in."))
+
+	var body string
+	if wide {
+		left := lipgloss.NewStyle().Width(colW).Render(usage)
+		right := lipgloss.NewStyle().Width(colW).Render(stack(models, projects))
+		body = lipgloss.JoinHorizontal(lipgloss.Top, left, "  ", right)
+	} else {
+		body = stack(usage, models, projects)
 	}
-	b.WriteString("\n")
-	b.WriteString(sectionStyle.Render("Top projects"))
-	b.WriteString("\n")
-	for _, kvp := range store.TopN(s.ByProject, 3) {
-		b.WriteString(fmt.Sprintf("  %-28s $%6.2f\n", trunc(kvp.Key, 28), kvp.Value))
-	}
-	return b.String()
+
+	return stack(budget, body)
 }
 
-func (m Model) suggestions() string {
-	if m.snap == nil || len(m.snap.Suggestions) == 0 {
-		return okStyle.Render("  No suggestions right now — you're running lean. ")
+func moneyRowsOrHint(entries []store.KV, w int, hint string) string {
+	if len(entries) == 0 {
+		return sFaint.Render(hint)
 	}
-	var b strings.Builder
-	shown := 0
+	var lines []string
+	for _, kvp := range entries {
+		lines = append(lines, moneyRow(kvp.Key, sValue.Render(money(kvp.Value)), w))
+	}
+	return strings.Join(lines, "\n")
+}
+
+// suggestions renders efficiency advice as accent-barred cards, newest/most
+// severe first (the advisor already orders them), capped so the tab never
+// overflows a normal terminal height.
+func (m Model) suggestions(w int) string {
+	if m.snap == nil {
+		return emptyState(eggFaces[0], "No advice yet — I need a few sessions to learn your habits.")
+	}
+	if len(m.snap.Suggestions) == 0 {
+		return sSuccess.Render("No suggestions right now — you're running lean.")
+	}
+
+	const maxShown = 6
+	shown := m.snap.Suggestions
+	more := 0
+	if len(shown) > maxShown {
+		more = len(shown) - maxShown
+		shown = shown[:maxShown]
+	}
+
+	var totalSaving float64
 	for _, s := range m.snap.Suggestions {
-		b.WriteString(renderSuggestion(s))
-		shown++
-		if shown >= 6 {
-			break
-		}
+		totalSaving += s.SavingUSD
 	}
-	if shown == 0 {
-		return okStyle.Render("  No efficiency issues detected. ")
+	summary := fmt.Sprintf("%d suggestion", len(m.snap.Suggestions))
+	if len(m.snap.Suggestions) != 1 {
+		summary += "s"
 	}
-	return b.String()
+	if totalSaving >= 0.01 {
+		summary += sMuted.Render(" · est. savings ") + sSuccess.Render(money(totalSaving)+"/day")
+	}
+
+	var cards []string
+	for _, s := range shown {
+		cards = append(cards, renderSuggestion(s, w))
+	}
+	body := strings.Join(cards, "\n\n")
+	if more > 0 {
+		body = stack(body, sFaint.Render(fmt.Sprintf("…and %d more", more)))
+	}
+
+	return stack(sMuted.Render(summary), body)
 }
 
 // records renders the local leaderboard: rankings and personal bests. Every
 // number is computed on-device from the event log.
-func (m Model) records() string {
+func (m Model) records(w int) string {
 	if m.snap == nil {
-		return dimStyle.Render("No data yet. Start the daemon with `aipet daemon` or run `aipet status`.")
+		return emptyState(eggFaces[0], "Your records start with your first session — check back after you code.")
 	}
 	board := m.snap.Board
-	var b strings.Builder
 
-	b.WriteString(sectionStyle.Render("Top projects"))
-	b.WriteString("\n")
-	writeRanking(&b, board.TopProjects, func(e leaderboard.Entry) string {
-		return fmt.Sprintf("$%6.2f", e.Value)
-	})
-	b.WriteString("\n")
-	b.WriteString(sectionStyle.Render("Best cache-reuse days"))
-	b.WriteString("\n")
-	writeRanking(&b, board.BestCacheDays, func(e leaderboard.Entry) string {
-		return fmt.Sprintf("%5.1f%%", e.Value)
-	})
-	b.WriteString("\n")
+	wide := w >= 90
+	colW := w
+	if wide {
+		colW = w/2 - 2
+	}
+
+	rankings := stack(
+		stack(sSection.Render("Top projects"), rankingRows(board.TopProjects, colW, func(e leaderboard.Entry) string {
+			return money(e.Value)
+		})),
+		stack(sSection.Render("Best cache-reuse days"), rankingRows(board.BestCacheDays, colW, func(e leaderboard.Entry) string {
+			return fmt.Sprintf("%.1f%%", e.Value)
+		})),
+	)
 
 	r := board.Records
-	b.WriteString(sectionStyle.Render("Personal records"))
-	b.WriteString("\n")
-	streak := fmt.Sprintf("%d day(s)", r.CurrentStreak)
+	streakCtx := sFaint.Render(fmt.Sprintf("best %d", r.LongestStreak))
 	if r.CurrentStreak > 0 && r.CurrentStreak == r.LongestStreak {
-		streak = okStyle.Render(streak + "  ★ personal best")
-	} else {
-		streak += dimStyle.Render(fmt.Sprintf("  (best %d)", r.LongestStreak))
+		streakCtx = sSuccess.Render("★ best")
 	}
-	b.WriteString(kv("Streak", streak))
+	var recLines []string
+	recLines = append(recLines, recordRow("Streak", fmt.Sprintf("%d days", r.CurrentStreak), streakCtx, colW))
 	if r.BiggestDayUSD.Name != "" {
-		b.WriteString(kv("Biggest day", fmt.Sprintf("$%.2f on %s", r.BiggestDayUSD.Value, r.BiggestDayUSD.Name)))
+		recLines = append(recLines, recordRow("Biggest day", money(r.BiggestDayUSD.Value), sFaint.Render(r.BiggestDayUSD.Name), colW))
 	}
 	if r.BusiestDay.Name != "" {
-		b.WriteString(kv("Busiest day", fmt.Sprintf("%.0f turns on %s", r.BusiestDay.Value, r.BusiestDay.Name)))
+		recLines = append(recLines, recordRow("Busiest day", fmt.Sprintf("%.0f turns", r.BusiestDay.Value), sFaint.Render(r.BusiestDay.Name), colW))
 	}
 	if r.FirstSeen != "" {
-		b.WriteString(kv("Keeper since", fmt.Sprintf("%s · %d active day(s)", r.FirstSeen, r.ActiveDays)))
+		recLines = append(recLines, recordRow("Keeper since", r.FirstSeen, sFaint.Render(fmt.Sprintf("%d active days", r.ActiveDays)), colW))
 	}
-	return b.String()
+	records := stack(sSection.Render("Personal records"), strings.Join(recLines, "\n"))
+
+	if wide {
+		left := lipgloss.NewStyle().Width(colW).Render(rankings)
+		right := lipgloss.NewStyle().Width(colW).Render(records)
+		return lipgloss.JoinHorizontal(lipgloss.Top, left, "  ", right)
+	}
+	return stack(rankings, records)
 }
 
-func writeRanking(b *strings.Builder, entries []leaderboard.Entry, val func(leaderboard.Entry) string) {
+func rankingRows(entries []leaderboard.Entry, w int, val func(leaderboard.Entry) string) string {
 	if len(entries) == 0 {
-		b.WriteString(dimStyle.Render("  (no qualifying data yet)") + "\n")
-		return
+		return sFaint.Render("nothing yet; keep coding and this fills in.")
 	}
+	var lines []string
 	for i, e := range entries {
-		b.WriteString(fmt.Sprintf("  %d. %-28s %s\n", i+1, trunc(e.Name, 28), val(e)))
+		rank := sFaint.Render(fmt.Sprintf("%d ", i+1))
+		lines = append(lines, rank+moneyRow(e.Name, sValue.Render(val(e)), w-lipgloss.Width(rank)))
 	}
+	return strings.Join(lines, "\n")
 }
 
-func (m Model) footer() string {
-	help := "tab/←→ switch · r refresh · q quit"
-	status := ""
-	if m.snap != nil {
-		if n := len(m.snap.CollectErrors); n > 0 {
-			status = warnStyle.Render(fmt.Sprintf("%d collect error(s)", n))
-		}
-	}
-	return dimStyle.Render(help) + "   " + status
+// recordRow renders a three-column personal-record line: label, bold value
+// (right-aligned to the column midpoint), and faint context (right-aligned
+// to the edge) — replaces the old "5 day(s)  (best 9)" prose with something
+// scannable.
+func recordRow(label, value, context string, w int) string {
+	left := kvRow(label, sValue.Render(value), w*2/3)
+	return spread(left, context, w)
 }

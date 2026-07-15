@@ -10,156 +10,221 @@ import (
 	"github.com/rohithIlluri/POC-S/pocs/aipet/internal/species"
 )
 
-var (
-	petNameStyle   = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("231"))
-	petLucentStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("219"))
-	spriteStyle    = lipgloss.NewStyle().Foreground(cBlue)
-	moodStyle      = map[sim.Mood]lipgloss.Style{
-		sim.MoodCheerful: lipgloss.NewStyle().Foreground(cGreen).Bold(true),
-		sim.MoodContent:  lipgloss.NewStyle().Foreground(cBlue),
-		sim.MoodTired:    lipgloss.NewStyle().Foreground(cYellow),
-		sim.MoodWorried:  lipgloss.NewStyle().Foreground(cRed).Bold(true),
-		sim.MoodAsleep:   lipgloss.NewStyle().Foreground(cGray).Italic(true),
-	}
-)
+var moodStyle = map[sim.Mood]lipgloss.Style{
+	sim.MoodCheerful: lipgloss.NewStyle().Foreground(cSuccess).Bold(true),
+	sim.MoodContent:  lipgloss.NewStyle().Foreground(cAccent),
+	sim.MoodTired:    sWarn,
+	sim.MoodWorried:  lipgloss.NewStyle().Bold(true).Foreground(cDanger),
+	sim.MoodAsleep:   lipgloss.NewStyle().Italic(true).Foreground(cMuted),
+}
+
+// moodBorder maps a hatched pet's mood to its sprite card's border color —
+// the single strongest "the pet has a state" signal in the Pet tab, since
+// it's visible even before reading any text.
+var moodBorder = map[sim.Mood]lipgloss.AdaptiveColor{
+	sim.MoodCheerful: cSuccess,
+	sim.MoodContent:  cAccent,
+	sim.MoodTired:    cWarn,
+	sim.MoodWorried:  cDanger,
+	sim.MoodAsleep:   cMuted,
+}
+
+const eggArt = "   .-\"\"-.\n  /      \\\n |  ....  |\n  \\      /\n   '-..-'"
 
 // pet renders the Pet tab: the egg-or-hatchling screen plus a short recent
 // journal. This is the game itself — Overview/Suggestions/Records exist to
 // explain why the pet feels the way it does.
-func (m Model) pet() string {
+func (m Model) pet(w int) string {
 	if m.snap == nil {
-		return dimStyle.Render("No data yet. Start the daemon with `aipet daemon` or run `aipet status`.")
+		return emptyState(eggFaces[0], "Getting to know your machine — run a Claude Code session and I'll wake up.")
 	}
 	if m.snap.PetError != "" {
-		return warnStyle.Render("Pet error: " + m.snap.PetError)
+		return sDanger.Render("Pet error: " + m.snap.PetError)
 	}
 	p := m.snap.Pet
-	var body string
 	if p.IsEgg() {
-		body = eggView(p)
-	} else {
-		body = hatchlingView(p, m.width)
+		return eggView(p, m.frame, w)
 	}
-	if j := m.journal(); j != "" {
-		body += "\n" + sectionStyle.Render("Journal") + "\n" + j
-	}
-	return body
+
+	body := hatchlingView(p, m.frame, w)
+	streak := sMuted.Render(fmt.Sprintf("streak %d days · %d active days total", p.GritStreak, p.ActiveDayCount))
+	header := spread(sSection.Render("Journal"), streak, w)
+	return stack(body, stack(header, m.journal()))
 }
 
-func eggView(p sim.Pet) string {
-	var b strings.Builder
-	egg := spriteStyle.Render("   .-\"\"-.\n  /      \\\n |  ....  |\n  \\      /\n   '-..-'")
-	b.WriteString(egg)
-	b.WriteString("\n\n")
-	b.WriteString(petNameStyle.Render("An egg, warming."))
-	b.WriteString("\n\n")
-	b.WriteString(dimStyle.Render(fmt.Sprintf(
-		"Egg warming: %d/%d qualifying sessions. Keep coding with Claude Code or Codex —",
-		min(p.EggSessionCount, sim.HatchSessionThreshold), sim.HatchSessionThreshold)))
-	b.WriteString("\n")
-	b.WriteString(dimStyle.Render("it hatches from your real activity, no clicking required."))
-	b.WriteString("\n")
-	b.WriteString(hatchProgressBar(p.EggSessionCount, sim.HatchSessionThreshold))
+// spriteCard wraps a sprite in the app's one deliberate box: a quiet
+// rounded border, tinted to the pet's current mood post-hatch (or accent
+// while still an egg). Every other grouping in the UI uses spacing or an
+// accent bar instead.
+func spriteCard(art string, border lipgloss.AdaptiveColor) string {
+	return spriteCardStyle.BorderForeground(border).Render(art)
+}
+
+// eggView is the very first thing a brand-new user sees: face + hatch
+// meter + one line of copy, centered in the sprite card so the egg reads
+// as the app's hero content rather than a paragraph of text.
+func eggView(p sim.Pet, frame, w int) string {
+	face := sAccent.Render(eggFaces[frame%2])
+	sprite := lipgloss.JoinVertical(lipgloss.Center, "", eggArt, "", face, sAccent.Render("Warming up..."))
+	card := spriteCard(sprite, cAccent)
+
+	infoW := w
+	if w >= 90 {
+		infoW = w - lipgloss.Width(card) - 3
+	}
+	if infoW < 24 {
+		infoW = 24
+	}
+
+	label := spread(sMuted.Render("Hatching"), sMuted.Render(fmt.Sprintf("%d/%d sessions",
+		min(p.EggSessionCount, sim.HatchSessionThreshold), sim.HatchSessionThreshold)), infoW)
+	hatchMeter := meter(float64(p.EggSessionCount)/float64(sim.HatchSessionThreshold), infoW, cAccent)
+
+	lines := []string{
+		sValue.Render("An egg, warming."),
+		label,
+		hatchMeter,
+		sMuted.Render(wrap("Hatches from real coding sessions — no clicking required.", infoW)),
+	}
 	if p.ActiveDayCount > 0 {
-		b.WriteString("\n")
-		b.WriteString(dimStyle.Render(fmt.Sprintf(
-			"(%d active day(s) so far — a real week of casual use always hatches too)", p.ActiveDayCount)))
+		lines = append(lines, sFaint.Render(wrap(fmt.Sprintf("(%d active day(s) so far — a real week of casual use always hatches too)", p.ActiveDayCount), infoW)))
 	}
-	return b.String()
+	info := strings.Join(lines, "\n")
+
+	if w >= 90 {
+		return lipgloss.JoinHorizontal(lipgloss.Center, card, "   ", info)
+	}
+	return stack(card, info)
 }
 
-func hatchlingView(p sim.Pet, width int) string {
+func hatchlingView(p sim.Pet, frame, w int) string {
 	sp, ok := species.ByID(p.SpeciesID)
 	if !ok {
-		return warnStyle.Render("Unknown species: " + p.SpeciesID)
+		return sDanger.Render("Unknown species: " + p.SpeciesID)
 	}
-	var b strings.Builder
 
-	b.WriteString(spriteStyle.Render(sp.Art))
-	b.WriteString("\n\n")
-
-	name := petNameStyle.Render(sp.Name)
-	if p.Lucent {
-		name = petLucentStyle.Render("✦ " + sp.Name + " (Lucent)")
+	border := moodBorder[p.Mood]
+	frames, hasFace := headerFaces[p.Mood]
+	sprite := sp.Art
+	if hasFace {
+		face := frames[frame%2]
+		sprite = lipgloss.JoinVertical(lipgloss.Center, sp.Art, "", sAccent.Render(face), moodStyle[p.Mood].Render(moodBubble(p.Mood)))
 	}
-	stageLabel := dimStyle.Render(fmt.Sprintf("  stage %d/3 · %s · %s", p.Stage, strings.ToUpper(string(sp.Type)), sp.Habitat))
-	b.WriteString(name + stageLabel)
-	b.WriteString("\n")
-	moodSt := moodStyle[p.Mood]
-	b.WriteString(moodSt.Render(strings.ToUpper(string(p.Mood))))
-	b.WriteString("\n\n")
+	if p.Mood == sim.MoodAsleep {
+		sprite = lipgloss.NewStyle().Faint(true).Render(sprite)
+	}
+	card := spriteCard(sprite, border)
+	cardW := lipgloss.Width(card)
 
-	b.WriteString(kv("Level", fmt.Sprintf("%d", p.Level)))
-	b.WriteString(xpBar(p))
-	b.WriteString(kv("Health", ""))
-	b.WriteString(healthBar(p.Health))
-	b.WriteString("\n")
+	twoCol := w >= 90
+	rightW := w
+	if twoCol {
+		rightW = w - cardW - 3
+	}
+	if rightW < 24 {
+		rightW = 24
+	}
+	right := hatchlingVitals(p, sp, rightW)
 
+	var top string
+	if twoCol {
+		top = lipgloss.JoinHorizontal(lipgloss.Top, card, "   ", right)
+	} else {
+		top = stack(card, right)
+	}
+
+	parts := []string{top}
 	if len(p.Statuses) > 0 {
 		var statuses []string
 		for _, s := range p.Statuses {
 			statuses = append(statuses, string(s))
 		}
-		b.WriteString(warnStyle.Render("status: " + strings.Join(statuses, ", ")))
-		b.WriteString("\n\n")
+		parts = append(parts, accentBlock(cWarn, sWarn.Render("status: "+strings.Join(statuses, ", "))))
 	}
-
-	b.WriteString(sectionStyle.Render("Stats"))
-	b.WriteString("\n")
-	b.WriteString(statLine("VIGOR", p.Stats.Vigor))
-	b.WriteString(statLine("FOCUS", p.Stats.Focus))
-	b.WriteString(statLine("WIT", p.Stats.Wit))
-	b.WriteString(statLine("GRIT", p.Stats.Grit))
-	b.WriteString(statLine("SPARK", p.Stats.Spark))
-	b.WriteString("\n")
-
-	entryWidth := width - 2
-	if entryWidth < 40 {
-		entryWidth = 72 // sane default when the window size hasn't been reported yet (e.g. in tests)
-	}
-	b.WriteString(dimStyle.Render(wrap(sp.DexEntry, entryWidth)))
-	b.WriteString("\n\n")
-	b.WriteString(dimStyle.Render(fmt.Sprintf("streak %d day(s) · %d active day(s) total", p.GritStreak, p.ActiveDayCount)))
-
-	return b.String()
+	parts = append(parts,
+		stack(sSection.Render("Stats"), statGrid(p.Stats, w)),
+		sBody.Render(lipgloss.NewStyle().Width(w).Render(sp.DexEntry)),
+	)
+	return stack(parts...)
 }
 
-func hatchProgressBar(done, total int) string {
-	if total <= 0 {
-		total = 1
+func hatchlingVitals(p sim.Pet, sp species.Species, w int) string {
+	name := sValue.Render(sp.Name)
+	if p.Lucent {
+		name = sBrand.Render("✦ "+sp.Name) + sMuted.Render(" · Lucent")
 	}
-	if done > total {
-		done = total
+	stageLine := sMuted.Render(fmt.Sprintf("stage %d/3 · %s · %s", p.Stage, strings.ToLower(string(sp.Type)), sp.Habitat))
+
+	healthColor := cSuccess
+	switch {
+	case p.Health < 30:
+		healthColor = cDanger
+	case p.Health < 60:
+		healthColor = cWarn
 	}
-	filled := strings.Repeat("●", done)
-	empty := strings.Repeat("○", total-done)
-	return "  " + okStyle.Render(filled) + dimStyle.Render(empty)
+
+	lines := []string{
+		spread(name, stageLine, w),
+		"",
+		sMuted.Render("Level") + "  " + sValue.Render(fmt.Sprintf("%d", p.Level)),
+		meter(xpRatio(p), 20, cAccent) + sMuted.Render(fmt.Sprintf("  %d xp", p.XP)),
+		sMuted.Render("Health") + "  " + sValue.Render(fmt.Sprintf("%d/100", p.Health)),
+		meter(float64(p.Health)/100, 20, healthColor),
+	}
+	return strings.Join(lines, "\n")
 }
 
-func xpBar(p sim.Pet) string {
-	// A lightweight visual: filled dots for progress within the current
-	// level band, not a precise fraction — precision lives in the Level
-	// number itself, this is just a "getting there" cue.
-	const width = 20
+// statGrid renders the five stats as labeled meters, two per row on normal+
+// terminals and one per row when narrow.
+func statGrid(s species.Stats, w int) string {
+	line := func(label string, val int) string {
+		return sMuted.Render(fmt.Sprintf("%-6s", label)) + meter(float64(clampStat(val))/30, 16, cAccent)
+	}
+	cells := []string{
+		line("vigor", s.Vigor),
+		line("focus", s.Focus),
+		line("wit", s.Wit),
+		line("grit", s.Grit),
+		line("spark", s.Spark),
+	}
+	cols, cellW := 2, w/2-1
+	if w < 60 {
+		cols, cellW = 1, w
+	}
+	return grid(cells, cellW, cols)
+}
+
+// clampStat scales a stat (roughly 0-140 across the roster) into a 0-30
+// meter range purely for display.
+func clampStat(v int) int {
+	n := v / 5
+	if n < 0 {
+		n = 0
+	}
+	if n > 30 {
+		n = 30
+	}
+	return n
+}
+
+// xpRatio mirrors sim's quadratic leveling curve (level*level*10) just
+// closely enough to draw a progress bar; the TUI never decides leveling
+// itself, only visualizes what the sim already computed.
+func xpRatio(p sim.Pet) float64 {
 	span := xpSpanForLevel(p.Level)
-	into := p.XP - xpFloorForLevel(p.Level)
 	if span <= 0 {
-		span = 1
+		return 0
 	}
-	filled := into * width / span
-	if filled < 0 {
-		filled = 0
+	r := float64(p.XP-xpFloorForLevel(p.Level)) / float64(span)
+	if r < 0 {
+		r = 0
 	}
-	if filled > width {
-		filled = width
+	if r > 1 {
+		r = 1
 	}
-	bar := okStyle.Render(strings.Repeat("█", filled)) + dimStyle.Render(strings.Repeat("░", width-filled))
-	return "  " + bar + dimStyle.Render(fmt.Sprintf(" %d XP", p.XP)) + "\n"
+	return r
 }
 
-// xpFloorForLevel/xpSpanForLevel mirror sim's quadratic curve (level*level*10)
-// just closely enough to draw a progress bar; the TUI never decides
-// leveling itself, only visualizes what the sim already computed.
 func xpFloorForLevel(level int) int {
 	if level <= 1 {
 		return 0
@@ -171,59 +236,30 @@ func xpSpanForLevel(level int) int {
 	return xpFloorForLevel(level+1) - xpFloorForLevel(level)
 }
 
-func healthBar(health int) string {
-	const width = 20
-	filled := health * width / 100
-	if filled < 0 {
-		filled = 0
-	}
-	if filled > width {
-		filled = width
-	}
-	col := okStyle
-	switch {
-	case health < 30:
-		col = warnStyle
-	case health < 60:
-		col = tipStyle
-	}
-	bar := col.Render(strings.Repeat("█", filled)) + dimStyle.Render(strings.Repeat("░", width-filled))
-	return "  " + bar + dimStyle.Render(fmt.Sprintf(" %d/100", health)) + "\n"
-}
-
-func statLine(name string, val int) string {
-	return fmt.Sprintf("  %-6s %s\n", name, strings.Repeat("▪", clampStat(val)))
-}
-
-func clampStat(v int) int {
-	// Purely cosmetic scaling for the terminal width: stats run roughly
-	// 0-140 across the roster, so /5 keeps the bar readable.
-	n := v / 5
-	if n < 0 {
-		n = 0
-	}
-	if n > 30 {
-		n = 30
-	}
-	return n
-}
-
 // journal renders the pet's recent life log — the "why" behind its mood.
 // Returns "" when there's nothing to show yet, so callers can skip the
-// section header entirely on a brand new save.
+// section entirely on a brand new save.
 func (m Model) journal() string {
 	if len(m.journalEntries) == 0 {
 		return ""
 	}
-	var b strings.Builder
 	const maxShown = 5
 	start := 0
 	if len(m.journalEntries) > maxShown {
 		start = len(m.journalEntries) - maxShown
 	}
+	var lines []string
 	for i := len(m.journalEntries) - 1; i >= start; i-- {
 		e := m.journalEntries[i]
-		b.WriteString(dimStyle.Render(e.Day) + "  " + e.Text + "\n")
+		date := e.Day
+		if len(date) == 10 {
+			date = date[5:] // YYYY-MM-DD -> MM-DD
+		}
+		text := sBody.Render(e.Text)
+		if strings.Contains(strings.ToLower(e.Text), "junk food") {
+			text = sWarn.Render(e.Text)
+		}
+		lines = append(lines, sFaint.Render(date)+"  "+text)
 	}
-	return b.String()
+	return strings.Join(lines, "\n")
 }

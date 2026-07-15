@@ -75,7 +75,7 @@ func runDex(cfg config.Config) {
 	if err != nil {
 		fatalf("load dex: %v", err)
 	}
-	fmt.Println(tui.RenderDex(dex))
+	fmt.Println(tui.RenderDex(dex, 80))
 }
 
 func runTUI(cfg config.Config) {
