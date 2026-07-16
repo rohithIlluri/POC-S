@@ -35,6 +35,7 @@ import (
 	"github.com/rohithIlluri/POC-S/pocs/aipet/internal/daemon"
 	"github.com/rohithIlluri/POC-S/pocs/aipet/internal/host"
 	"github.com/rohithIlluri/POC-S/pocs/aipet/internal/leaderboard"
+	"github.com/rohithIlluri/POC-S/pocs/aipet/internal/llm"
 	"github.com/rohithIlluri/POC-S/pocs/aipet/internal/save"
 	"github.com/rohithIlluri/POC-S/pocs/aipet/internal/sim"
 	"github.com/rohithIlluri/POC-S/pocs/aipet/internal/species"
@@ -109,7 +110,7 @@ func runBare(cfg config.Config) {
 	_, _, _ = daemon.CollectOnce(cfg, false, time.Now())
 	snap, _ := daemon.ReadSnapshot()
 	journal, _ := save.ReadJournal()
-	out, err := tui.Card("pet", snap, journal, tui.CardOpts{Personality: cfg.Personality, Voice: cfg.Voice})
+	out, err := tui.Card("pet", snap, journal, tui.CardOpts{Personality: cfg.Personality, Voice: cfg.Voice, VoiceModel: cfg.VoiceModel})
 	if err != nil {
 		fatalf("card: %v", err)
 	}
@@ -292,7 +293,7 @@ func runCard(cfg config.Config, args []string) {
 	}
 	journal, _ := save.ReadJournal()
 
-	out, err := tui.Card(view, snap, journal, tui.CardOpts{Width: width, Personality: cfg.Personality, Voice: cfg.Voice})
+	out, err := tui.Card(view, snap, journal, tui.CardOpts{Width: width, Personality: cfg.Personality, Voice: cfg.Voice, VoiceModel: cfg.VoiceModel})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "aipet: %v\n\n", err)
 		fmt.Fprintf(os.Stderr, "usage: aipet card [pet|dex|records|overview] [--width N] [--no-collect]\n")
@@ -540,7 +541,12 @@ func runConfig(cfg config.Config, args []string) {
 		fmt.Printf("  daily_budget_usd:     %.2f\n", cfg.DailyBudgetUSD)
 		fmt.Printf("  collect_interval_min: %d\n", cfg.CollectIntervalMin)
 		fmt.Printf("  personality:          %s   (%s)\n", cfg.Personality, strings.Join(voice.Personalities(), " | "))
-		fmt.Printf("  voice:                %s   (canned = zero-token embedded lines | live = host improvises, spends your tokens | off)\n", cfg.Voice)
+		fmt.Printf("  voice:                %s   (canned = zero-token embedded lines | api = aipet generates ~once/day on your Anthropic credentials | live = host improvises | off)\n", cfg.Voice)
+		model := cfg.VoiceModel
+		if model == "" {
+			model = llm.DefaultModel + " (default)"
+		}
+		fmt.Printf("  voice_model:          %s   (api mode only; cheapest model unless you override)\n", model)
 		fmt.Println("\nset values with: aipet config <key> <value>")
 		return
 	}
@@ -568,11 +574,19 @@ func runConfig(cfg config.Config, args []string) {
 		cfg.Personality = val
 	case "voice":
 		switch val {
-		case "canned", "live", "off":
+		case "canned", "api", "live", "off":
 			cfg.Voice = val
 		default:
-			fatalf("unknown voice mode %q (want: canned, live, off)", val)
+			fatalf("unknown voice mode %q (want: canned, api, live, off)", val)
 		}
+		if val == "api" {
+			fmt.Println("api voice generates the pet's daily line with YOUR Anthropic credentials")
+			fmt.Println("(ANTHROPIC_API_KEY or an `ant auth login` profile) on " + llm.DefaultModel + ":")
+			fmt.Println("~1 call/day, ≤60 output tokens, hard-capped, cached, and it falls back to")
+			fmt.Println("the built-in lines whenever no credentials or network are available.")
+		}
+	case "voice_model":
+		cfg.VoiceModel = val
 	default:
 		fatalf("unknown key %q", key)
 	}

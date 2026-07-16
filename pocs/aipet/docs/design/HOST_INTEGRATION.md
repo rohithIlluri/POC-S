@@ -360,9 +360,26 @@ axes, both in `~/.aipet/config.json` (`aipet config <key> <value>`):
     deterministically by hashing the calendar day + mood + species, so it
     rotates daily with zero RNG and **zero generation**: the host model's
     only job is to repeat it. Entertaining at the token cost of an echo.
+  - **`api` (H7)** — aipet generates the line itself via `internal/llm`,
+    authenticating with the user's own credentials (the SDK's standard
+    chain: `ANTHROPIC_API_KEY` → `ANTHROPIC_AUTH_TOKEN` → `ant auth login`
+    profile — aipet never stores or logs a key) on the cheapest current
+    model (`claude-haiku-4-5`, overridable via `voice_model`). Budget
+    contract, enforced in code and tests: ~ONE call per day (cached per
+    day+mood+personality in `~/.aipet/voice_cache.json`), ≤60 output
+    tokens per call, ≤8 calls/day hard cap (failed attempts count, so an
+    offline machine can't re-dial all day), 3s timeout, and ANY failure
+    silently serves the canned line instead. ≈150 in + ≤60 out tokens
+    ≈ $0.0004/call at Haiku pricing → roughly a cent per month. Only the
+    user-initiated card path may generate; hooks, statusline, and
+    collection stay zero-network in every mode. The host model still just
+    displays the `pet says:` footer — api mode adds no host-side
+    generation. This is aipet's ONLY model-calling code path and its only
+    network egress, opt-in by a single explicit command
+    (`aipet config voice api`); see the SECURITY_AUDIT.md amendment.
   - **`live`** — the host model improvises ONE line (hard-capped at 20
-    words by the protocol) in the configured personality. The only aipet
-    feature that spends the user's tokens on generation, and only opt-in.
+    words by the protocol) in the configured personality, on the host
+    session's tokens. Opt-in.
   - **`off`** — card only, no voice at all.
 
 **The transport.** The slash-command prompt is static (written at setup),

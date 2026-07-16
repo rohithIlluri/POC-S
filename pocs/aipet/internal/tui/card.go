@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"sync"
@@ -10,6 +11,7 @@ import (
 
 	"github.com/rohithIlluri/POC-S/pocs/aipet/internal/daemon"
 	"github.com/rohithIlluri/POC-S/pocs/aipet/internal/leaderboard"
+	"github.com/rohithIlluri/POC-S/pocs/aipet/internal/llm"
 	"github.com/rohithIlluri/POC-S/pocs/aipet/internal/save"
 	"github.com/rohithIlluri/POC-S/pocs/aipet/internal/sim"
 	"github.com/rohithIlluri/POC-S/pocs/aipet/internal/species"
@@ -39,11 +41,12 @@ func forceAscii() {
 // CardOpts shapes one card render. Personality/Voice drive the voice footer
 // (see cardVoiceFooter) — the token-budget contract of HOST_INTEGRATION.md
 // §10: the footer is how the pet stays entertaining without spending the
-// user's tokens on generation.
+// user's tokens on generation (unless they opted into api/live voice).
 type CardOpts struct {
 	Width       int    // 0 = defaultCardWidth
 	Personality string // voice pack name; unknown values fall back inside voice.Line
-	Voice       string // "canned" (embedded line), "live" (host improvises), "off"
+	Voice       string // "canned" (embedded), "api" (aipet generates, budgeted), "live" (host improvises), "off"
+	VoiceModel  string // api mode only; empty = llm.DefaultModel
 }
 
 // Card renders one-shot plain text for `aipet card`, the chat-facing
@@ -97,14 +100,27 @@ func cardVoiceFooter(snap *daemon.Snapshot, opts CardOpts) string {
 	if snap == nil || snap.PetError != "" {
 		return ""
 	}
+	p := snap.Pet
+	day := snap.UpdatedAt.Local().Format("2006-01-02")
 	switch opts.Voice {
 	case "live":
 		return fmt.Sprintf("pet persona: %s — improvise ONE line (max 20 words) as the pet, matching the mood above. Nothing else.", opts.Personality)
 	case "off":
 		return ""
+	case "api":
+		// aipet generates the line itself, on the user's credentials, under
+		// internal/llm's budget contract (once/day cache, hard cap, 3s
+		// timeout). Any failure falls through to the canned line — api
+		// voice degrades, it never breaks or blocks the card.
+		hint := ""
+		if len(p.Statuses) > 0 {
+			hint = string(p.Statuses[0])
+		}
+		if line, ok := llm.Line(context.Background(), opts.VoiceModel, opts.Personality, p.IsEgg(), string(p.Mood), hint, day); ok {
+			return "pet says: " + line
+		}
+		fallthrough
 	default: // "canned" and anything unrecognized: the zero-token path
-		p := snap.Pet
-		day := snap.UpdatedAt.Local().Format("2006-01-02")
 		line := voice.Line(opts.Personality, p.IsEgg(), p.Mood, day, p.SpeciesID)
 		return "pet says: " + line
 	}

@@ -100,11 +100,21 @@ and Claude just repeats it.
 
 ```bash
 aipet config personality snarky    # playful (default) | funny | nonchalant | snarky | coach
-aipet config voice canned          # canned (default, zero-token) | live | off
+aipet config voice canned          # canned (default, zero-token) | api | live | off
 ```
 
-`voice live` is the one opt-in that spends your tokens on the pet: Claude
-improvises a single line, hard-capped at 20 words by the display protocol.
+Two opt-in modes can spend tokens, both strictly bounded:
+
+- `voice api` — aipet generates the daily line itself with **your**
+  Anthropic credentials (`ANTHROPIC_API_KEY` or an `ant auth login`
+  profile; never stored by aipet) on the cheapest model, `claude-haiku-4-5`.
+  Cached once per day, ≤60 output tokens per call, hard-capped at 8
+  calls/day, 3-second timeout — roughly **a cent per month** — and it
+  falls back to the built-in lines whenever credentials or network are
+  missing. This is the only mode in which aipet ever makes a network call.
+- `voice live` — your Claude session improvises the line instead,
+  hard-capped at 20 words by the display protocol.
+
 `voice off` drops the line entirely.
 
 Or download a binary from the [latest release](https://github.com/rohithIlluri/POC-S/releases/latest)
