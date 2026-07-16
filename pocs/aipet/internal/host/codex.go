@@ -18,7 +18,8 @@ func codexPromptContent() string {
 Its output is the pet card, optionally followed by a ` + "`---`" + ` line and a
 one-line voice footer. Strict output protocol: show everything above the
 ` + "`---`" + ` verbatim in a fenced code block; if a ` + "`pet says:`" + ` footer follows,
-repeat exactly that line in italics (do not write your own); if a
+repeat in italics exactly the text after the ` + "`pet says: `" + ` prefix,
+dropping the prefix (do not write your own line); if a
 ` + "`pet persona:`" + ` footer follows, improvise ONE line, max 20 words, as the
 pet. Nothing else. If the command is missing, tell the user to run:
 go install github.com/rohithIlluri/POC-S/pocs/aipet/cmd/aipet@latest

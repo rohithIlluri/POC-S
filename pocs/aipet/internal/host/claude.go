@@ -32,8 +32,9 @@ produce nothing beyond these rules:
 
 1. Show everything ABOVE the ` + "`---`" + ` (the whole context if there is none)
    verbatim in a fenced code block.
-2. Footer ` + "`pet says: ...`" + `: repeat exactly that line in italics — it is
-   the pet speaking. Do NOT write your own line.
+2. Footer ` + "`pet says: ...`" + `: repeat, in italics, exactly the text AFTER
+   ` + "`pet says: `" + ` (drop the prefix) — it is the pet speaking. Do NOT
+   write your own line.
 3. Footer ` + "`pet persona: ...`" + `: follow it — ONE improvised line, max 20
    words, as the pet.
 4. No footer: no voice line.
