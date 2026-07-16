@@ -26,11 +26,20 @@ allowed-tools: Bash(` + aipetPath + ` card:*)
 - Pet card: !` + "`" + aipetPath + ` card "$ARGUMENTS"` + "`" + `
 
 ## Your task
-Show the pet card above verbatim in a fenced code block. Then add ONE short
-line reacting in the pet's voice (match its mood shown on the card — warm,
-a little odd, never sycophantic). If the card shows a warning (worried mood,
-junk-food diet, budget over), briefly say why in plain words and name the
-one habit that would fix it. Nothing else.
+The context above is the pet card, optionally followed by a line containing
+only ` + "`---`" + ` and then a one-line voice footer. Strict output protocol —
+produce nothing beyond these rules:
+
+1. Show everything ABOVE the ` + "`---`" + ` (the whole context if there is none)
+   verbatim in a fenced code block.
+2. Footer ` + "`pet says: ...`" + `: repeat exactly that line in italics — it is
+   the pet speaking. Do NOT write your own line.
+3. Footer ` + "`pet persona: ...`" + `: follow it — ONE improvised line, max 20
+   words, as the pet.
+4. No footer: no voice line.
+5. Nothing else. No preamble, no commentary, no advice — except if the card
+   shows worried mood or budget over, you may add at most ONE short plain
+   sentence naming the single habit that would fix it.
 `
 }
 
@@ -80,17 +89,33 @@ func InstallClaude(claudeDir string, m *Manifest, now time.Time, dryPrint func(s
 	}
 
 	cmdPath := claudeCommandPath(claudeDir)
-	if m.HasEntry(cmdPath, "") {
+	switch commandFileState(cmdPath, claudeCommandContent(), m) {
+	case cmdFileCurrent:
 		notes = append(notes, "~/.claude/commands/aipet.md: already installed")
-	} else if dryPrint != nil {
-		dryPrint(fmt.Sprintf("WOULD WRITE %s:\n%s", cmdPath, claudeCommandContent()))
-	} else {
-		e, err := writeCommandFile(cmdPath, "claude", now)
-		if err != nil {
-			return entries, notes, err
+	case cmdFileStale:
+		// Installed by an earlier aipet version whose prompt/content has
+		// since changed — refresh in place (backed up) so prompt iteration
+		// actually reaches installed machines. The manifest already tracks
+		// this file; no new entry.
+		if dryPrint != nil {
+			dryPrint(fmt.Sprintf("WOULD UPDATE %s:\n%s", cmdPath, claudeCommandContent()))
+		} else {
+			if _, err := writeCommandFile(cmdPath, "claude", now); err != nil {
+				return entries, notes, err
+			}
+			notes = append(notes, "~/.claude/commands/aipet.md: updated")
 		}
-		entries = append(entries, e)
-		notes = append(notes, "~/.claude/commands/aipet.md: installed")
+	default: // not installed
+		if dryPrint != nil {
+			dryPrint(fmt.Sprintf("WOULD WRITE %s:\n%s", cmdPath, claudeCommandContent()))
+		} else {
+			e, err := writeCommandFile(cmdPath, "claude", now)
+			if err != nil {
+				return entries, notes, err
+			}
+			entries = append(entries, e)
+			notes = append(notes, "~/.claude/commands/aipet.md: installed")
+		}
 	}
 
 	entries = append(entries, settingsEntries...)
@@ -180,6 +205,26 @@ func planSettings(settingsPath string, m *Manifest, now time.Time, dryPrint func
 		entries = append(entries, Entry{Host: "claude", File: settingsPath, Kind: KindHookEntry, JSONPath: "hooks.SessionStart", Backup: backup})
 	}
 	return entries, notes, nil
+}
+
+// cmdFileState classifies a command file for install-time dispatch.
+type cmdFileState int
+
+const (
+	cmdFileMissing cmdFileState = iota // never installed (per manifest)
+	cmdFileCurrent                     // installed and byte-identical to this version's content
+	cmdFileStale                       // installed, but content drifted (older aipet, or hand-edited/deleted)
+)
+
+func commandFileState(path, want string, m *Manifest) cmdFileState {
+	if !m.HasEntry(path, "") {
+		return cmdFileMissing
+	}
+	b, err := os.ReadFile(path)
+	if err == nil && string(b) == want {
+		return cmdFileCurrent
+	}
+	return cmdFileStale
 }
 
 // writeCommandFile backs up any existing file at path, then writes content

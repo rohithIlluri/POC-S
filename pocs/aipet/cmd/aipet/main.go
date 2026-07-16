@@ -40,6 +40,7 @@ import (
 	"github.com/rohithIlluri/POC-S/pocs/aipet/internal/species"
 	"github.com/rohithIlluri/POC-S/pocs/aipet/internal/tui"
 	"github.com/rohithIlluri/POC-S/pocs/aipet/internal/version"
+	"github.com/rohithIlluri/POC-S/pocs/aipet/internal/voice"
 )
 
 func main() {
@@ -108,7 +109,7 @@ func runBare(cfg config.Config) {
 	_, _, _ = daemon.CollectOnce(cfg, false, time.Now())
 	snap, _ := daemon.ReadSnapshot()
 	journal, _ := save.ReadJournal()
-	out, err := tui.Card("pet", snap, journal, 0)
+	out, err := tui.Card("pet", snap, journal, tui.CardOpts{Personality: cfg.Personality, Voice: cfg.Voice})
 	if err != nil {
 		fatalf("card: %v", err)
 	}
@@ -291,7 +292,7 @@ func runCard(cfg config.Config, args []string) {
 	}
 	journal, _ := save.ReadJournal()
 
-	out, err := tui.Card(view, snap, journal, width)
+	out, err := tui.Card(view, snap, journal, tui.CardOpts{Width: width, Personality: cfg.Personality, Voice: cfg.Voice})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "aipet: %v\n\n", err)
 		fmt.Fprintf(os.Stderr, "usage: aipet card [pet|dex|records|overview] [--width N] [--no-collect]\n")
@@ -538,6 +539,8 @@ func runConfig(cfg config.Config, args []string) {
 		fmt.Printf("config file: %s\n", p)
 		fmt.Printf("  daily_budget_usd:     %.2f\n", cfg.DailyBudgetUSD)
 		fmt.Printf("  collect_interval_min: %d\n", cfg.CollectIntervalMin)
+		fmt.Printf("  personality:          %s   (%s)\n", cfg.Personality, strings.Join(voice.Personalities(), " | "))
+		fmt.Printf("  voice:                %s   (canned = zero-token embedded lines | live = host improvises, spends your tokens | off)\n", cfg.Voice)
 		fmt.Println("\nset values with: aipet config <key> <value>")
 		return
 	}
@@ -558,6 +561,18 @@ func runConfig(cfg config.Config, args []string) {
 			fatalf("invalid integer: %v", err)
 		}
 		cfg.CollectIntervalMin = n
+	case "personality":
+		if !voice.Valid(val) {
+			fatalf("unknown personality %q (want: %s)", val, strings.Join(voice.Personalities(), ", "))
+		}
+		cfg.Personality = val
+	case "voice":
+		switch val {
+		case "canned", "live", "off":
+			cfg.Voice = val
+		default:
+			fatalf("unknown voice mode %q (want: canned, live, off)", val)
+		}
 	default:
 		fatalf("unknown key %q", key)
 	}

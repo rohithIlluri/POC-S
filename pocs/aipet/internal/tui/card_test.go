@@ -4,6 +4,7 @@ import (
 	"flag"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -157,7 +158,7 @@ func TestCardViews(t *testing.T) {
 				if f.name == "cheerful" {
 					journal = fixtureJournal()
 				}
-				got, err := Card(view, f.snap, journal, defaultCardWidth)
+				got, err := Card(view, f.snap, journal, CardOpts{Width: defaultCardWidth, Voice: "off"})
 				if err != nil {
 					t.Fatalf("Card(%q, %s): %v", view, f.name, err)
 				}
@@ -171,11 +172,11 @@ func TestCardViews(t *testing.T) {
 // view whitelists to pet).
 func TestCardDefaultViewIsPet(t *testing.T) {
 	snap := hatchedCheerfulSnapshot()
-	empty, err := Card("", snap, nil, defaultCardWidth)
+	empty, err := Card("", snap, nil, CardOpts{Width: defaultCardWidth, Voice: "off"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	pet, err := Card("pet", snap, nil, defaultCardWidth)
+	pet, err := Card("pet", snap, nil, CardOpts{Width: defaultCardWidth, Voice: "off"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -188,10 +189,10 @@ func TestCardDefaultViewIsPet(t *testing.T) {
 // pet/dex/records/overview must error, never best-effort render — view is
 // user-controlled input from $ARGUMENTS.
 func TestCardUnknownViewErrors(t *testing.T) {
-	if _, err := Card("../../etc/passwd", hatchedCheerfulSnapshot(), nil, defaultCardWidth); err == nil {
+	if _, err := Card("../../etc/passwd", hatchedCheerfulSnapshot(), nil, CardOpts{Width: defaultCardWidth, Voice: "off"}); err == nil {
 		t.Fatal("expected an error for an unknown view")
 	}
-	if _, err := Card("PET", hatchedCheerfulSnapshot(), nil, defaultCardWidth); err == nil {
+	if _, err := Card("PET", hatchedCheerfulSnapshot(), nil, CardOpts{Width: defaultCardWidth, Voice: "off"}); err == nil {
 		t.Fatal("view whitelist should be case-sensitive, not fuzzy-matched")
 	}
 }
@@ -199,11 +200,62 @@ func TestCardUnknownViewErrors(t *testing.T) {
 // TestCardDefaultWidth verifies width<=0 falls back to defaultCardWidth
 // rather than producing a degenerate zero-width render.
 func TestCardDefaultWidth(t *testing.T) {
-	out, err := Card("pet", eggSnapshot(), nil, 0)
+	out, err := Card("pet", eggSnapshot(), nil, CardOpts{Voice: "off"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(out) < 20 {
 		t.Fatalf("width<=0 should fall back to a sane default, got too-short output: %q", out)
+	}
+}
+
+// TestCardVoiceFooter pins the voice-footer protocol (HOST_INTEGRATION.md
+// §10): canned mode carries a pre-written line the host only displays (the
+// zero-token default), live mode carries an improvisation directive (the
+// only mode that spends the user's tokens), off carries nothing — and the
+// footer never leaks into the data views.
+func TestCardVoiceFooter(t *testing.T) {
+	snap := hatchedCheerfulSnapshot()
+
+	canned, err := Card("pet", snap, nil, CardOpts{Personality: "snarky", Voice: "canned"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(canned, "\n---\npet says: ") {
+		t.Errorf("canned mode must append a 'pet says:' footer after ---, got:\n%s", canned)
+	}
+	again, _ := Card("pet", snap, nil, CardOpts{Personality: "snarky", Voice: "canned"})
+	if canned != again {
+		t.Error("canned voice must be deterministic for the same snapshot")
+	}
+
+	live, err := Card("pet", snap, nil, CardOpts{Personality: "nonchalant", Voice: "live"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(live, "pet persona: nonchalant") || !strings.Contains(live, "max 20 words") {
+		t.Errorf("live mode must append a capped persona directive, got:\n%s", live)
+	}
+
+	off, err := Card("pet", snap, nil, CardOpts{Voice: "off"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(off, "\n---\n") {
+		t.Errorf("off mode must not append any footer, got:\n%s", off)
+	}
+
+	for _, view := range []string{"dex", "records", "overview"} {
+		out, err := Card(view, snap, nil, CardOpts{Personality: "funny", Voice: "canned"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(out, "pet says:") {
+			t.Errorf("%s view must not carry a voice footer", view)
+		}
+	}
+
+	if out, _ := Card("pet", nil, nil, CardOpts{Voice: "canned"}); strings.Contains(out, "pet says:") {
+		t.Error("no snapshot means no pet to speak for — footer must be absent")
 	}
 }

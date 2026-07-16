@@ -20,6 +20,21 @@ type Config struct {
 	// CollectIntervalMin is how often the daemon re-reads local session logs,
 	// in minutes. Collection is cheap (no network, no model calls).
 	CollectIntervalMin int `json:"collect_interval_min"`
+
+	// Personality selects which embedded voice pack the pet speaks from
+	// (playful, funny, nonchalant, snarky, coach) — flavor only, never
+	// affects the sim. See internal/voice.
+	Personality string `json:"personality"`
+
+	// Voice controls where the pet's one spoken line in `/aipet` comes from:
+	//   "canned" (default) — a pre-written line from the embedded pack,
+	//     zero inference: the host model only displays it.
+	//   "live" — the host model improvises one short line in the configured
+	//     personality; costs a handful of the USER'S output tokens, opt-in.
+	//   "off"  — card only, no voice line at all.
+	// The card, statusline, hooks, and collection never call a model in any
+	// mode — this knob only shapes the one line spoken inside /aipet.
+	Voice string `json:"voice"`
 }
 
 // Default returns config with safe local-only defaults.
@@ -27,6 +42,8 @@ func Default() Config {
 	return Config{
 		DailyBudgetUSD:     10,
 		CollectIntervalMin: 2,
+		Personality:        "playful",
+		Voice:              "canned",
 	}
 }
 

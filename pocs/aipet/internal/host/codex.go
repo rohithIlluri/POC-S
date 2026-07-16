@@ -15,9 +15,13 @@ import (
 // card command itself.
 func codexPromptContent() string {
 	return `Run the shell command ` + "`" + aipetPath + ` card "$ARGUMENTS"` + "`" + ` (view defaults to "pet").
-Show its output verbatim in a fenced code block, then add one short line
-in the pet's voice matching its mood. If the command is missing, tell the
-user to run: go install github.com/rohithIlluri/POC-S/pocs/aipet/cmd/aipet@latest
+Its output is the pet card, optionally followed by a ` + "`---`" + ` line and a
+one-line voice footer. Strict output protocol: show everything above the
+` + "`---`" + ` verbatim in a fenced code block; if a ` + "`pet says:`" + ` footer follows,
+repeat exactly that line in italics (do not write your own); if a
+` + "`pet persona:`" + ` footer follows, improvise ONE line, max 20 words, as the
+pet. Nothing else. If the command is missing, tell the user to run:
+go install github.com/rohithIlluri/POC-S/pocs/aipet/cmd/aipet@latest
 `
 }
 
@@ -40,8 +44,18 @@ func codexPromptPath(codexDir string) string {
 // every call, same as the TUI's launch collect).
 func InstallCodex(codexDir string, m *Manifest, now time.Time, dryPrint func(string)) ([]Entry, []string, error) {
 	path := codexPromptPath(codexDir)
-	if m.HasEntry(path, "") {
+	switch commandFileState(path, codexPromptContent(), m) {
+	case cmdFileCurrent:
 		return nil, []string{"~/.codex/prompts/aipet.md: already installed"}, nil
+	case cmdFileStale:
+		if dryPrint != nil {
+			dryPrint(fmt.Sprintf("WOULD UPDATE %s:\n%s", path, codexPromptContent()))
+			return nil, []string{"~/.codex/prompts/aipet.md: would update"}, nil
+		}
+		if _, err := writeCommandFile(path, "codex", now); err != nil {
+			return nil, nil, err
+		}
+		return nil, []string{"~/.codex/prompts/aipet.md: updated"}, nil
 	}
 	if dryPrint != nil {
 		dryPrint(fmt.Sprintf("WOULD WRITE %s:\n%s", path, codexPromptContent()))

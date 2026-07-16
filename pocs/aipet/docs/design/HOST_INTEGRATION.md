@@ -332,6 +332,55 @@ section wins.**
   and moved binaries are still recognized. §4.4's file contents are
   templates in this one respect; the prose is literal.
 
+## 10. Voice & token budget (H6)
+
+**Where inference comes from — the whole map.** aipet's own code never
+calls a model (the project's founding guarantee). The ONLY inference
+anywhere in the system is the host model's handling of a `/aipet` turn —
+which runs on the user's own session and their tokens, only when they
+type it. Everything else is a pure Go render:
+
+| Surface | Model calls | Whose tokens |
+|---|---|---|
+| Stop/SessionStart hooks (`collect --quiet`) | none | none |
+| statusline | none | none |
+| card render, TUI, dex/records/overview | none | none |
+| `/aipet` turn — card display | host displays pre-rendered text | user's, minimal (display task) |
+| `/aipet` turn — the voice line | **depends on `voice` config, below** | |
+
+**The voice system.** The pet's one spoken line is configurable on two
+axes, both in `~/.aipet/config.json` (`aipet config <key> <value>`):
+
+- `personality` — which embedded phrasebook it speaks from: `playful`
+  (default), `funny`, `nonchalant`, `snarky`, `coach`. Flavor only; never
+  touches the sim.
+- `voice` — where the line comes from:
+  - **`canned` (default)** — a pre-written line from `internal/voice`'s
+    embedded packs (5 personalities × egg + 5 moods × 3 lines), picked
+    deterministically by hashing the calendar day + mood + species, so it
+    rotates daily with zero RNG and **zero generation**: the host model's
+    only job is to repeat it. Entertaining at the token cost of an echo.
+  - **`live`** — the host model improvises ONE line (hard-capped at 20
+    words by the protocol) in the configured personality. The only aipet
+    feature that spends the user's tokens on generation, and only opt-in.
+  - **`off`** — card only, no voice at all.
+
+**The transport.** The slash-command prompt is static (written at setup),
+so configuration travels through the card output itself: `aipet card`
+appends a `---` separator and a one-line footer — `pet says: <line>`
+(canned) or `pet persona: <p> — improvise ONE line (max 20 words)…`
+(live) or nothing (off). The command prompt is a strict display protocol:
+card verbatim in a fence, footer handled per its kind, nothing else
+(single exception: one plain sentence naming the fixing habit when the
+card shows worried/over-budget). No preamble, no commentary — output
+tokens are the expensive ones, so the protocol pins them.
+
+**Prompt iteration reaches installed machines**: setup now detects a
+command file whose content drifted from the current version (manifest
+says installed, bytes differ) and refreshes it in place — backed up, no
+duplicate manifest entries — so protocol improvements ship with the
+binary instead of stranding old prompts.
+
 ## 9. Acceptance checklist
 
 - [ ] Fresh machine: `go install …@latest && aipet` → wizard → `/aipet`

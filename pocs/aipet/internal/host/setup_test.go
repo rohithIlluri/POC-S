@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -480,5 +481,68 @@ func TestLegacyBareCommandsRecognized(t *testing.T) {
 	}
 	if removed := removeHookEntry(settings, "Stop"); !removed {
 		t.Error("removeHookEntry must strip the legacy bare form")
+	}
+}
+
+// TestSetupUpdatesStaleCommandFile: prompt iteration must actually reach
+// installed machines — a command file written by an older aipet (different
+// content) gets refreshed in place on the next setup run, without
+// duplicating manifest entries; a current one stays "already installed".
+func TestSetupUpdatesStaleCommandFile(t *testing.T) {
+	home := isolateHome(t)
+	mkClaudeDir(t, home)
+
+	now := time.Date(2026, 7, 1, 0, 0, 0, 0, time.UTC)
+	if _, err := Install(Options{Now: now}); err != nil {
+		t.Fatal(err)
+	}
+	cmdPath := filepath.Join(home, ".claude", "commands", "aipet.md")
+	if err := os.WriteFile(cmdPath, []byte("old prompt from a previous aipet version\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	res, err := Install(Options{Now: now.Add(time.Hour)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, n := range res.Notes {
+		if strings.Contains(n, "aipet.md: updated") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected an 'updated' note for the stale command file, got %v", res.Notes)
+	}
+	b, err := os.ReadFile(cmdPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(b) != claudeCommandContent() {
+		t.Error("stale command file was not refreshed to current content")
+	}
+
+	m, ok, err := LoadManifest()
+	if err != nil || !ok {
+		t.Fatalf("manifest missing after update: %v", err)
+	}
+	count := 0
+	for _, e := range m.Entries {
+		if e.File == cmdPath {
+			count++
+		}
+	}
+	if count != 1 {
+		t.Errorf("command-file update must not duplicate manifest entries, got %d", count)
+	}
+
+	res2, err := Install(Options{Now: now.Add(2 * time.Hour)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, n := range res2.Notes {
+		if strings.Contains(n, "aipet.md: updated") {
+			t.Errorf("a current command file must read as already installed, got %v", res2.Notes)
+		}
 	}
 }

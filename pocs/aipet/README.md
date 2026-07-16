@@ -89,6 +89,24 @@ integration, and from then on **the pet lives inside Claude Code**:
 `aipet setup --remove` reverses it completely. Everything setup touches is
 backed up first, and it never overwrites another tool's settings.
 
+### Tokens: what the pet costs you
+
+aipet's own code never calls a model — hooks, statusline, card rendering,
+and the whole game engine are pure Go over data already on disk. The only
+inference anywhere is your own Claude session handling a `/aipet` turn,
+which you type on purpose. Even the pet's spoken line defaults to
+**zero-generation**: it comes from an embedded phrasebook, rotated daily,
+and Claude just repeats it.
+
+```bash
+aipet config personality snarky    # playful (default) | funny | nonchalant | snarky | coach
+aipet config voice canned          # canned (default, zero-token) | live | off
+```
+
+`voice live` is the one opt-in that spends your tokens on the pet: Claude
+improvises a single line, hard-capped at 20 words by the display protocol.
+`voice off` drops the line entirely.
+
 Or download a binary from the [latest release](https://github.com/rohithIlluri/POC-S/releases/latest)
 (darwin/linux/windows × amd64/arm64, with SHA-256 `checksums.txt`), `chmod +x`,
 and put it on your `PATH`.

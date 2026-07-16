@@ -14,6 +14,7 @@ import (
 	"github.com/rohithIlluri/POC-S/pocs/aipet/internal/sim"
 	"github.com/rohithIlluri/POC-S/pocs/aipet/internal/species"
 	"github.com/rohithIlluri/POC-S/pocs/aipet/internal/store"
+	"github.com/rohithIlluri/POC-S/pocs/aipet/internal/voice"
 )
 
 // defaultCardWidth is safe inside a chat message: wide enough for the sprite
@@ -35,6 +36,16 @@ func forceAscii() {
 	})
 }
 
+// CardOpts shapes one card render. Personality/Voice drive the voice footer
+// (see cardVoiceFooter) — the token-budget contract of HOST_INTEGRATION.md
+// §10: the footer is how the pet stays entertaining without spending the
+// user's tokens on generation.
+type CardOpts struct {
+	Width       int    // 0 = defaultCardWidth
+	Personality string // voice pack name; unknown values fall back inside voice.Line
+	Voice       string // "canned" (embedded line), "live" (host improvises), "off"
+}
+
 // Card renders one-shot plain text for `aipet card`, the chat-facing
 // projection of the TUI's views. It deliberately does NOT call Model.View —
 // that renders host chrome (tab bar, footer, frame sizing) that has no place
@@ -45,15 +56,20 @@ func forceAscii() {
 // view is whitelisted to exactly "", "pet", "dex", "records", "overview"
 // (R2): any other value is a usage error, not a best-effort render, since
 // view flows in from `$ARGUMENTS` in a Claude Code slash command.
-func Card(view string, snap *daemon.Snapshot, journal []save.Entry, width int) (string, error) {
+func Card(view string, snap *daemon.Snapshot, journal []save.Entry, opts CardOpts) (string, error) {
 	forceAscii()
+	width := opts.Width
 	if width <= 0 {
 		width = defaultCardWidth
 	}
 
 	switch view {
 	case "", "pet":
-		return cardPet(snap, journal, width), nil
+		out := cardPet(snap, journal, width)
+		if footer := cardVoiceFooter(snap, opts); footer != "" {
+			out += "\n---\n" + footer
+		}
+		return out, nil
 	case "dex":
 		return cardDex(snap, width), nil
 	case "records":
@@ -62,6 +78,35 @@ func Card(view string, snap *daemon.Snapshot, journal []save.Entry, width int) (
 		return cardOverview(snap, width), nil
 	default:
 		return "", fmt.Errorf("unknown view %q (want: pet, dex, records, overview)", view)
+	}
+}
+
+// cardVoiceFooter is the machine-readable trailer after the card's `---`
+// separator that tells the host model what (if anything) to say as the pet.
+// The slash command's prompt is static — written once at setup — so the
+// personality/voice configuration has to travel through the card output
+// itself; this footer is that channel.
+//
+//   - canned: the line is already written (picked deterministically from the
+//     embedded phrasebook, internal/voice) — the host model just repeats it.
+//     Zero generation, which is why it's the default.
+//   - live: a one-line improvisation directive — the only aipet feature that
+//     spends the user's tokens on the pet, and only because they opted in.
+//   - off (or no pet to speak for): no footer at all.
+func cardVoiceFooter(snap *daemon.Snapshot, opts CardOpts) string {
+	if snap == nil || snap.PetError != "" {
+		return ""
+	}
+	switch opts.Voice {
+	case "live":
+		return fmt.Sprintf("pet persona: %s — improvise ONE line (max 20 words) as the pet, matching the mood above. Nothing else.", opts.Personality)
+	case "off":
+		return ""
+	default: // "canned" and anything unrecognized: the zero-token path
+		p := snap.Pet
+		day := snap.UpdatedAt.Local().Format("2006-01-02")
+		line := voice.Line(opts.Personality, p.IsEgg(), p.Mood, day, p.SpeciesID)
+		return "pet says: " + line
 	}
 }
 
