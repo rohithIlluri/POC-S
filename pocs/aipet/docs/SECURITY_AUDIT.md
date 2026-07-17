@@ -48,6 +48,14 @@ names of files that fail to parse — must be treated as attacker-influenceable.
 
 - **No network surface.** Confirmed absence of `net/http`, `net.Dial`,
   `os/exec`, and similar — the M0 teardown removed the only outbound code.
+  - *Amended (H7, 2026-07-15):* `internal/llm` is now the single, deliberate
+    exception — the opt-in `voice=api` mode calls api.anthropic.com via the
+    official Anthropic SDK using the user's own credentials. Bounded by
+    design: runs only when the user sets `aipet config voice api`, only from
+    the user-initiated card path (never hooks, statusline, or collection),
+    ≤8 calls/day with a 3s timeout, credentials never stored or logged by
+    aipet, and generated text is control-character-sanitized before any
+    terminal render. Every other surface remains zero-network.
 - **Path traversal.** No filesystem path is built from log-derived values; all
   paths derive from `os.UserHomeDir()` plus fixed constants. Dedupe keys are
   map keys and JSON values only, never paths.
