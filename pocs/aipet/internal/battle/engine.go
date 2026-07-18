@@ -106,9 +106,11 @@ func Fight(a, b Card, dateUTC string) (Result, error) {
 
 	// §3.1 canonical ordering: lexicographic sort of the two DNA hash
 	// strings decides pet[0]/pet[1] for ALL bookkeeping, regardless of who
-	// loaded which card — this is what makes the replay symmetric.
+	// loaded which card — this is what makes the replay symmetric. Hash
+	// ties (same-save clones, hand-built cards) fall back to the full card
+	// identity so the ordering is still total and load-order independent.
 	first, second := a, b
-	if strings.Compare(a.DNAHash, b.DNAHash) > 0 {
+	if canonicalKey(a) > canonicalKey(b) {
 		first, second = b, a
 	}
 	seed := sha256.Sum256([]byte(first.DNAHash + second.DNAHash + dateUTC))
@@ -192,6 +194,13 @@ func Fight(a, b Card, dateUTC string) (Result, error) {
 			return res, nil
 		}
 	}
+}
+
+// canonicalKey is the total order Fight sorts cards by: DNA hash first
+// (the §3.1 rule), then the remaining card fields as tiebreaks.
+func canonicalKey(c Card) string {
+	return c.DNAHash + "|" + c.SpeciesID + "|" + fmt.Sprintf("%03d", c.Level) + "|" +
+		strings.Join(c.Moves, ",") + "|" + c.Nickname
 }
 
 // applyStatus sets a status with its full duration, marking it fresh so
