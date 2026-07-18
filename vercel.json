@@ -1,0 +1,6 @@
+{
+  "$comment": "This monorepo has nothing deployable at its root. The 'poc-s' Vercel project's Git integration auto-deploys every commit and fails every time, red-flagging all PRs with a spurious failing check. This disables Git-triggered deployments repo-wide; the real sites (codelings, codelings-build-sheet) are deployed via the Vercel CLI and are unaffected.",
+  "git": {
+    "deploymentEnabled": false
+  }
+}
