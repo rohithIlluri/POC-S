@@ -77,6 +77,10 @@ func main() {
 		runStatusLine(cfg)
 	case "setup":
 		runSetup(os.Args[2:])
+	case "trade":
+		runTrade(os.Args[2:])
+	case "battle":
+		runBattle(os.Args[2:])
 	case "version", "-v", "--version":
 		fmt.Printf("aipet %s\n", version.Version)
 	case "help", "-h", "--help":
@@ -618,6 +622,8 @@ usage:
   /aipet [view]      inside Claude Code or Codex — pet | dex | records | overview
   aipet tui          the full interactive app
   aipet setup        install/inspect/remove the host integration
+  aipet trade        export/import .codeling files · barn
+  aipet battle       replay a deterministic battle from .codeling cards
                        --claude / --codex   restrict to one host
                        --print              preview writes without touching disk
                        --remove             undo a previous setup
