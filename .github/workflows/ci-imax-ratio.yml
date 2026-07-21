@@ -1,0 +1,32 @@
+name: imax-ratio CI
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - "pocs/imax-ratio/**"
+      - ".github/workflows/ci-imax-ratio.yml"
+  pull_request:
+    paths:
+      - "pocs/imax-ratio/**"
+      - ".github/workflows/ci-imax-ratio.yml"
+
+defaults:
+  run:
+    working-directory: pocs/imax-ratio
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node-version: [20.x, 22.x, 24.x]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ matrix.node-version }}
+      - name: syntax-check all modules
+        run: |
+          for f in *.js test/*.js; do node --check "$f"; done
+      - run: npm test

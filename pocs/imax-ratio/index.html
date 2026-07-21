@@ -1,0 +1,197 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>IMAX Frame — aspect-ratio visualizer</title>
+<style>
+  :root {
+    --bg: #08090c;
+    --ink: #e8eaf0;
+    --dim: #8b90a0;
+    --accent: #35a7ff;
+    --amber: #e8b04b;
+    --chip: #14161d;
+    --chip-edge: #262a36;
+  }
+  * { box-sizing: border-box; margin: 0; }
+  html, body { height: 100%; }
+  body {
+    background: radial-gradient(120% 90% at 50% 0%, #0d0f15 0%, var(--bg) 60%);
+    color: var(--ink);
+    font: 15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    height: 100dvh;
+  }
+
+  header {
+    display: flex;
+    align-items: baseline;
+    gap: 0.75rem;
+    padding: 0.9rem 1.4rem 0.4rem;
+    flex-wrap: wrap;
+  }
+  header h1 {
+    font-size: 1.05rem;
+    letter-spacing: 0.28em;
+    text-transform: uppercase;
+    font-weight: 700;
+  }
+  header h1 span { color: var(--accent); }
+  header p { color: var(--dim); font-size: 0.85rem; }
+
+  /* ---------- stage ---------- */
+  #stage {
+    flex: 1;
+    min-height: 0;
+    display: grid;
+    place-items: center;
+    padding: 0.8rem 2rem;
+    position: relative;
+  }
+  #frame {
+    position: relative;
+    overflow: hidden;
+    background: #000;
+    border-radius: 4px;
+    box-shadow:
+      0 0 0 1px #1b1e27,
+      0 0 60px rgba(53, 167, 255, 0.10),
+      0 30px 80px rgba(0, 0, 0, 0.65);
+    transition: width 0.7s cubic-bezier(0.22, 1, 0.3, 1),
+                height 0.7s cubic-bezier(0.22, 1, 0.3, 1);
+  }
+  #frame > canvas, #frame > img, #frame > video {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+  }
+
+  #guides { position: absolute; inset: 0; pointer-events: none; opacity: 0; transition: opacity 0.3s; }
+  #guides.on { opacity: 1; }
+  .guide {
+    position: absolute;
+    left: 0; right: 0;
+    border-top: 1px dashed rgba(255, 255, 255, 0.55);
+    font-size: 0.62rem;
+    letter-spacing: 0.08em;
+    color: rgba(255, 255, 255, 0.85);
+    text-shadow: 0 1px 3px rgba(0,0,0,0.9);
+  }
+  .guide em { font-style: normal; padding: 1px 6px; background: rgba(0,0,0,0.55); border-radius: 0 0 4px 0; display: inline-block; }
+  .guide.bottom { border-top: 0; border-bottom: 1px dashed rgba(255,255,255,0.55); }
+  .guide.bottom em { position: absolute; bottom: 1px; left: 0; border-radius: 0 4px 0 0; }
+
+  #flash {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.45s;
+    text-align: center;
+    text-shadow: 0 2px 18px rgba(0, 0, 0, 0.9);
+  }
+  #flash.show { opacity: 1; }
+  #flash strong { font-size: clamp(1.6rem, 4.5vw, 3.2rem); letter-spacing: 0.06em; display: block; }
+  #flash small { color: #cfd6e4; font-size: clamp(0.75rem, 1.6vw, 1rem); letter-spacing: 0.14em; text-transform: uppercase; }
+
+  /* ---------- controls ---------- */
+  #controls {
+    padding: 0.5rem 1.4rem 1rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.55rem;
+  }
+  .row { display: flex; align-items: center; gap: 0.45rem; flex-wrap: wrap; }
+  .row .cap {
+    font-size: 0.68rem;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--dim);
+    min-width: 4.4rem;
+  }
+  button.chip {
+    background: var(--chip);
+    color: var(--ink);
+    border: 1px solid var(--chip-edge);
+    border-radius: 999px;
+    padding: 0.32rem 0.8rem;
+    font: inherit;
+    font-size: 0.82rem;
+    cursor: pointer;
+    transition: border-color 0.15s, background 0.15s, transform 0.1s;
+    white-space: nowrap;
+  }
+  button.chip:hover { border-color: var(--accent); }
+  button.chip:active { transform: scale(0.97); }
+  button.chip.active {
+    background: color-mix(in srgb, var(--accent) 18%, var(--chip));
+    border-color: var(--accent);
+  }
+  button.chip.film.active { background: color-mix(in srgb, var(--amber) 16%, var(--chip)); border-color: var(--amber); }
+  button.chip b { font-weight: 600; }
+  button.chip small { color: var(--dim); margin-left: 0.35rem; }
+
+  #stats {
+    display: flex;
+    gap: 1.4rem;
+    flex-wrap: wrap;
+    color: var(--dim);
+    font-size: 0.8rem;
+    padding-top: 0.15rem;
+  }
+  #stats b { color: var(--ink); font-variant-numeric: tabular-nums; }
+  #stats .gain b { color: var(--amber); }
+
+  input[type="file"] { display: none; }
+
+  @media (max-width: 640px) {
+    #stage { padding: 0.4rem 0.8rem; }
+    .row .cap { min-width: 100%; }
+  }
+</style>
+</head>
+<body>
+  <header>
+    <h1><span>IMAX</span> Frame</h1>
+    <p>How much movie your screen is hiding — the ratio behind the Odyssey hype</p>
+  </header>
+
+  <div id="stage">
+    <div id="frame">
+      <canvas id="scene"></canvas>
+      <div id="guides"></div>
+      <div id="flash"></div>
+    </div>
+  </div>
+
+  <div id="controls">
+    <div class="row" id="formatRow"><span class="cap">Format</span></div>
+    <div class="row" id="filmRow"><span class="cap">Films</span></div>
+    <div class="row">
+      <span class="cap">View</span>
+      <button class="chip" id="modeBtn"></button>
+      <button class="chip" id="guidesBtn">Crop guides</button>
+      <button class="chip" id="shiftBtn">▶ Ratio shift</button>
+      <button class="chip" id="fsBtn">⛶ Fullscreen</button>
+      <button class="chip" id="mediaBtn">Use your image / video</button>
+      <input type="file" id="mediaInput" accept="image/*,video/*" />
+    </div>
+    <div id="stats">
+      <span>Showing <b id="statFormat"></b></span>
+      <span class="gain"><b id="statGain"></b> picture vs 2.39:1 scope</span>
+      <span>Fills <b id="statCover"></b> of your display</span>
+      <span id="statHint">Keys: 1–7 formats · space shift · g guides · m mode · f fullscreen</span>
+    </div>
+  </div>
+
+  <script type="module" src="./app.js"></script>
+</body>
+</html>

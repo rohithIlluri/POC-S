@@ -1,0 +1,12 @@
+{
+  "name": "imax-ratio",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Immersive IMAX aspect-ratio visualizer — watch the frame open from scope to 1.43:1",
+  "type": "module",
+  "scripts": {
+    "start": "node serve.js",
+    "test": "node --test"
+  },
+  "license": "MIT"
+}

@@ -8,6 +8,7 @@ A collection of proof-of-concept projects. Each POC is self-contained in its own
 |---|---|---|
 | [`pocs/ccr`](pocs/ccr) | Multi coding tools router — classifies a coding prompt by task type/complexity and runs it with Claude Code or Codex on a matched model | ✅ Active |
 | [`pocs/aipet`](pocs/aipet) | Local AI-usage companion — a terminal "pet" that reads Claude Code / Codex session logs on-device to coach token spend, rank a local leaderboard, and seed the *Codelings* game. Fully local, zero network surface | ✅ Active (v1.0.0) |
+| [`pocs/imax-ratio`](pocs/imax-ratio) | IMAX Frame — immersive aspect-ratio visualizer where a simulated cinema screen opens up from 2.39:1 scope to 1.43:1 IMAX 70mm film, with film-preset ratio shifts (*The Odyssey*, *Oppenheimer*, *Sinners*…), crop guides, and your-own-footage previews | ✅ Active |
 
 ## Conventions
 
