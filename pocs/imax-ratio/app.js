@@ -5,6 +5,8 @@ import {
   moreVsBaseline,
   frameSize,
   cropLines,
+  coverSize,
+  parseYouTubeId,
 } from "./ratios.js";
 
 const $ = (id) => document.getElementById(id);
@@ -20,7 +22,10 @@ const state = {
   guides: false,
   film: null,
   shiftTimer: null,
-  media: null, // user <img>/<video> replacing the painted scene
+  media: null, // user <img>/<video>/YouTube <iframe> replacing the painted scene
+  mediaKind: null, // "file" | "yt"
+  sourceRatio: 16 / 9, // ratio of the real picture inside a YouTube embed
+  muted: true,
 };
 
 /* ---------- painted demo scene (no assets needed) ---------- */
@@ -156,7 +161,18 @@ function layout(animate = true) {
     void frame.offsetWidth; // flush so the next change animates again
     frame.style.transition = "";
   }
+  layoutEmbed(width, height);
   renderGuides();
+}
+
+// A YouTube iframe can't be object-fit-cropped, so it's oversized to cover
+// the frame; the frame's overflow:hidden clips the rest (including any
+// letterbox bars baked into the source when sourceRatio says so).
+function layoutEmbed(frameW, frameH) {
+  if (state.mediaKind !== "yt" || !state.media) return;
+  const { width, height } = coverSize(frameW, frameH, state.sourceRatio, 16 / 9);
+  state.media.style.width = `${width}px`;
+  state.media.style.height = `${height}px`;
 }
 
 function renderGuides() {
@@ -283,13 +299,18 @@ function buildChips() {
   }
 }
 
-/* ---------- user media ---------- */
-function useMedia(file) {
+/* ---------- user media + YouTube ---------- */
+function clearMedia() {
   if (state.media) {
     state.media.remove();
     if (state.media.src?.startsWith("blob:")) URL.revokeObjectURL(state.media.src);
     state.media = null;
+    state.mediaKind = null;
   }
+}
+
+function useMedia(file) {
+  clearMedia();
   const url = URL.createObjectURL(file);
   let el;
   if (file.type.startsWith("video/")) {
@@ -305,9 +326,47 @@ function useMedia(file) {
     el.alt = "";
   }
   state.media = el;
+  state.mediaKind = "file";
   frame.insertBefore(el, guides);
   scene.style.display = "none";
   showFlash("Your footage", "cropped live to each format");
+}
+
+function useYouTube(input) {
+  const id = parseYouTubeId(input);
+  if (!id) {
+    showFlash("Hmm", "couldn't read that YouTube link");
+    return;
+  }
+  clearMedia();
+  const el = document.createElement("iframe");
+  el.src =
+    `https://www.youtube-nocookie.com/embed/${id}` +
+    `?autoplay=1&mute=1&loop=1&playlist=${id}` +
+    `&controls=0&rel=0&playsinline=1&enablejsapi=1&origin=${location.origin}`;
+  el.allow = "autoplay; encrypted-media";
+  el.title = "YouTube video cropped to the selected format";
+  state.media = el;
+  state.mediaKind = "yt";
+  state.muted = true;
+  syncSoundBtn();
+  frame.insertBefore(el, guides);
+  scene.style.display = "none";
+  layout(false);
+  showFlash("Rolling", "now pick a format — or hit Watch it in IMAX");
+}
+
+function ytCommand(func, args = "") {
+  if (state.mediaKind !== "yt" || !state.media?.contentWindow) return;
+  state.media.contentWindow.postMessage(
+    JSON.stringify({ event: "command", func, args }),
+    "*"
+  );
+}
+
+function syncSoundBtn() {
+  $("soundBtn").textContent = state.muted ? "🔇 Muted" : "🔊 Sound on";
+  $("soundBtn").classList.toggle("active", !state.muted);
 }
 
 /* ---------- wiring ---------- */
@@ -338,8 +397,33 @@ $("mediaInput").addEventListener("change", (e) => {
   if (file) useMedia(file);
 });
 
+$("ytBtn").addEventListener("click", () => useYouTube($("ytUrl").value));
+$("ytUrl").addEventListener("keydown", (e) => {
+  if (e.key === "Enter") useYouTube($("ytUrl").value);
+});
+$("srcRatio").addEventListener("change", (e) => {
+  state.sourceRatio = Number(e.target.value);
+  layout(false);
+});
+$("soundBtn").addEventListener("click", () => {
+  if (state.mediaKind === "yt") {
+    state.muted = !state.muted;
+    ytCommand(state.muted ? "mute" : "unMute");
+  } else if (state.media instanceof HTMLVideoElement) {
+    state.muted = !state.muted;
+    state.media.muted = state.muted;
+  }
+  syncSoundBtn();
+});
+$("imaxBtn").addEventListener("click", () => {
+  setRatio(1.43, { announce: false });
+  document.documentElement.requestFullscreen?.().catch(() => {});
+  showFlash("1.43:1 IMAX", "this is the whole frame");
+});
+
 document.addEventListener("keydown", (e) => {
-  if (e.target instanceof HTMLInputElement) return;
+  if (e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement)
+    return;
   const n = Number(e.key);
   if (n >= 1 && n <= FORMATS.length) return setRatio(FORMATS[n - 1].ratio);
   if (e.key === "f") return $("fsBtn").click();

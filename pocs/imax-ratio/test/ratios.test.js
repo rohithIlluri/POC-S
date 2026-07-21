@@ -9,6 +9,8 @@ import {
   moreVsBaseline,
   frameSize,
   cropLines,
+  coverSize,
+  parseYouTubeId,
 } from "../ratios.js";
 
 const close = (a, b, eps = 1e-9) =>
@@ -83,6 +85,66 @@ test("cropLines marks every strictly wider format with correct bar fraction", ()
   for (const l of lines) {
     close(2 * l.frac + 1.43 / l.ratio, 1);
   }
+});
+
+test("coverSize: native 16:9 media covers every frame shape", () => {
+  const v = 16 / 9;
+  // frame taller than the media (1.43 IMAX): height rules, width overflows
+  const tall = coverSize(1000, 700, v);
+  close(tall.height, 700);
+  close(tall.width, 700 * v);
+  assert.ok(tall.width >= 1000);
+  // frame wider than the media (2.39 scope): width rules, height overflows
+  const wide = coverSize(1000, 418, v);
+  close(wide.width, 1000);
+  close(wide.height, 1000 / v);
+  assert.ok(wide.height >= 418);
+  assert.throws(() => coverSize(0, 1, v), RangeError);
+});
+
+test("coverSize: letterboxed source oversizes so baked-in bars clip away", () => {
+  const v = 16 / 9;
+  // 2.39 picture inside a 16:9 embed, shown in a 2.39 frame:
+  // the picture band exactly covers the frame, bars land outside it
+  const fw = 956;
+  const fh = fw / 2.39;
+  const { width, height } = coverSize(fw, fh, 2.39, v);
+  close(width, fw);
+  close(height, fw / v);
+  const pictureH = width / 2.39;
+  close(pictureH, fh); // real picture matches the frame exactly
+  assert.ok(height > fh); // iframe (with bars) sticks out and gets clipped
+  // same source in a 1.43 frame: the picture, not the iframe, must cover it
+  const imax = coverSize(1000, 1000 / 1.43, 2.39, v);
+  assert.ok(imax.width / 2.39 >= 1000 / 1.43 - 1e-9);
+});
+
+test("parseYouTubeId handles every common URL shape and rejects junk", () => {
+  const id = "dQw4w9WgXcQ";
+  const good = [
+    id,
+    `https://www.youtube.com/watch?v=${id}`,
+    `https://youtube.com/watch?v=${id}&t=42s`,
+    `https://m.youtube.com/watch?v=${id}`,
+    `https://youtu.be/${id}`,
+    `https://youtu.be/${id}?si=abc`,
+    `https://www.youtube.com/shorts/${id}`,
+    `https://www.youtube.com/embed/${id}`,
+    `https://www.youtube-nocookie.com/embed/${id}`,
+    `https://www.youtube.com/live/${id}?feature=share`,
+    `  https://youtu.be/${id}  `,
+  ];
+  for (const url of good) assert.equal(parseYouTubeId(url), id, url);
+  const bad = [
+    "",
+    null,
+    "not a url",
+    "https://example.com/watch?v=dQw4w9WgXcQ",
+    "https://www.youtube.com/watch?v=tooshort",
+    "https://www.youtube.com/feed/subscriptions",
+    "https://vimeo.com/12345678",
+  ];
+  for (const url of bad) assert.equal(parseYouTubeId(url), null, String(url));
 });
 
 test("FILMS reference sane ratios and never shrink in IMAX", () => {

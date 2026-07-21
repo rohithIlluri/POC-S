@@ -71,6 +71,16 @@
     object-fit: cover;
     display: block;
   }
+  #frame > iframe {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    border: 0;
+    pointer-events: none; /* the frame is the screen, not a player UI */
+    transition: width 0.7s cubic-bezier(0.22, 1, 0.3, 1),
+                height 0.7s cubic-bezier(0.22, 1, 0.3, 1);
+  }
 
   #guides { position: absolute; inset: 0; pointer-events: none; opacity: 0; transition: opacity 0.3s; }
   #guides.on { opacity: 1; }
@@ -152,6 +162,36 @@
 
   input[type="file"] { display: none; }
 
+  #ytUrl {
+    background: var(--chip);
+    color: var(--ink);
+    border: 1px solid var(--chip-edge);
+    border-radius: 999px;
+    padding: 0.32rem 0.9rem;
+    font: inherit;
+    font-size: 0.82rem;
+    flex: 1;
+    min-width: 14rem;
+    max-width: 30rem;
+  }
+  #ytUrl:focus { outline: none; border-color: var(--accent); }
+  #ytUrl::placeholder { color: var(--dim); }
+  select#srcRatio {
+    background: var(--chip);
+    color: var(--ink);
+    border: 1px solid var(--chip-edge);
+    border-radius: 999px;
+    padding: 0.32rem 0.7rem;
+    font: inherit;
+    font-size: 0.82rem;
+    cursor: pointer;
+  }
+  button.chip.cta {
+    background: color-mix(in srgb, var(--accent) 26%, var(--chip));
+    border-color: var(--accent);
+    font-weight: 600;
+  }
+
   @media (max-width: 640px) {
     #stage { padding: 0.4rem 0.8rem; }
     .row .cap { min-width: 100%; }
@@ -161,7 +201,7 @@
 <body>
   <header>
     <h1><span>IMAX</span> Frame</h1>
-    <p>How much movie your screen is hiding — the ratio behind the Odyssey hype</p>
+    <p>Paste a trailer, hit Watch it in IMAX — see what your tab is hiding</p>
   </header>
 
   <div id="stage">
@@ -173,6 +213,21 @@
   </div>
 
   <div id="controls">
+    <div class="row">
+      <span class="cap">Watch</span>
+      <input id="ytUrl" type="url" placeholder="Paste a YouTube link (trailers work best)…" />
+      <button class="chip" id="ytBtn">Load</button>
+      <select id="srcRatio" title="Ratio of the actual picture in the video — pick letterboxed to trim baked-in black bars">
+        <option value="1.7777777777777777">Source: 16:9 native</option>
+        <option value="1.85">Source: 1.85 letterboxed</option>
+        <option value="1.9">Source: 1.90 letterboxed</option>
+        <option value="2.2">Source: 2.20 letterboxed</option>
+        <option value="2.39">Source: 2.39 letterboxed</option>
+        <option value="2.76">Source: 2.76 letterboxed</option>
+      </select>
+      <button class="chip" id="soundBtn">🔇 Muted</button>
+      <button class="chip cta" id="imaxBtn">▶ Watch it in IMAX</button>
+    </div>
     <div class="row" id="formatRow"><span class="cap">Format</span></div>
     <div class="row" id="filmRow"><span class="cap">Films</span></div>
     <div class="row">

@@ -160,6 +160,54 @@ export function frameSize(stageW, stageH, ratio, mode = "cinema", tallest = 1.43
 }
 
 /**
+ * Size an embedded media element (e.g. a 16:9 YouTube iframe) so the actual
+ * picture inside it covers the frame — the manual version of
+ * `object-fit: cover` for media we can't crop directly.
+ *
+ * `pictureRatio` is the real picture's ratio; when it differs from
+ * `mediaRatio` (the element's own ratio) the source has baked-in letterbox or
+ * pillarbox bars, and the element is oversized so those bars fall outside the
+ * frame and get clipped.
+ */
+export function coverSize(frameW, frameH, pictureRatio, mediaRatio = pictureRatio) {
+  if (frameW <= 0 || frameH <= 0 || pictureRatio <= 0 || mediaRatio <= 0) {
+    throw new RangeError("dimensions and ratios must be positive");
+  }
+  const pictureW = Math.max(frameW, frameH * pictureRatio);
+  const width =
+    pictureRatio >= mediaRatio ? pictureW : (pictureW / pictureRatio) * mediaRatio;
+  return { width, height: width / mediaRatio };
+}
+
+/**
+ * Extract the 11-character video id from a YouTube URL (watch, youtu.be,
+ * shorts, embed, live) or from a bare id. Returns null when unrecognized.
+ */
+export function parseYouTubeId(input) {
+  const s = String(input ?? "").trim();
+  const ID = /^[\w-]{11}$/;
+  if (ID.test(s)) return s;
+  let url;
+  try {
+    url = new URL(s);
+  } catch {
+    return null;
+  }
+  const host = url.hostname.replace(/^(www|m|music)\./, "");
+  if (host === "youtu.be") {
+    const id = url.pathname.slice(1).split("/")[0];
+    return ID.test(id) ? id : null;
+  }
+  if (host === "youtube.com" || host === "youtube-nocookie.com") {
+    const v = url.searchParams.get("v");
+    if (v && ID.test(v)) return v;
+    const m = url.pathname.match(/^\/(?:embed|shorts|live|v)\/([\w-]{11})(?:[/?]|$)/);
+    return m ? m[1] : null;
+  }
+  return null;
+}
+
+/**
  * Where wider formats' crop lines fall inside the current frame (same width).
  * Returns one entry per strictly-wider format: `frac` is the distance of the
  * top/bottom crop line from each frame edge, as a fraction of frame height.
