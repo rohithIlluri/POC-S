@@ -17,22 +17,22 @@ No dependencies, no build step. Any static server works too (`python3 -m http.se
 
 ## What you can do
 
-- **Watch YouTube in IMAX** — paste any YouTube link (trailers work best), hit **Load**, then **▶ Watch it in IMAX**: the video plays cropped live to the selected format, fullscreen, right in your laptop tab. Most trailers bake their letterbox bars into the 16:9 upload; the **Source** selector (16:9 native / 1.85 / 1.90 / 2.20 / 2.39 / 2.76 letterboxed) tells the app the real picture ratio so it oversizes the embed and clips the baked-in bars away. Sound is muted for autoplay; toggle it with the sound chip.
-- **Format chips / keys 1–7** — snap between 1.43:1 IMAX film, 16:9, 1.85 flat, 1.90 IMAX digital, 2.20 70mm, 2.39 scope, and 2.76 Ultra Panavision. In the default *cinema wall* mode the width stays fixed and the screen grows vertically, exactly like the viral side-by-side clips.
-- **Film presets** — *The Odyssey*, *Oppenheimer*, *Sinners*, *Interstellar*, *The Dark Knight*, *Dune: Part Two*. Selecting one plays its signature **ratio shift**: the frame alternates between the film's base ratio and its IMAX ratio, mimicking scene transitions (`space` toggles the shift loop).
-- **Crop guides** (`g`) — dashed overlays showing where every wider format would slice the current frame, i.e. what scope viewers never see.
-- **View mode** (`m`) — *cinema wall* (fixed width, screen opens up) vs *TV fit* (contain fit with letterboxing, like your display at home).
-- **Your own footage** — load any image or video; it's cropped live to each format with `object-fit: cover`, so you can preview your own shots in IMAX framing.
-- **Fullscreen** (`f`) + live stats: current format, **% more picture vs scope** at equal width, and **% of your actual display** each format fills.
+The interface is deliberately plain-language — no aspect-ratio numbers or film-format jargon on screen.
 
-The built-in demo scene is painted procedurally on a canvas at 1.43:1 (stars up top, sea and rocks below — the bands only IMAX keeps), so the POC ships with zero binary assets.
+- **Paste a trailer, hit Watch it in IMAX** — drop in a YouTube link, hit **Play**, then the big blue **Watch it in IMAX** button: the trailer fills a full IMAX-shaped screen, fullscreen, right in your tab. Sound starts off (so autoplay works); toggle it with **Sound on/off**.
+- **Screen size** — four friendly choices: **TV & laptop**, **Widescreen**, **Cinema**, **IMAX**. The screen stays a fixed width and grows taller as you go up, so IMAX visibly opens up the picture — with a plain caption like *"On IMAX you see about 67% more picture than at a normal movie theater."*
+- **Trim black bars** — most trailers are uploaded as 16:9 with the film letterboxed inside; this (on by default) pushes those baked-in bars off-screen so the picture actually fills the frame. Turn it off to see the raw upload.
+- **Famous IMAX films** — *The Odyssey*, *Oppenheimer*, *Sinners*, *Interstellar*, *The Dark Knight*, *Dune: Part Two*. Tap one and the screen replays that film's real IMAX moments, opening up for the IMAX scenes and settling back for the rest.
+- **Use your own video** — load any local image or video; it's cropped to each screen size so you can frame your own footage in IMAX.
+
+Until a video is loaded, the screen shows a demo scene painted procedurally on a canvas (stars up top, sea and rocks below — the parts only the taller IMAX frame keeps), so the app ships with zero binary assets.
 
 ## Layout of the code
 
 | File | Role |
 |---|---|
-| `ratios.js` | Pure logic: format/film data, letterbox coverage, equal-width area gain, frame sizing for both view modes, crop-line math, YouTube URL parsing, embed cover-crop sizing. No DOM. |
-| `app.js` | UI wiring, canvas demo scene, ratio-shift player, media loading, YouTube embed player. |
+| `ratios.js` | Pure logic: format/film data, equal-width area gain, frame sizing, YouTube URL parsing, embed cover-crop sizing. No DOM. |
+| `app.js` | UI wiring (friendly names), canvas demo scene, film-moment player, local media + YouTube embed player. |
 | `index.html` | Markup + styles. |
 | `serve.js` | 40-line static server for `npm start`. |
 | `test/ratios.test.js` | `node:test` suite over everything in `ratios.js`. |
