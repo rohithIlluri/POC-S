@@ -11,6 +11,14 @@ import {
   cropLines,
   coverSize,
   parseYouTubeId,
+  SCREENS,
+  screenByKey,
+  nearestScreen,
+  cropBandFraction,
+  countDarkRows,
+  pictureRatioFromBars,
+  parseShareParams,
+  buildShareUrl,
 } from "../ratios.js";
 
 const close = (a, b, eps = 1e-9) =>
@@ -145,6 +153,77 @@ test("parseYouTubeId handles every common URL shape and rejects junk", () => {
     "https://vimeo.com/12345678",
   ];
   for (const url of bad) assert.equal(parseYouTubeId(url), null, String(url));
+});
+
+test("SCREENS are the four friendly choices, jargon-free, IMAX the tallest", () => {
+  assert.deepEqual(
+    SCREENS.map((s) => s.name),
+    ["TV & laptop", "Widescreen", "Cinema", "IMAX"]
+  );
+  const imax = screenByKey("imax");
+  assert.equal(imax.hero, true);
+  for (const s of SCREENS) {
+    assert.ok(s.ratio >= imax.ratio, `${s.key} is no taller than IMAX`);
+    assert.doesNotMatch(s.name, /\d\.\d|:1|scope|anamorphic|mm|letterbox/i);
+  }
+  assert.equal(screenByKey("nope"), null);
+});
+
+test("nearestScreen maps real film shapes onto friendly choices", () => {
+  assert.equal(nearestScreen(1.43).key, "imax");
+  assert.equal(nearestScreen(1.9).key, "wide"); // 1.90 is closer to 1.85 than 2.39
+  assert.equal(nearestScreen(2.2).key, "cinema");
+  assert.equal(nearestScreen(2.76).key, "cinema");
+  assert.equal(nearestScreen(16 / 9).key, "tv");
+  assert.throws(() => nearestScreen(0), RangeError);
+});
+
+test("cropBandFraction: what a normal cinema slices off an IMAX frame", () => {
+  close(cropBandFraction(1.43), (1 - 1.43 / 2.39) / 2);
+  assert.ok(cropBandFraction(1.43) > 0.2); // over a fifth off each edge
+  assert.equal(cropBandFraction(2.39), 0); // same shape, nothing lost
+  assert.equal(cropBandFraction(2.76), 0); // already wider than cinema
+  assert.throws(() => cropBandFraction(-1), RangeError);
+});
+
+test("countDarkRows finds letterbox bars but not dark scenes", () => {
+  const bar = (n) => Array(n).fill(2);
+  const picture = (n) => Array(n).fill(120);
+  assert.equal(countDarkRows([...bar(30), ...picture(70)]), 30);
+  assert.equal(countDarkRows(picture(100)), 0); // bright frame, no bars
+  // a fully dark frame must not be read as one giant bar
+  assert.equal(countDarkRows(bar(100)), 40);
+  // a dim-but-not-black row ends the bar
+  assert.equal(countDarkRows([...bar(10), 40, ...picture(50)]), 10);
+  assert.throws(() => countDarkRows("nope"), TypeError);
+});
+
+test("pictureRatioFromBars recovers the real shape inside a 16:9 frame", () => {
+  // 1920x1080 with 2.39 letterboxing → 134px bars top and bottom
+  const bars = Math.round((1080 - 1920 / 2.39) / 2);
+  close(pictureRatioFromBars(1920, 1080, bars, bars), 1920 / (1080 - 2 * bars), 0.01);
+  // no bars → unchanged
+  close(pictureRatioFromBars(1920, 1080, 0, 0), 16 / 9);
+  // implausible bars are ignored rather than producing a freak ratio
+  close(pictureRatioFromBars(1920, 1080, 500, 500), 16 / 9);
+  assert.throws(() => pictureRatioFromBars(0, 1080, 0, 0), RangeError);
+});
+
+test("share links round-trip the video and screen", () => {
+  const id = "dQw4w9WgXcQ";
+  const url = buildShareUrl("https://imax-frame.vercel.app/?stale=1#x", {
+    video: id,
+    screenKey: "imax",
+  });
+  assert.equal(url, "https://imax-frame.vercel.app/?v=dQw4w9WgXcQ&s=imax");
+  const back = parseShareParams(new URL(url).search);
+  assert.equal(back.video, id);
+  assert.equal(back.screen.key, "imax");
+  // full URLs and junk in ?v= are handled the same way as the paste box
+  assert.equal(parseShareParams(`?v=https://youtu.be/${id}`).video, id);
+  assert.deepEqual(parseShareParams(""), { video: null, screen: null });
+  assert.deepEqual(parseShareParams("?v=junk&s=nope"), { video: null, screen: null });
+  assert.equal(buildShareUrl("https://x.test/"), "https://x.test/");
 });
 
 test("FILMS reference sane ratios and never shrink in IMAX", () => {

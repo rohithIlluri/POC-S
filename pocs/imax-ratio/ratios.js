@@ -112,6 +112,29 @@ export const FILMS = [
 /** Baseline for "how much more picture" comparisons: anamorphic scope. */
 export const BASELINE_RATIO = 2.39;
 
+/**
+ * The four screen choices the app actually shows people, in plain language.
+ * Deliberately free of ratio numbers and format jargon — `ratio` is internal.
+ */
+export const SCREENS = [
+  { key: "tv", name: "TV & laptop", ratio: 16 / 9 },
+  { key: "wide", name: "Widescreen", ratio: 1.85 },
+  { key: "cinema", name: "Cinema", ratio: BASELINE_RATIO },
+  { key: "imax", name: "IMAX", ratio: 1.43, hero: true },
+];
+
+export function screenByKey(key) {
+  return SCREENS.find((s) => s.key === key) ?? null;
+}
+
+/** Nearest friendly screen to an arbitrary frame shape. */
+export function nearestScreen(ratio) {
+  if (!(ratio > 0)) throw new RangeError("ratio must be positive");
+  return SCREENS.reduce((best, s) =>
+    Math.abs(s.ratio - ratio) < Math.abs(best.ratio - ratio) ? s : best
+  );
+}
+
 export function formatById(id) {
   const f = FORMATS.find((f) => f.id === id);
   if (!f) throw new Error(`unknown format: ${id}`);
@@ -205,6 +228,64 @@ export function parseYouTubeId(input) {
     return m ? m[1] : null;
   }
   return null;
+}
+
+/**
+ * Fraction of the current frame's height that a wider screen slices off each
+ * edge — i.e. how much picture a normal cinema loses versus what's on screen
+ * now. Zero when the target is the same shape or taller.
+ */
+export function cropBandFraction(currentRatio, targetRatio = BASELINE_RATIO) {
+  if (currentRatio <= 0 || targetRatio <= 0) {
+    throw new RangeError("ratios must be positive");
+  }
+  if (targetRatio <= currentRatio) return 0;
+  return (1 - currentRatio / targetRatio) / 2;
+}
+
+/**
+ * How many rows of a frame are letterbox bars, given each row's average
+ * brightness (0–255) from one edge inward. Stops at the first row brighter
+ * than `threshold`, and refuses to call more than 40% of the frame a bar so a
+ * genuinely dark shot is never mistaken for letterboxing.
+ */
+export function countDarkRows(rowLuma, threshold = 12) {
+  if (!Array.isArray(rowLuma)) throw new TypeError("rowLuma must be an array");
+  const cap = Math.floor(rowLuma.length * 0.4);
+  let n = 0;
+  while (n < rowLuma.length && rowLuma[n] <= threshold) n++;
+  return Math.min(n, cap);
+}
+
+/**
+ * Real picture ratio of a video that has black bars baked into its frame.
+ * `topRows`/`bottomRows` are letterbox thicknesses in pixels; the remaining
+ * band is the actual picture. Falls back to the frame's own ratio when the
+ * bars are implausible.
+ */
+export function pictureRatioFromBars(frameW, frameH, topRows, bottomRows) {
+  if (frameW <= 0 || frameH <= 0) throw new RangeError("dimensions must be positive");
+  const visible = frameH - topRows - bottomRows;
+  if (!(visible > 0) || visible / frameH < 0.35) return frameW / frameH;
+  return frameW / visible;
+}
+
+/** Read state back out of a shared link: ?v=<youtube id>&s=<screen key>. */
+export function parseShareParams(search) {
+  const params = new URLSearchParams(String(search ?? "").replace(/^\?/, ""));
+  const video = parseYouTubeId(params.get("v") ?? "");
+  const screen = screenByKey(params.get("s") ?? "");
+  return { video, screen };
+}
+
+/** Build a shareable link that reopens the same video at the same screen. */
+export function buildShareUrl(baseUrl, { video = null, screenKey = null } = {}) {
+  const url = new URL(String(baseUrl));
+  url.search = "";
+  url.hash = "";
+  if (video) url.searchParams.set("v", video);
+  if (screenKey) url.searchParams.set("s", screenKey);
+  return url.toString();
 }
 
 /**

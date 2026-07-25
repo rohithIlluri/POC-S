@@ -1,141 +1,52 @@
-import { FILMS, moreVsBaseline, frameSize, coverSize, parseYouTubeId } from "./ratios.js";
+import {
+  FILMS,
+  SCREENS,
+  screenByKey,
+  nearestScreen,
+  moreVsBaseline,
+  frameSize,
+  coverSize,
+  cropBandFraction,
+  countDarkRows,
+  pictureRatioFromBars,
+  parseYouTubeId,
+  parseShareParams,
+  buildShareUrl,
+} from "./ratios.js";
+import { createScene } from "./scene.js";
 
 const $ = (id) => document.getElementById(id);
 const stage = $("stage");
 const frame = $("frame");
-const scene = $("scene");
+const sceneCanvas = $("scene");
 const flash = $("flash");
+const notice = $("notice");
 
-// Friendly screen sizes — no ratios or jargon shown to the viewer.
-// Ordered widest → tallest so "IMAX" reads as the biggest, fullest one.
-const SIZES = [
-  { key: "tv", name: "TV & laptop", ratio: 16 / 9 },
-  { key: "wide", name: "Widescreen", ratio: 1.85 },
-  { key: "cinema", name: "Cinema", ratio: 2.39 },
-  { key: "imax", name: "IMAX", ratio: 1.43, hero: true },
-];
-const IMAX = SIZES.find((s) => s.key === "imax");
+const IMAX = screenByKey("imax");
+const CINEMA = screenByKey("cinema");
+const YT_RATIO = 16 / 9;
 
 const state = {
-  size: SIZES.find((s) => s.key === "cinema"), // start on a normal movie screen
+  screen: CINEMA, // start on a normal movie screen so IMAX opens up from here
   film: null,
   shiftTimer: null,
-  media: null, // <img>/<video>/YouTube <iframe> shown inside the frame
-  mediaKind: null, // "file" | "yt"
-  trim: true, // trim baked-in black bars on trailers by default
+  media: null, // { el, kind, mediaRatio, pictureRatio }
+  videoId: null,
+  trim: true, // trim black bars baked into trailers
+  showMiss: false,
   muted: true,
 };
 
-/* ---------- painted demo scene (shown until a video is loaded) ---------- */
-function paintScene() {
-  const W = 1716, H = 1200; // 1.43:1, the full IMAX shape
-  scene.width = W;
-  scene.height = H;
-  const ctx = scene.getContext("2d");
+const scene = createScene(sceneCanvas);
+scene.start();
 
-  const sky = ctx.createLinearGradient(0, 0, 0, H * 0.62);
-  sky.addColorStop(0, "#0b1d3a");
-  sky.addColorStop(0.55, "#2a4a7b");
-  sky.addColorStop(0.85, "#c97b3d");
-  sky.addColorStop(1, "#f0b45c");
-  ctx.fillStyle = sky;
-  ctx.fillRect(0, 0, W, H * 0.62);
-
-  ctx.fillStyle = "rgba(255,255,255,0.8)";
-  let seed = 42;
-  const rand = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
-  for (let i = 0; i < 140; i++) {
-    const x = rand() * W, y = rand() * H * 0.3, r = rand() * 1.4 + 0.2;
-    ctx.globalAlpha = 0.25 + rand() * 0.6;
-    ctx.beginPath();
-    ctx.arc(x, y, r, 0, Math.PI * 2);
-    ctx.fill();
-  }
-  ctx.globalAlpha = 1;
-
-  const sunX = W * 0.62, sunY = H * 0.56;
-  const glow = ctx.createRadialGradient(sunX, sunY, 10, sunX, sunY, 320);
-  glow.addColorStop(0, "rgba(255,214,140,0.95)");
-  glow.addColorStop(0.25, "rgba(255,180,90,0.5)");
-  glow.addColorStop(1, "rgba(255,180,90,0)");
-  ctx.fillStyle = glow;
-  ctx.fillRect(sunX - 320, sunY - 320, 640, 640);
-  ctx.fillStyle = "#ffe4ad";
-  ctx.beginPath();
-  ctx.arc(sunX, sunY, 58, 0, Math.PI * 2);
-  ctx.fill();
-
-  ctx.fillStyle = "#1d2c47";
-  ctx.beginPath();
-  ctx.moveTo(0, H * 0.62);
-  ctx.lineTo(W * 0.16, H * 0.545);
-  ctx.lineTo(W * 0.34, H * 0.62);
-  ctx.closePath();
-  ctx.fill();
-  ctx.beginPath();
-  ctx.moveTo(W * 0.72, H * 0.62);
-  ctx.lineTo(W * 0.88, H * 0.56);
-  ctx.lineTo(W, H * 0.615);
-  ctx.lineTo(W, H * 0.62);
-  ctx.closePath();
-  ctx.fill();
-
-  const sea = ctx.createLinearGradient(0, H * 0.62, 0, H);
-  sea.addColorStop(0, "#b4703a");
-  sea.addColorStop(0.12, "#3d4f74");
-  sea.addColorStop(1, "#0a1626");
-  ctx.fillStyle = sea;
-  ctx.fillRect(0, H * 0.62, W, H * 0.38);
-
-  for (let i = 0; i < 60; i++) {
-    const y = H * 0.63 + rand() * H * 0.33;
-    const spread = 40 + (y - H * 0.62) * 0.55;
-    const x = sunX + (rand() - 0.5) * spread * 2;
-    const w = 14 + rand() * 60;
-    ctx.globalAlpha = 0.05 + rand() * 0.22;
-    ctx.fillStyle = "#ffd08a";
-    ctx.fillRect(x - w / 2, y, w, 2.4);
-  }
-  ctx.globalAlpha = 1;
-
-  const sx = sunX - 30, sy = H * 0.78;
-  ctx.fillStyle = "#0c1220";
-  ctx.beginPath();
-  ctx.moveTo(sx - 90, sy);
-  ctx.quadraticCurveTo(sx, sy + 34, sx + 90, sy);
-  ctx.lineTo(sx + 104, sy - 16);
-  ctx.lineTo(sx - 104, sy - 16);
-  ctx.closePath();
-  ctx.fill();
-  ctx.fillRect(sx - 3, sy - 92, 5, 78);
-  ctx.beginPath();
-  ctx.moveTo(sx + 4, sy - 88);
-  ctx.quadraticCurveTo(sx + 74, sy - 56, sx + 4, sy - 22);
-  ctx.closePath();
-  ctx.fill();
-
-  ctx.fillStyle = "#060b13";
-  ctx.beginPath();
-  ctx.moveTo(0, H);
-  ctx.lineTo(0, H * 0.9);
-  ctx.quadraticCurveTo(W * 0.14, H * 0.86, W * 0.24, H);
-  ctx.closePath();
-  ctx.fill();
-  ctx.beginPath();
-  ctx.moveTo(W, H);
-  ctx.lineTo(W, H * 0.93);
-  ctx.quadraticCurveTo(W * 0.86, H * 0.9, W * 0.78, H);
-  ctx.closePath();
-  ctx.fill();
-}
-
-/* ---------- layout (always "cinema wall": fixed width, opens vertically) ---------- */
+/* ---------- layout: fixed width, screen opens vertically ---------- */
 function layout(animate = true) {
   const cs = getComputedStyle(stage);
   const stageW = stage.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
   const stageH = stage.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom);
   if (stageW <= 0 || stageH <= 0) return;
-  const { width, height } = frameSize(stageW, stageH, state.size.ratio, "cinema");
+  const { width, height } = frameSize(stageW, stageH, state.screen.ratio, "cinema");
   if (!animate) frame.style.transition = "none";
   frame.style.width = `${width}px`;
   frame.style.height = `${height}px`;
@@ -143,47 +54,83 @@ function layout(animate = true) {
     void frame.offsetWidth;
     frame.style.transition = "";
   }
-  layoutEmbed(width, height);
+  layoutMedia(width, height);
+  layoutMissBands();
 }
 
-// A YouTube iframe can't be cropped by CSS, so oversize it to cover the frame;
-// the frame's overflow:hidden clips the rest. When "trim black bars" is on we
-// treat the trailer as a wide cinematic picture so its baked-in bars fall
-// outside the frame instead of showing inside it.
-function layoutEmbed(frameW, frameH) {
-  if (state.mediaKind !== "yt" || !state.media) return;
-  const sourceRatio = state.trim ? 2.39 : 16 / 9;
-  const { width, height } = coverSize(frameW, frameH, sourceRatio, 16 / 9);
-  state.media.style.width = `${width}px`;
-  state.media.style.height = `${height}px`;
+// Media is centred and oversized so it covers the frame; anything outside
+// (including bars baked into the source) is clipped by the frame.
+function layoutMedia(frameW, frameH) {
+  const m = state.media;
+  if (!m) return;
+  const picture = m.kind === "yt" ? (state.trim ? 2.39 : YT_RATIO) : m.pictureRatio;
+  const { width, height } = coverSize(frameW, frameH, picture, m.mediaRatio);
+  m.el.style.width = `${width}px`;
+  m.el.style.height = `${height}px`;
 }
 
-/* ---------- caption + flash ---------- */
+function layoutMissBands() {
+  const frac = cropBandFraction(state.screen.ratio);
+  const pct = `${(frac * 100).toFixed(2)}%`;
+  for (const el of [$("missTop"), $("missBottom")]) {
+    el.style.height = pct;
+    el.classList.toggle("on", state.showMiss && frac > 0.001);
+  }
+}
+
+/* ---------- words on screen ---------- */
+function gainPercent(ratio) {
+  return Math.round(moreVsBaseline(ratio) * 100);
+}
+
 function updateCaption() {
-  const gain = Math.round(moreVsBaseline(state.size.ratio) * 100);
   const el = $("caption");
-  if (state.size.key === "imax") {
-    el.innerHTML = `On IMAX you see about <b>${gain}% more picture</b> than at a normal movie theater.`;
-  } else if (state.size.key === "tv") {
-    el.innerHTML = `This is how much a normal <b>TV or laptop</b> shows you.`;
-  } else if (state.size.key === "cinema") {
-    el.innerHTML = `A normal wide <b>movie theater</b> screen.`;
-  } else {
-    el.innerHTML = `A standard <b>widescreen</b> picture.`;
+  if (state.showMiss && cropBandFraction(state.screen.ratio) > 0.001) {
+    el.innerHTML = `Those dark bands are picture that a normal cinema <b>never shows you</b>.`;
+    return;
+  }
+  switch (state.screen.key) {
+    case "imax":
+      el.innerHTML = `On IMAX you see about <b>${gainPercent(IMAX.ratio)}% more picture</b> than at a normal movie theater.`;
+      break;
+    case "tv":
+      el.innerHTML = `This is how much a normal <b>TV or laptop</b> shows you.`;
+      break;
+    case "cinema":
+      el.innerHTML = `A normal wide <b>movie theater</b> screen.`;
+      break;
+    default:
+      el.innerHTML = `A standard <b>widescreen</b> picture.`;
   }
 }
 
 let flashTimer;
-function showFlash(title, sub) {
+function showFlash(title, sub = "") {
   flash.innerHTML = `<div><strong>${title}</strong><small>${sub}</small></div>`;
   flash.classList.add("show");
   clearTimeout(flashTimer);
   flashTimer = setTimeout(() => flash.classList.remove("show"), 1900);
 }
 
-/* ---------- change size ---------- */
-function setSize(size, { announce = true, keepFilm = false } = {}) {
-  state.size = size;
+function showNotice(text, link) {
+  $("noticeText").textContent = text;
+  const a = $("noticeLink");
+  if (link) {
+    a.href = link;
+    a.style.display = "";
+  } else {
+    a.style.display = "none";
+  }
+  notice.classList.add("show");
+}
+
+function hideNotice() {
+  notice.classList.remove("show");
+}
+
+/* ---------- changing screen size ---------- */
+function setScreen(screen, { announce = true, keepFilm = false } = {}) {
+  state.screen = screen;
   if (!keepFilm) {
     stopShift();
     state.film = null;
@@ -192,33 +139,25 @@ function setSize(size, { announce = true, keepFilm = false } = {}) {
   updateCaption();
   syncButtons();
   if (announce) {
-    const gain = Math.round(moreVsBaseline(size.ratio) * 100);
     const sub =
-      size.key === "imax"
-        ? `about ${gain}% more picture than a normal cinema`
-        : size.key === "tv"
+      screen.key === "imax"
+        ? `about ${gainPercent(screen.ratio)}% more picture than a normal cinema`
+        : screen.key === "tv"
           ? "what your screen normally shows"
-          : size.key === "cinema"
+          : screen.key === "cinema"
             ? "a normal wide movie screen"
             : "standard widescreen";
-    showFlash(size.name, sub);
+    showFlash(screen.name, sub);
   }
 }
 
-/* ---------- famous films (replay their real IMAX moments) ---------- */
-function ratioToSize(ratio) {
-  // nearest friendly size for a film's frame shape
-  return SIZES.reduce((best, s) =>
-    Math.abs(s.ratio - ratio) < Math.abs(best.ratio - ratio) ? s : best
-  );
-}
-
+/* ---------- famous films replay their real IMAX moments ---------- */
 function selectFilm(film) {
   stopShift();
   state.film = film.id;
-  setSize(ratioToSize(film.base), { announce: false, keepFilm: true });
+  setScreen(nearestScreen(film.base), { announce: false, keepFilm: true });
   syncButtons();
-  showFlash(film.title, `${film.year}`);
+  showFlash(film.title, String(film.year));
   if (film.base !== film.imax) startShift(film);
   else setTimeout(() => showFlash(film.title, "shot entirely in full IMAX"), 2100);
 }
@@ -228,7 +167,10 @@ function startShift(film) {
   let big = false;
   state.shiftTimer = setInterval(() => {
     big = !big;
-    setSize(ratioToSize(big ? film.imax : film.base), { announce: false, keepFilm: true });
+    setScreen(nearestScreen(big ? film.imax : film.base), {
+      announce: false,
+      keepFilm: true,
+    });
     showFlash(
       film.title,
       big ? "the screen opens up for the IMAX scenes" : "back to the normal screen"
@@ -245,24 +187,25 @@ function stopShift() {
 /* ---------- buttons ---------- */
 function syncButtons() {
   document.querySelectorAll("#sizeRow .btn").forEach((el) => {
-    el.classList.toggle("on", el.dataset.key === state.size.key && !state.film);
+    el.classList.toggle("on", el.dataset.key === state.screen.key && !state.film);
   });
   document.querySelectorAll("#filmRow .btn").forEach((el) => {
     el.classList.toggle("on", el.dataset.film === state.film);
   });
   $("trimBtn").classList.toggle("on", state.trim);
+  $("missBtn").classList.toggle("on", state.showMiss);
   $("soundBtn").textContent = state.muted ? "Sound off" : "Sound on";
   $("soundBtn").classList.toggle("on", !state.muted);
 }
 
 function buildButtons() {
   const sizeRow = $("sizeRow");
-  for (const s of SIZES) {
+  for (const s of SCREENS) {
     const b = document.createElement("button");
-    b.className = "btn" + (s.hero ? " on" : "");
+    b.className = "btn";
     b.dataset.key = s.key;
     b.innerHTML = `<b>${s.name}</b>`;
-    b.addEventListener("click", () => setSize(s));
+    b.addEventListener("click", () => setScreen(s));
     sizeRow.appendChild(b);
   }
   const filmRow = $("filmRow");
@@ -280,35 +223,117 @@ function buildButtons() {
 /* ---------- media ---------- */
 function clearMedia() {
   if (state.media) {
-    state.media.remove();
-    if (state.media.src?.startsWith("blob:")) URL.revokeObjectURL(state.media.src);
+    const { el } = state.media;
+    if (el.src?.startsWith("blob:")) URL.revokeObjectURL(el.src);
+    el.remove();
     state.media = null;
-    state.mediaKind = null;
+  }
+  state.videoId = null;
+  hideNotice();
+}
+
+function attachMedia(el, kind, mediaRatio, pictureRatio = mediaRatio) {
+  state.media = { el, kind, mediaRatio, pictureRatio };
+  frame.insertBefore(el, $("missTop"));
+  sceneCanvas.style.display = "none";
+  scene.stop();
+  layout(false);
+}
+
+/**
+ * Look for black bars baked into a picture or video frame and, if found,
+ * report the real picture shape so those bars can be cropped away.
+ * Returns the element's own ratio when nothing conclusive is found.
+ */
+function detectPictureRatio(source, naturalW, naturalH) {
+  const w = 160;
+  const h = Math.max(2, Math.round((w * naturalH) / naturalW));
+  try {
+    const c = document.createElement("canvas");
+    c.width = w;
+    c.height = h;
+    const ctx = c.getContext("2d", { willReadFrequently: true });
+    ctx.drawImage(source, 0, 0, w, h);
+    const { data } = ctx.getImageData(0, 0, w, h);
+    const rowLuma = [];
+    for (let y = 0; y < h; y++) {
+      let sum = 0;
+      for (let x = 0; x < w; x++) {
+        const i = (y * w + x) * 4;
+        sum += 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+      }
+      rowLuma.push(sum / w);
+    }
+    const top = countDarkRows(rowLuma);
+    const bottom = countDarkRows([...rowLuma].reverse());
+    if (top + bottom < 2) return naturalW / naturalH; // no bars worth trimming
+    // Downsampling blends the last bar row into the first picture row, so each
+    // bar reads a touch thin. Trimming one sampled row extra loses a sliver of
+    // picture but guarantees no black edge survives, which reads far better.
+    const scale = naturalH / h;
+    return pictureRatioFromBars(
+      naturalW,
+      naturalH,
+      (top + 1) * scale,
+      (bottom + 1) * scale
+    );
+  } catch {
+    return naturalW / naturalH; // tainted canvas or odd source: leave it alone
   }
 }
 
-function useMedia(file) {
+function useFile(file) {
   clearMedia();
   const url = URL.createObjectURL(file);
-  let el;
   if (file.type.startsWith("video/")) {
-    el = document.createElement("video");
+    const el = document.createElement("video");
     el.src = url;
     el.muted = state.muted;
     el.loop = true;
     el.autoplay = true;
     el.playsInline = true;
+    el.addEventListener(
+      "loadeddata",
+      () => {
+        const mediaRatio = el.videoWidth / el.videoHeight;
+        const picture = detectPictureRatio(el, el.videoWidth, el.videoHeight);
+        if (state.media?.el === el) {
+          state.media.mediaRatio = mediaRatio;
+          state.media.pictureRatio = picture;
+          layout(false);
+          if (picture > mediaRatio * 1.05) showFlash("Black bars trimmed", "");
+        }
+      },
+      { once: true }
+    );
+    attachMedia(el, "file", 16 / 9);
+    showFlash("Playing your video", "now try Watch it in IMAX");
   } else {
-    el = document.createElement("img");
-    el.src = url;
+    const el = document.createElement("img");
     el.alt = "";
+    el.addEventListener(
+      "load",
+      () => {
+        const mediaRatio = el.naturalWidth / el.naturalHeight;
+        const picture = detectPictureRatio(el, el.naturalWidth, el.naturalHeight);
+        if (state.media?.el === el) {
+          state.media.mediaRatio = mediaRatio;
+          state.media.pictureRatio = picture;
+          layout(false);
+        }
+      },
+      { once: true }
+    );
+    el.src = url;
+    attachMedia(el, "file", 16 / 9);
+    showFlash("Your picture", "now try Watch it in IMAX");
   }
-  state.media = el;
-  state.mediaKind = "file";
-  frame.insertBefore(el, flash);
-  scene.style.display = "none";
-  showFlash("Playing your video", "now try Watch it in IMAX");
 }
+
+// The YouTube player answers our handshake once it's alive. If it never does,
+// the uploader has blocked embedding and we say so instead of showing black.
+let playerAlive = false;
+let aliveTimer = null;
 
 function useYouTube(input) {
   const id = parseYouTubeId(input);
@@ -324,19 +349,51 @@ function useYouTube(input) {
     `&controls=0&rel=0&playsinline=1&modestbranding=1&enablejsapi=1&origin=${location.origin}`;
   el.allow = "autoplay; encrypted-media";
   el.title = "Trailer";
-  state.media = el;
-  state.mediaKind = "yt";
   state.muted = true;
+  state.videoId = id;
+  attachMedia(el, "yt", YT_RATIO);
   syncButtons();
-  frame.insertBefore(el, flash);
-  scene.style.display = "none";
-  layout(false);
   showFlash("Rolling", "now hit Watch it in IMAX");
+
+  playerAlive = false;
+  el.addEventListener("load", () => {
+    // ask the player to start talking to us
+    for (const delay of [0, 400, 1200]) {
+      setTimeout(() => {
+        el.contentWindow?.postMessage(
+          JSON.stringify({ event: "listening", id: 1, channel: "widget" }),
+          "*"
+        );
+      }, delay);
+    }
+  });
+  clearTimeout(aliveTimer);
+  aliveTimer = setTimeout(() => {
+    if (!playerAlive && state.media?.el === el) {
+      showNotice(
+        "This video can't be played outside YouTube — the uploader turned that off. Try another trailer, or use your own video.",
+        `https://www.youtube.com/watch?v=${id}`
+      );
+    }
+  }, 6000);
 }
 
+window.addEventListener("message", (e) => {
+  let host;
+  try {
+    host = new URL(e.origin).hostname; // origin can be "null" or junk
+  } catch {
+    return;
+  }
+  if (/(^|\.)youtube(-nocookie)?\.com$/.test(host)) {
+    playerAlive = true;
+    hideNotice();
+  }
+});
+
 function ytCommand(func) {
-  if (state.mediaKind !== "yt" || !state.media?.contentWindow) return;
-  state.media.contentWindow.postMessage(
+  if (state.media?.kind !== "yt") return;
+  state.media.el.contentWindow?.postMessage(
     JSON.stringify({ event: "command", func, args: "" }),
     "*"
   );
@@ -344,23 +401,39 @@ function ytCommand(func) {
 
 /* ---------- wiring ---------- */
 buildButtons();
-paintScene();
 
 $("ytBtn").addEventListener("click", () => useYouTube($("ytUrl").value));
 $("ytUrl").addEventListener("keydown", (e) => {
   if (e.key === "Enter") useYouTube($("ytUrl").value);
 });
+// pasting a link is the whole point — don't make people hunt for Play too
+$("ytUrl").addEventListener("paste", (e) => {
+  const text = e.clipboardData?.getData("text");
+  if (parseYouTubeId(text)) setTimeout(() => useYouTube(text), 120);
+});
+
 $("mediaBtn").addEventListener("click", () => $("mediaInput").click());
 $("mediaInput").addEventListener("change", (e) => {
   const file = e.target.files?.[0];
-  if (file) useMedia(file);
+  if (file) useFile(file);
+});
+
+// drop a video or picture anywhere on the page
+document.addEventListener("dragover", (e) => e.preventDefault());
+document.addEventListener("drop", (e) => {
+  e.preventDefault();
+  const file = [...(e.dataTransfer?.files ?? [])].find((f) =>
+    /^(video|image)\//.test(f.type)
+  );
+  if (file) return useFile(file);
+  const text = e.dataTransfer?.getData("text");
+  if (text && parseYouTubeId(text)) useYouTube(text);
 });
 
 $("imaxBtn").addEventListener("click", () => {
-  setSize(IMAX, { announce: false });
+  setScreen(IMAX, { announce: false });
   document.documentElement.requestFullscreen?.().catch(() => {});
-  const gain = Math.round(moreVsBaseline(IMAX.ratio) * 100);
-  showFlash("IMAX", `about ${gain}% more picture than a normal cinema`);
+  showFlash("IMAX", `about ${gainPercent(IMAX.ratio)}% more picture than a normal cinema`);
 });
 
 $("fsBtn").addEventListener("click", () => {
@@ -370,21 +443,59 @@ $("fsBtn").addEventListener("click", () => {
 
 $("soundBtn").addEventListener("click", () => {
   state.muted = !state.muted;
-  if (state.mediaKind === "yt") ytCommand(state.muted ? "mute" : "unMute");
-  else if (state.media instanceof HTMLVideoElement) state.media.muted = state.muted;
+  if (state.media?.kind === "yt") ytCommand(state.muted ? "mute" : "unMute");
+  else if (state.media?.el instanceof HTMLVideoElement) {
+    state.media.el.muted = state.muted;
+  }
   syncButtons();
+});
+
+$("missBtn").addEventListener("click", () => {
+  state.showMiss = !state.showMiss;
+  if (state.showMiss && state.screen.key !== "imax") {
+    setScreen(IMAX, { announce: false }); // the point only lands on the tall frame
+  }
+  layoutMissBands();
+  updateCaption();
+  syncButtons();
+  if (state.showMiss) showFlash("Look at the edges", "that's what a normal cinema cuts");
 });
 
 $("trimBtn").addEventListener("click", () => {
   state.trim = !state.trim;
   layout(false);
   syncButtons();
-  showFlash(state.trim ? "Black bars trimmed" : "Showing full video", "");
+  showFlash(state.trim ? "Black bars trimmed" : "Showing the full video");
+});
+
+$("shareBtn").addEventListener("click", async () => {
+  const url = buildShareUrl(location.href, {
+    video: state.videoId,
+    screenKey: state.screen.key,
+  });
+  try {
+    await navigator.clipboard.writeText(url);
+    showFlash("Link copied", "share it and it opens exactly like this");
+  } catch {
+    showFlash("Copy this link", url);
+  }
 });
 
 new ResizeObserver(() => layout(false)).observe(stage);
 
+/* ---------- open in whatever state the link asked for ---------- */
+const shared = parseShareParams(location.search);
+if (shared.screen) state.screen = shared.screen;
 layout(false);
 updateCaption();
 syncButtons();
-setTimeout(() => showFlash("Watch it in IMAX", "paste a trailer, then tap the blue button"), 700);
+
+if (shared.video) {
+  useYouTube(shared.video);
+  setScreen(shared.screen ?? IMAX, { announce: false });
+} else {
+  setTimeout(
+    () => showFlash("Watch it in IMAX", "paste a trailer, then tap the blue button"),
+    700
+  );
+}

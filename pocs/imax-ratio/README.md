@@ -19,6 +19,13 @@ No dependencies, no build step. Any static server works too (`python3 -m http.se
 
 The interface is deliberately plain-language — no aspect-ratio numbers or film-format jargon on screen.
 
+- **Show what you'd miss** — the headline trick: switches to the IMAX screen and dims the bands a normal cinema would cut off, labelled *"a normal cinema cuts this off"*. It turns the abstract ratio argument into something you can point at.
+- **Nothing to set up** — until you load anything, an animated scene plays on the screen (drifting clouds, birds, a boat crossing the sun path, shimmering water), painted on a canvas at the full IMAX shape. Every button visibly does something from the first second, with no video and no network.
+- **Copy link** — produces a link like `?v=<video>&s=imax` that reopens the same trailer at the same screen size, so a share lands the way you saw it.
+- **Black bars removed automatically** — dropped-in videos and pictures are sampled for letterboxing, and the bars are cropped so the picture genuinely fills the frame (`Trim black bars` still toggles it manually for trailers, which can't be sampled cross-origin).
+- **Blocked trailers say so** — if an uploader disabled embedding, the app detects the player never came alive and shows a plain explanation with a link to open it on YouTube, instead of a black rectangle.
+- **Drag and drop** a video or picture anywhere on the page, or just paste a YouTube link — it starts playing on paste, no button needed.
+
 - **Paste a trailer, hit Watch it in IMAX** — drop in a YouTube link, hit **Play**, then the big blue **Watch it in IMAX** button: the trailer fills a full IMAX-shaped screen, fullscreen, right in your tab. Sound starts off (so autoplay works); toggle it with **Sound on/off**.
 - **Screen size** — four friendly choices: **TV & laptop**, **Widescreen**, **Cinema**, **IMAX**. The screen stays a fixed width and grows taller as you go up, so IMAX visibly opens up the picture — with a plain caption like *"On IMAX you see about 67% more picture than at a normal movie theater."*
 - **Trim black bars** — most trailers are uploaded as 16:9 with the film letterboxed inside; this (on by default) pushes those baked-in bars off-screen so the picture actually fills the frame. Turn it off to see the raw upload.
@@ -31,8 +38,9 @@ Until a video is loaded, the screen shows a demo scene painted procedurally on a
 
 | File | Role |
 |---|---|
-| `ratios.js` | Pure logic: format/film data, equal-width area gain, frame sizing, YouTube URL parsing, embed cover-crop sizing. No DOM. |
-| `app.js` | UI wiring (friendly names), canvas demo scene, film-moment player, local media + YouTube embed player. |
+| `ratios.js` | Pure logic: screen/film data, equal-width area gain, frame sizing, cover-crop sizing, letterbox-bar math, YouTube URL parsing, share-link encoding. No DOM. |
+| `app.js` | UI wiring, media handling (files, drops, trailers), bar detection, film-moment player, share links. |
+| `scene.js` | The animated demo scene, drawn on a canvas with a static backdrop blitted per frame. Honours `prefers-reduced-motion`. |
 | `index.html` | Markup + styles. |
 | `serve.js` | 40-line static server for `npm start`. |
 | `test/ratios.test.js` | `node:test` suite over everything in `ratios.js`. |
