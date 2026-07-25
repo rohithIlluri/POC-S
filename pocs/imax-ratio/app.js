@@ -222,6 +222,15 @@ function buildButtons() {
 
 /* ---------- media ---------- */
 function clearMedia() {
+  try {
+    player?.destroy?.(); // takes the iframe with it
+  } catch {
+    /* already gone */
+  }
+  player = null;
+  playing = false;
+  clearTimeout(tapTimer);
+  showTap(false);
   if (state.media) {
     const { el } = state.media;
     if (el.src?.startsWith("blob:")) URL.revokeObjectURL(el.src);
@@ -330,10 +339,49 @@ function useFile(file) {
   }
 }
 
-// The YouTube player answers our handshake once it's alive. If it never does,
-// the uploader has blocked embedding and we say so instead of showing black.
-let playerAlive = false;
-let aliveTimer = null;
+/* ---------- YouTube ---------- */
+// Browsers routinely refuse muted autoplay, and uploaders can switch embedding
+// off entirely. Those are different problems with different answers, so we ask
+// the real player which one we're looking at rather than guessing.
+
+let player = null; // YT.Player once the API is up
+let playing = false;
+let tapTimer = null;
+let apiPromise = null;
+
+function loadYouTubeApi() {
+  if (window.YT?.Player) return Promise.resolve(window.YT);
+  if (apiPromise) return apiPromise;
+  apiPromise = new Promise((resolve, reject) => {
+    const previous = window.onYouTubeIframeAPIReady;
+    window.onYouTubeIframeAPIReady = () => {
+      previous?.();
+      resolve(window.YT);
+    };
+    const s = document.createElement("script");
+    s.src = "https://www.youtube.com/iframe_api";
+    s.onerror = () => reject(new Error("player API blocked"));
+    document.head.appendChild(s);
+    setTimeout(() => reject(new Error("player API timed out")), 8000);
+  });
+  return apiPromise;
+}
+
+function showTap(on) {
+  $("tap").classList.toggle("show", on);
+}
+
+// Called from a click on our own page, so the browser counts it as the user
+// asking for playback — which is exactly what a blocked autoplay was missing.
+function startPlayback() {
+  showTap(false);
+  if (player?.playVideo) player.playVideo();
+  else ytCommand("playVideo");
+}
+
+function watchUrl(id) {
+  return `https://www.youtube.com/watch?v=${id}`;
+}
 
 function useYouTube(input) {
   const id = parseYouTubeId(input);
@@ -343,53 +391,62 @@ function useYouTube(input) {
   }
   clearMedia();
   const el = document.createElement("iframe");
+  el.id = "ytplayer";
   el.src =
     `https://www.youtube-nocookie.com/embed/${id}` +
     `?autoplay=1&mute=1&loop=1&playlist=${id}` +
     `&controls=0&rel=0&playsinline=1&modestbranding=1&enablejsapi=1&origin=${location.origin}`;
-  el.allow = "autoplay; encrypted-media";
+  el.allow = "autoplay; encrypted-media; fullscreen";
   el.title = "Trailer";
   state.muted = true;
   state.videoId = id;
+  playing = false;
+  player = null;
   attachMedia(el, "yt", YT_RATIO);
   syncButtons();
   showFlash("Rolling", "now hit Watch it in IMAX");
 
-  playerAlive = false;
-  el.addEventListener("load", () => {
-    // ask the player to start talking to us
-    for (const delay of [0, 400, 1200]) {
-      setTimeout(() => {
-        el.contentWindow?.postMessage(
-          JSON.stringify({ event: "listening", id: 1, channel: "widget" }),
-          "*"
-        );
-      }, delay);
-    }
-  });
-  clearTimeout(aliveTimer);
-  aliveTimer = setTimeout(() => {
-    if (!playerAlive && state.media?.el === el) {
-      showNotice(
-        "This video can't be played outside YouTube — the uploader turned that off. Try another trailer, or use your own video.",
-        `https://www.youtube.com/watch?v=${id}`
-      );
-    }
-  }, 6000);
-}
+  // If it hasn't started shortly, offer a button that starts it for real.
+  clearTimeout(tapTimer);
+  tapTimer = setTimeout(() => {
+    if (!playing && state.media?.el === el) showTap(true);
+  }, 2600);
 
-window.addEventListener("message", (e) => {
-  let host;
-  try {
-    host = new URL(e.origin).hostname; // origin can be "null" or junk
-  } catch {
-    return;
-  }
-  if (/(^|\.)youtube(-nocookie)?\.com$/.test(host)) {
-    playerAlive = true;
-    hideNotice();
-  }
-});
+  loadYouTubeApi()
+    .then((YT) => {
+      if (state.media?.el !== el) return; // something else got loaded meanwhile
+      player = new YT.Player(el, {
+        events: {
+          onReady: () => player.playVideo?.(),
+          onStateChange: (e) => {
+            playing = e.data === YT.PlayerState.PLAYING;
+            if (playing) {
+              showTap(false);
+              hideNotice();
+            } else if (e.data === YT.PlayerState.UNSTARTED) {
+              showTap(true);
+            }
+          },
+          onError: (e) => {
+            // 101/150: embedding disabled by the uploader. 2/100: bad or gone.
+            const blocked = e.data === 101 || e.data === 150;
+            showTap(false);
+            showNotice(
+              blocked
+                ? "The uploader doesn't allow this video to play outside YouTube. Try a different trailer — most official ones work."
+                : "That video couldn't be loaded. Check the link, or try a different trailer.",
+              watchUrl(id)
+            );
+          },
+        },
+      });
+    })
+    .catch(() => {
+      // API blocked (an extension, a strict network). The embed itself may well
+      // be fine, so just make sure the viewer has a way to start it.
+      if (!playing && state.media?.el === el) showTap(true);
+    });
+}
 
 function ytCommand(func) {
   if (state.media?.kind !== "yt") return;
@@ -441,10 +498,15 @@ $("fsBtn").addEventListener("click", () => {
   else document.documentElement.requestFullscreen?.().catch(() => {});
 });
 
+$("tapBtn").addEventListener("click", startPlayback);
+$("noticeClose").addEventListener("click", hideNotice);
+
 $("soundBtn").addEventListener("click", () => {
   state.muted = !state.muted;
-  if (state.media?.kind === "yt") ytCommand(state.muted ? "mute" : "unMute");
-  else if (state.media?.el instanceof HTMLVideoElement) {
+  if (state.media?.kind === "yt") {
+    if (player?.unMute) state.muted ? player.mute() : player.unMute();
+    else ytCommand(state.muted ? "mute" : "unMute");
+  } else if (state.media?.el instanceof HTMLVideoElement) {
     state.media.el.muted = state.muted;
   }
   syncButtons();

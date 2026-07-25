@@ -84,7 +84,31 @@
     transition: width 0.7s cubic-bezier(0.22, 1, 0.3, 1),
                 height 0.7s cubic-bezier(0.22, 1, 0.3, 1);
   }
-  #frame > iframe { pointer-events: none; }
+  /* The player stays clickable: when a browser blocks autoplay, YouTube's own
+     play button is the only way to start, so it must be reachable. */
+  #frame > iframe { pointer-events: auto; }
+
+  /* our own start button, shown when playback hasn't begun by itself */
+  #tap {
+    position: absolute;
+    inset: 0;
+    display: none;
+    place-items: center;
+    background: rgba(4, 6, 10, 0.35);
+  }
+  #tap.show { display: grid; }
+  #tap button {
+    background: linear-gradient(180deg, #3fb0ff 0%, #2b8fe6 100%);
+    color: #04121f;
+    border: none;
+    border-radius: 999px;
+    padding: 0.7rem 1.8rem;
+    font: inherit;
+    font-weight: 800;
+    font-size: 1.05rem;
+    cursor: pointer;
+    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.5);
+  }
 
   /* what a normal cinema cuts off */
   .missband {
@@ -141,6 +165,20 @@
   #notice.show { display: grid; }
   #notice p { max-width: 30rem; margin-bottom: 0.8rem; }
   #notice a { color: var(--accent); }
+  #noticeClose {
+    position: absolute;
+    top: 0.5rem;
+    right: 0.7rem;
+    background: none;
+    border: none;
+    color: var(--dim);
+    font: inherit;
+    font-size: 1.3rem;
+    line-height: 1;
+    cursor: pointer;
+    padding: 0.3rem 0.5rem;
+  }
+  #noticeClose:hover { color: var(--ink); }
 
   /* ---------- controls ---------- */
   #controls {
@@ -260,8 +298,10 @@
       <canvas id="scene"></canvas>
       <div class="missband top" id="missTop"><span>a normal cinema cuts this off</span></div>
       <div class="missband bottom" id="missBottom"><span>and this</span></div>
+      <div id="tap"><button type="button" id="tapBtn">▶ Tap to play</button></div>
       <div id="flash"></div>
       <div id="notice">
+        <button type="button" id="noticeClose" aria-label="Close">×</button>
         <div>
           <p id="noticeText"></p>
           <a id="noticeLink" href="#" target="_blank" rel="noopener">Open it on YouTube instead ↗</a>
