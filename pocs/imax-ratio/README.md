@@ -51,6 +51,16 @@ Until a video is loaded, the screen shows a demo scene painted procedurally on a
 npm test
 ```
 
+## Build
+
+```sh
+npm run build   # → dist/index.html, one self-contained file
+```
+
+`build.js` inlines the three modules into `index.html` so what ships is a single
+file with no imports to resolve — handy for static hosts and one request for the
+viewer. The source stays modular because that's what the tests import.
+
 ## The numbers (equal screen width)
 
 | Format | Ratio | Picture vs 2.39 scope |

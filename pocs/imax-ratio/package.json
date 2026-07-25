@@ -2,11 +2,12 @@
   "name": "imax-ratio",
   "version": "0.1.0",
   "private": true,
-  "description": "Immersive IMAX aspect-ratio visualizer — watch the frame open from scope to 1.43:1",
+  "description": "Watch it in IMAX — paste a trailer and see how much picture a normal screen hides",
   "type": "module",
   "scripts": {
     "start": "node serve.js",
-    "test": "node --test"
+    "test": "node --test",
+    "build": "node build.js"
   },
   "license": "MIT"
 }

@@ -242,7 +242,6 @@
     }
     .row.scroll::-webkit-scrollbar { display: none; }
     .row.scroll > * { flex: 0 0 auto; }
-    .hero-row { padding: 0 0.5rem; }
     #caption { font-size: 0.8rem; }
   }
   @media (prefers-reduced-motion: reduce) {
@@ -279,12 +278,9 @@
       <input type="file" id="mediaInput" accept="image/*,video/*" />
     </div>
 
-    <div class="row hero-row">
+    <div class="row scroll">
       <button class="hero" id="imaxBtn">Watch it in IMAX</button>
       <button class="btn" id="fsBtn">Full screen</button>
-    </div>
-
-    <div class="row scroll">
       <button class="btn" id="soundBtn">Sound off</button>
       <button class="btn" id="missBtn">Show what you'd miss</button>
       <button class="btn" id="trimBtn">Trim black bars</button>

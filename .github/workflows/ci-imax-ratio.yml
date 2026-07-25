@@ -30,3 +30,9 @@ jobs:
         run: |
           for f in *.js test/*.js; do node --check "$f"; done
       - run: npm test
+      - name: build the single-file bundle
+        run: npm run build
+      - name: bundle must not still contain module syntax
+        run: |
+          grep -qv '^\s*import ' dist/index.html
+          test -s dist/index.html
