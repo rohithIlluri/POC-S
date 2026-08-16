@@ -1,0 +1,33 @@
+name: sparkroom CI
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - "pocs/sparkroom/**"
+      - ".github/workflows/ci-sparkroom.yml"
+  pull_request:
+    paths:
+      - "pocs/sparkroom/**"
+      - ".github/workflows/ci-sparkroom.yml"
+
+defaults:
+  run:
+    working-directory: pocs/sparkroom
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node-version: [20.x, 22.x, 24.x]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: npm
+          cache-dependency-path: pocs/sparkroom/package-lock.json
+      - run: npm ci
+      - run: npm test # pretest bundles the component first
+      - run: npm audit --audit-level=high
