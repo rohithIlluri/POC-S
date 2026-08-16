@@ -56,8 +56,9 @@ A working, tested proof of concept of the **core loop**:
    Presence chips show who's actually in the room right now.
 3. **Draft** — one shared artifact per room. The AI proposes a first draft
    from the conversation; humans edit it directly; the AI revises it again.
-   Every touch — human or AI — is logged in a visible attribution strip
-   (cobalt = human, verdigris = AI).
+   Every touch — human or AI — appends a revision and shows up in a visible
+   attribution strip (cobalt = human, verdigris = AI, hollow = an undo), and
+   any participant can undo the newest change.
 
 ### Current implementation
 
@@ -71,12 +72,22 @@ A working, tested proof of concept of the **core loop**:
   failed read.
 - Sync is polling-based (~6s), not true realtime — a known, intentional
   limitation of this POC stage (see Roadmap).
+- The draft is an **append-only chain of revisions**: each entry carries the
+  body that produced it, who made it, and (for an undo) which revision it
+  reverted. Undo is itself a revision that re-lands an earlier body rather
+  than popping a stack — two people undoing at once then converges instead of
+  corrupting history, and undoing an undo is redo, so no second stack exists.
+  Only the newest 12 revisions keep their bodies (older ones survive as
+  attribution-only entries), so undo has a finite window that the UI reports
+  honestly instead of offering a no-op.
 - Tested end-to-end with a simulated multi-user browser harness
   (`tests/harness.cjs`) covering: onboarding, room creation, AI auto-reply,
   plain vs. `@ai` messages, draft creation + human edit + attribution log,
-  a second simulated user's messages/presence arriving via polling, storage
-  failures (verifies no data wipe), AI network failures (graceful message,
-  no crash), and archive. 24/24 checks passing as of the last run.
+  undo/redo (append-only, correctly attributed), migration of drafts written
+  before revisions existed, a second simulated user's messages/presence
+  arriving via polling, storage failures (verifies no data wipe), AI network
+  failures (graceful message, no crash), and archive. 38/38 checks passing as
+  of the last run.
 
 ### Known limitations (by design, at this stage)
 
@@ -102,7 +113,9 @@ Per the research, the recommended path to a real (non-Artifact) version:
 - **AI integration:** Vercel AI SDK, agent-as-room-participant pattern
   (the agent holds its own identity/session in the room, same as a human).
 - **Attribution & undo** as a first-class feature, not a nice-to-have —
-  this is the product's actual differentiation.
+  this is the product's actual differentiation. The revision model above is
+  the first pass at it; the CRDT layer should preserve those semantics rather
+  than replace them.
 
 Suggested staged plan: validate the wedge with real users on this POC →
 learn the TS/React stack (2-4 weeks) → rebuild on Next.js + Supabase +
@@ -127,12 +140,12 @@ Requires Node ≥ 20.11.
 ```sh
 cd pocs/sparkroom
 npm install
-npm test          # bundles the component, then runs the 24-check harness
+npm test          # bundles the component, then runs the 38-check harness
 ```
 
 `npm test` runs `npm run build` first (esbuild → `tests/bundle.cjs`, gitignored),
 because the harness loads the component as a CommonJS bundle inside jsdom. The
-run takes ~15s: several checks deliberately wait out a full ~6s poll cycle to
+run takes ~25s: several checks deliberately wait out a full poll cycle to
 prove that a second user's messages arrive and that a flaky storage backend
 never wipes the UI.
 
@@ -143,5 +156,5 @@ above, not a wrapper around this file.
 
 ## Status
 
-Proof of concept. Not deployed. Built and tested Aug 2026. 24/24 harness checks
+Proof of concept. Not deployed. Built and tested Aug 2026. 38/38 harness checks
 passing.

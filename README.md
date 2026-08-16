@@ -8,7 +8,7 @@ A collection of proof-of-concept projects. Each POC is self-contained in its own
 |---|---|---|
 | [`pocs/ccr`](pocs/ccr) | Multi coding tools router — classifies a coding prompt by task type/complexity and runs it with Claude Code or Codex on a matched model | ✅ Active |
 | [`pocs/aipet`](pocs/aipet) | Local AI-usage companion — a terminal "pet" that reads Claude Code / Codex session logs on-device to coach token spend, rank a local leaderboard, and seed the *Codelings* game. Fully local, zero network surface | ✅ Active (v1.0.0) |
-| [`pocs/sparkroom`](pocs/sparkroom) | Multiplayer-AI workspace — pitch an idea, it becomes a live room where humans and an AI peer chat and co-write one shared draft, with every edit attributed. Runs as a Claude.ai Artifact | ✅ Active (v0.1.0) |
+| [`pocs/sparkroom`](pocs/sparkroom) | Multiplayer-AI workspace — pitch an idea, it becomes a live room where humans and an AI peer chat and co-write one shared draft, with every edit attributed and undoable. Runs as a Claude.ai Artifact | ✅ Active (v0.1.0) |
 
 ## Conventions
 

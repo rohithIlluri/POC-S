@@ -132,6 +132,27 @@ const btn = (label) => [...document.querySelectorAll("button")].find((b) => b.te
   const stored2 = JSON.parse(db[roomKey]);
   const lastLog = stored2.art.log[stored2.art.log.length - 1];
   check("attribution weave logs human edit", lastLog.kind === "human" && lastLog.by === "Rohith");
+  check("revision carries the body that produced it", lastLog.content === "# MVP v2\nHuman-edited plan");
+
+  // ---- undo: append-only revert of the newest revision ----
+  const logBefore = stored2.art.log.length;
+  check("undo offered once there is a prior revision", !!btn("Undo Rohith's change"));
+  btn("Undo Rohith's change").click();
+  await sleep(400);
+  check("undo restores the AI draft body", bodyText().includes("1. Sign up") && !bodyText().includes("Human-edited plan"));
+  const stored3 = JSON.parse(db[roomKey]);
+  const undoRev = stored3.art.log[stored3.art.log.length - 1];
+  check("undo appends a revision, never pops one", stored3.art.log.length === logBefore + 1);
+  check("undo is attributed to whoever undid", undoRev.kind === "undo" && undoRev.by === "Rohith");
+  check("undo records which revision it reverted", undoRev.undoOf === lastLog.id);
+
+  // undoing an undo is redo — no separate stack needed
+  btn("Undo Rohith's change").click();
+  await sleep(400);
+  check("undoing the undo redoes the human edit", bodyText().includes("Human-edited plan"));
+  const stored4 = JSON.parse(db[roomKey]);
+  check("redo is also append-only", stored4.art.log.length === logBefore + 2);
+  check("draft content matches its head revision", stored4.art.content === stored4.art.log[stored4.art.log.length - 1].content);
 
   // simulate ANOTHER user writing to the same room (multi-user sync via polling)
   const other = JSON.parse(db[roomKey]);
@@ -171,6 +192,48 @@ const btn = (label) => [...document.querySelectorAll("button")].find((b) => b.te
   btn("tap again").click();
   await sleep(400);
   check("archive removes room & returns to lobby", bodyText().includes("PITCH AN IDEA") && !JSON.parse(db["sr4:rooms"]).length);
+
+  // ---- legacy data: a draft written before revisions existed ----
+  // Its log is bare touches with no bodies, so history before now is
+  // unrecoverable — but the draft must still open, and the live body must be
+  // adopted as the head revision so new edits are undoable against it.
+  const legacyId = "legacy1";
+  db["sr4:rooms"] = JSON.stringify([
+    { id: legacyId, name: "Old room from an earlier build", pitch: "carried over", createdBy: "Priya", ts: Date.now() },
+  ]);
+  db["sr4:room:" + legacyId] = JSON.stringify({
+    msgs: [{ id: "m1", author: "Priya", role: "human", text: "carried over", ts: Date.now() }],
+    art: {
+      title: "Legacy plan",
+      content: "# Legacy body",
+      editedBy: "Priya",
+      ts: Date.now(),
+      log: [
+        { by: "Sable", kind: "ai", ts: Date.now() - 2000 },
+        { by: "Priya", kind: "human", ts: Date.now() - 1000 },
+      ],
+    },
+    pres: {},
+  });
+  await sleep(8200); // one lobby poll cycle
+  btn("Old room from an earlier build").click();
+  await sleep(500);
+  btn("The draft").click();
+  await sleep(200);
+  check("legacy draft still opens", bodyText().includes("Legacy body"));
+  check("legacy touches with no bodies are not undoable", bodyText().includes("Nothing to undo"));
+  btn("Edit as Rohith").click();
+  await sleep(100);
+  setValue([...document.querySelectorAll("textarea")].find((t) => t.rows === 14), "# Rewritten");
+  await sleep(50);
+  btn("Save your edit").click();
+  await sleep(400);
+  const legacyStored = JSON.parse(db["sr4:room:" + legacyId]);
+  check("legacy log is preserved, not discarded", legacyStored.art.log.length === 3);
+  check("legacy body was adopted as a revision", legacyStored.art.log[1].content === "# Legacy body");
+  btn("Undo Rohith's change").click();
+  await sleep(400);
+  check("new edit undoes back to the legacy body", bodyText().includes("Legacy body"));
 
   console.log("\nstorage calls:", storageCalls, "| AI calls:", aiCalls);
   console.log("\n==== RESULT: " + pass + " passed, " + fail + " failed ====");

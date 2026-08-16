@@ -94,12 +94,128 @@ function timeAgo(ts) {
   return Math.floor(h / 24) + "d";
 }
 
+// ---------------- artifact revisions ----------------
+/*
+  The draft is an append-only chain of revisions. Every touch — human, AI, or
+  an undo — appends one; nothing is ever rewritten or popped.
+
+  Undo is itself a revision that re-lands an earlier body. That matters for a
+  multiplayer room: a pop-the-stack undo run by two people at once corrupts the
+  history, while a re-land is idempotent — the second undo either changes
+  nothing or reverts the first, and both outcomes are honest. It also keeps the
+  attribution weave truthful about who reverted whom, which a pop would erase.
+
+  Bodies are the expensive part, so only the newest REV_FULL revisions keep
+  theirs; older ones survive as attribution-only entries. Undo therefore has a
+  finite window, and undoTarget() reports when a body has aged out rather than
+  offering an undo that would silently do nothing.
+*/
+const REV_FULL = 12; // newest revisions that keep their body (these are undoable)
+const REV_META = 24; // older revisions kept as attribution-only
+
+const revKind = (k) => (k === "ai" ? "ai" : k === "undo" ? "undo" : "human");
+
+function pruneRevs(log) {
+  const kept = log.slice(-REV_META);
+  const cut = Math.max(0, kept.length - REV_FULL);
+  return kept.map((e, i) => (i < cut && e.content != null ? { ...e, content: null, dropped: true } : e));
+}
+
+function normalizeArtifact(a) {
+  if (!a || typeof a !== "object" || typeof a.content !== "string") return null;
+  const title = (typeof a.title === "string" && a.title) || "Untitled draft";
+  const log = (Array.isArray(a.log) ? a.log : [])
+    .filter((e) => e && typeof e === "object")
+    .map((e, i) => ({
+      id: typeof e.id === "string" ? e.id : "r" + i + "-" + (Number(e.ts) || 0),
+      by: typeof e.by === "string" ? e.by : "someone",
+      kind: revKind(e.kind),
+      ts: Number(e.ts) || 0,
+      title: typeof e.title === "string" ? e.title : null,
+      content: typeof e.content === "string" ? e.content : null,
+      undoOf: typeof e.undoOf === "string" ? e.undoOf : null,
+      dropped: !!e.dropped,
+    }));
+
+  // Drafts written before revisions existed (or by an older client) log bare
+  // touches with no bodies. Adopt the live content as the head revision so
+  // history starts here instead of being lost. Idempotent: once the head
+  // matches the body, re-normalizing is a no-op.
+  const head = log[log.length - 1];
+  if (head && head.content == null && !head.dropped) {
+    log[log.length - 1] = { ...head, content: a.content, title: head.title || title };
+  } else if (!head || head.content !== a.content) {
+    log.push({
+      id: "head-" + (Number(a.ts) || 0),
+      by: typeof a.editedBy === "string" ? a.editedBy : "someone",
+      kind: "human",
+      ts: Number(a.ts) || 0,
+      title,
+      content: a.content,
+      undoOf: null,
+      dropped: false,
+    });
+  }
+
+  const h = log[log.length - 1];
+  return { title: h.title || title, content: a.content, editedBy: h.by, ts: h.ts, log: pruneRevs(log) };
+}
+
+// The revision an undo would re-land, or null when there is nothing to undo.
+function undoTarget(art) {
+  if (!art || !Array.isArray(art.log) || art.log.length < 2) return null;
+  const head = art.log[art.log.length - 1];
+  const prev = art.log[art.log.length - 2];
+  if (!prev || prev.content == null) return null; // body aged out of the window
+  if (prev.content === head.content) return null; // would change nothing
+  return { head, prev };
+}
+
+function commitRevision(d, { by, kind, title, content, undoOf = null }) {
+  const prev = d.art;
+  const rev = {
+    id: uid(),
+    by,
+    kind: revKind(kind),
+    ts: Date.now(),
+    title: title || (prev && prev.title) || "Untitled draft",
+    content,
+    undoOf,
+    dropped: false,
+  };
+  return {
+    ...d,
+    art: {
+      title: rev.title,
+      content,
+      editedBy: by,
+      ts: rev.ts,
+      log: pruneRevs([...((prev && prev.log) || []), rev]),
+    },
+  };
+}
+
+function undoLast(d, by) {
+  const t = undoTarget(d.art);
+  if (!t) return d;
+  return commitRevision(d, { by, kind: "undo", title: t.prev.title, content: t.prev.content, undoOf: t.head.id });
+}
+
+function revLabel(e, log) {
+  const when = e.ts ? " · " + timeAgo(e.ts) + " ago" : "";
+  if (e.kind === "undo") {
+    const target = log.find((x) => x.id === e.undoOf);
+    return e.by + " undid " + (target ? target.by + "'s" : "an earlier") + " edit" + when;
+  }
+  return e.by + (e.kind === "ai" ? " (AI)" : "") + " edited" + when;
+}
+
 const emptyRoomData = () => ({ msgs: [], art: null, pres: {} });
 function normalizeRoomData(v) {
   if (!v || typeof v !== "object") return emptyRoomData();
   return {
     msgs: Array.isArray(v.msgs) ? v.msgs : [],
-    art: v.art && typeof v.art === "object" ? v.art : null,
+    art: normalizeArtifact(v.art),
     pres: v.pres && typeof v.pres === "object" ? v.pres : {},
   };
 }
@@ -286,16 +402,12 @@ export default function SparkroomPOC() {
     msgs: [...d.msgs, { id: uid(), author, role, text, ts: Date.now() }].slice(-60),
   });
 
-  const setArtifact = (d, title, content, by, kind) => ({
-    ...d,
-    art: {
-      title: title || (d.art && d.art.title) || "Untitled draft",
-      content,
-      editedBy: by,
-      ts: Date.now(),
-      log: [...((d.art && d.art.log) || []), { by, kind, ts: Date.now() }].slice(-16),
-    },
-  });
+  const undoDraft = async () => {
+    if (!room || !undoTarget(rd.art)) return;
+    // mutateRoom re-reads before applying, so this undoes whatever is actually
+    // the newest revision — not the one this tab happened to be showing.
+    await mutateRoom(room.id, (d) => undoLast(d, me));
+  };
 
   const callAI = async (roomId, roomInfo) => {
     setAiBusy(true);
@@ -339,7 +451,12 @@ export default function SparkroomPOC() {
       await mutateRoom(roomId, (d) => {
         let next = addMessage(d, AI_NAME, "ai", reply);
         if (parsed && parsed.artifact && typeof parsed.artifact.content === "string" && parsed.artifact.content) {
-          next = setArtifact(next, parsed.artifact.title, parsed.artifact.content, AI_NAME, "ai");
+          next = commitRevision(next, {
+            by: AI_NAME,
+            kind: "ai",
+            title: parsed.artifact.title,
+            content: parsed.artifact.content,
+          });
         }
         return next;
       });
@@ -415,6 +532,10 @@ export default function SparkroomPOC() {
     setConfirmWipe(false);
     setView({ screen: "lobby" });
   };
+
+  const headRev = rd.art && rd.art.log && rd.art.log.length ? rd.art.log[rd.art.log.length - 1] : null;
+  const undoable = undoTarget(rd.art);
+  const canUndo = !!undoable;
 
   const here = Object.entries(rd.pres)
     .filter(([, ts]) => Date.now() - ts < 90 * 1000)
@@ -572,7 +693,16 @@ export default function SparkroomPOC() {
               {t === "draft" && rd.art && (
                 <span style={{ display: "flex", gap: 1.5 }}>
                   {(rd.art.log || []).slice(-8).map((e, i) => (
-                    <span key={i} style={{ width: 5, height: 9, borderRadius: 1, background: e.kind === "ai" ? C.ai : C.human }} />
+                    <span
+                      key={i}
+                      style={{
+                        width: 5,
+                        height: 9,
+                        borderRadius: 1,
+                        background: e.kind === "undo" ? "transparent" : e.kind === "ai" ? C.ai : C.human,
+                        boxShadow: e.kind === "undo" ? "inset 0 0 0 1.5px " + C.faint : "none",
+                      }}
+                    />
                   ))}
                 </span>
               )}
@@ -661,18 +791,36 @@ export default function SparkroomPOC() {
             <div>
               <div style={{ fontFamily: fontDisplay, fontWeight: 700, fontSize: 23, lineHeight: 1.15, marginBottom: 6 }}>{rd.art.title}</div>
               <div style={{ fontFamily: fontMeta, fontSize: 11, color: C.faint, marginBottom: 12 }}>
-                last touched by{" "}
-                <span style={{ color: ((rd.art.log || []).slice(-1)[0] || {}).kind === "ai" ? C.ai : C.human, fontWeight: 600 }}>{rd.art.editedBy}</span>{" "}
+                {headRev && headRev.kind === "undo" ? "reverted by " : "last touched by "}
+                <span style={{ color: headRev && headRev.kind === "ai" ? C.ai : C.human, fontWeight: 600 }}>{rd.art.editedBy}</span>{" "}
                 · {timeAgo(rd.art.ts)} ago
               </div>
               <div style={{ display: "flex", gap: 2, marginBottom: 14, alignItems: "center", flexWrap: "wrap" }}>
                 {(rd.art.log || []).map((e, i) => (
-                  <span key={i} title={e.by} style={{ width: 14, height: 8, borderRadius: 2, background: e.kind === "ai" ? C.ai : C.human }} />
+                  <span
+                    key={e.id || i}
+                    title={revLabel(e, rd.art.log || [])}
+                    style={{
+                      width: 14,
+                      height: 8,
+                      borderRadius: 2,
+                      background: e.kind === "undo" ? "transparent" : e.kind === "ai" ? C.ai : C.human,
+                      boxShadow: e.kind === "undo" ? "inset 0 0 0 1.5px " + C.faint : "none",
+                      opacity: e.dropped ? 0.4 : 1,
+                    }}
+                  />
                 ))}
                 <span style={{ fontFamily: fontMeta, fontSize: 10, color: C.faint, marginLeft: 6 }}>
                   woven by <span style={{ color: C.human }}>humans</span> + <span style={{ color: C.ai }}>{AI_NAME}</span>
                 </span>
               </div>
+              {!editing && (
+                <div style={{ marginBottom: 12 }}>
+                  <Btn kind="ghost" onClick={undoDraft} disabled={!canUndo} style={{ width: "100%", padding: "8px 12px", fontSize: 12.5 }}>
+                    {canUndo ? "↩ Undo " + undoable.head.by + "'s change" : "Nothing to undo"}
+                  </Btn>
+                </div>
+              )}
 
               {editing ? (
                 <>
@@ -683,7 +831,9 @@ export default function SparkroomPOC() {
                       onClick={async () => {
                         const txt = editText;
                         setEditing(false);
-                        await mutateRoom(room.id, (d) => setArtifact(d, d.art && d.art.title, txt, me, "human"));
+                        await mutateRoom(room.id, (d) =>
+                          commitRevision(d, { by: me, kind: "human", title: d.art && d.art.title, content: txt })
+                        );
                       }}
                       style={{ flex: 1 }}
                     >
