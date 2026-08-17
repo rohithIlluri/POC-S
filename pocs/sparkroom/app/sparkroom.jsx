@@ -82,6 +82,8 @@ async function sDelete(key, shared = true) {
 }
 
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+const CLIENT = uid(); // identifies this tab's writes
+const PENDING_TTL = 60 * 1000; // how long to keep re-landing a write nobody acknowledged
 const sleep = (ms) => new Promise((res) => setTimeout(res, ms));
 
 function timeAgo(ts) {
@@ -134,6 +136,7 @@ function normalizeArtifact(a) {
       title: typeof e.title === "string" ? e.title : null,
       content: typeof e.content === "string" ? e.content : null,
       undoOf: typeof e.undoOf === "string" ? e.undoOf : null,
+      mergedWith: typeof e.mergedWith === "string" ? e.mergedWith : null,
       dropped: !!e.dropped,
     }));
 
@@ -171,34 +174,113 @@ function undoTarget(art) {
   return { head, prev };
 }
 
-function commitRevision(d, { by, kind, title, content, undoOf = null }) {
+/*
+  Writes are built once and applied by id, never by position. A write can be
+  re-applied onto a newer base (see mutateRoom) when someone else's write lands
+  first, so every apply has to be idempotent: if the item is already in the
+  room, applying it again is a no-op rather than a duplicate.
+*/
+const newMessage = (author, role, text) => ({ id: uid(), author, role, text, ts: Date.now() });
+
+const withMessage = (d, msg) =>
+  d.msgs.some((m) => m.id === msg.id) ? d : { ...d, msgs: [...d.msgs, msg].slice(-60) };
+
+function newRevision({ by, kind, title, content, undoOf = null, mergedWith = null }) {
+  return { id: uid(), by, kind: revKind(kind), ts: Date.now(), title: title || null, content, undoOf, mergedWith, dropped: false };
+}
+
+function withRevision(d, rev) {
   const prev = d.art;
-  const rev = {
-    id: uid(),
-    by,
-    kind: revKind(kind),
-    ts: Date.now(),
-    title: title || (prev && prev.title) || "Untitled draft",
-    content,
-    undoOf,
-    dropped: false,
-  };
+  if (prev && Array.isArray(prev.log) && prev.log.some((e) => e.id === rev.id)) return d; // already applied
+  const title = rev.title || (prev && prev.title) || "Untitled draft";
   return {
     ...d,
     art: {
-      title: rev.title,
-      content,
-      editedBy: by,
+      title,
+      content: rev.content,
+      editedBy: rev.by,
       ts: rev.ts,
-      log: pruneRevs([...((prev && prev.log) || []), rev]),
+      log: pruneRevs([...((prev && prev.log) || []), { ...rev, title }]),
     },
   };
 }
 
-function undoLast(d, by) {
-  const t = undoTarget(d.art);
-  if (!t) return d;
-  return commitRevision(d, { by, kind: "undo", title: t.prev.title, content: t.prev.content, undoOf: t.head.id });
+/*
+  Line-level three-way merge, used when someone commits a revision while you
+  are still typing. Edits that touch different parts of the draft both survive;
+  edits that touch the same lines are reported as a conflict for a human to
+  settle, because guessing there would silently destroy someone's work.
+
+  This is deliberately line-granular rather than a CRDT: it is enough to keep
+  the common case (Sable appends a section while a human fixes the title) from
+  losing either side, and it makes the semantics the CRDT layer must preserve
+  explicit.
+*/
+function lcsPairs(a, b) {
+  const n = a.length, m = b.length;
+  const dp = Array.from({ length: n + 1 }, () => new Uint32Array(m + 1));
+  for (let i = n - 1; i >= 0; i--) {
+    for (let j = m - 1; j >= 0; j--) {
+      dp[i][j] = a[i] === b[j] ? dp[i + 1][j + 1] + 1 : Math.max(dp[i + 1][j], dp[i][j + 1]);
+    }
+  }
+  const out = [];
+  let i = 0, j = 0;
+  while (i < n && j < m) {
+    if (a[i] === b[j]) { out.push([i, j]); i++; j++; }
+    else if (dp[i + 1][j] >= dp[i][j + 1]) i++;
+    else j++;
+  }
+  return out;
+}
+
+// Regions where `x` differs from `base`, expressed in base coordinates.
+function hunks(base, x) {
+  const out = [];
+  const push = (bStart, bEnd, xStart, xEnd) => {
+    if (bEnd > bStart || xEnd > xStart) out.push({ bStart, bEnd, lines: x.slice(xStart, xEnd) });
+  };
+  let bi = 0, xi = 0;
+  for (const [b, xx] of lcsPairs(base, x)) {
+    push(bi, b, xi, xx);
+    bi = b + 1;
+    xi = xx + 1;
+  }
+  push(bi, base.length, xi, x.length);
+  return out;
+}
+
+function merge3(baseText, oursText, theirsText) {
+  if (oursText === theirsText) return { ok: true, text: oursText };
+  if (baseText === oursText) return { ok: true, text: theirsText };
+  if (baseText === theirsText) return { ok: true, text: oursText };
+
+  const base = baseText.split("\n");
+  const ours = hunks(base, oursText.split("\n"));
+  const theirs = hunks(base, theirsText.split("\n"));
+
+  const extra = [];
+  for (const y of theirs) {
+    const text = y.lines.join("\n");
+    const same = (x) => x.bStart === y.bStart && x.bEnd === y.bEnd && x.lines.join("\n") === text;
+    if (ours.some(same)) continue; // both made the identical change
+    const clashes = (x) =>
+      (x.bStart < y.bEnd && y.bStart < x.bEnd) || // both rewrote the same lines
+      (x.bStart === y.bStart && x.bEnd === y.bEnd); // including two inserts at one point
+    if (ours.some(clashes)) return { ok: false };
+    extra.push(y);
+  }
+
+  const all = [...ours, ...extra].sort((p, q) => p.bStart - q.bStart || p.bEnd - q.bEnd);
+  const out = [];
+  let cur = 0;
+  for (const h of all) {
+    if (h.bStart < cur) return { ok: false };
+    out.push(...base.slice(cur, h.bStart), ...h.lines);
+    cur = h.bEnd;
+  }
+  out.push(...base.slice(cur));
+  return { ok: true, text: out.join("\n") };
 }
 
 function revLabel(e, log) {
@@ -210,13 +292,18 @@ function revLabel(e, log) {
   return e.by + (e.kind === "ai" ? " (AI)" : "") + " edited" + when;
 }
 
-const emptyRoomData = () => ({ msgs: [], art: null, pres: {} });
+// v/w identify the write that produced this state: a version that only ever
+// climbs, and the tab that wrote it. Together they let a writer read its own
+// write back and tell "mine landed" from "someone overwrote me".
+const emptyRoomData = () => ({ msgs: [], art: null, pres: {}, v: 0, w: null });
 function normalizeRoomData(v) {
   if (!v || typeof v !== "object") return emptyRoomData();
   return {
     msgs: Array.isArray(v.msgs) ? v.msgs : [],
     art: normalizeArtifact(v.art),
     pres: v.pres && typeof v.pres === "object" ? v.pres : {},
+    v: Number(v.v) || 0,
+    w: typeof v.w === "string" ? v.w : null,
   };
 }
 function extractJSON(text) {
@@ -292,6 +379,9 @@ export default function SparkroomPOC() {
   const [aiBusy, setAiBusy] = useState(false);
   const [editing, setEditing] = useState(false);
   const [editText, setEditText] = useState("");
+  const [editBase, setEditBase] = useState(null); // revision the open editor started from
+  const [conflict, setConflict] = useState(null);
+  const [mergeNote, setMergeNote] = useState(null);
   const [confirmWipe, setConfirmWipe] = useState(false);
   const feedRef = useRef(null);
 
@@ -301,6 +391,7 @@ export default function SparkroomPOC() {
   rdRef.current = rd;
   const meRef = useRef(me);
   meRef.current = me;
+  const pendingRef = useRef([]); // writes not yet observed in a read
 
   const room = rooms.find((r) => r.id === view.id);
 
@@ -334,9 +425,28 @@ export default function SparkroomPOC() {
     const r = await sGet(rKey(roomId));
     if (viewRef.current.screen !== "room" || viewRef.current.id !== roomId) return;
     if (r.ok) {
-      setRd(normalizeRoomData(r.value));
+      // Repair pass: anything we wrote that is missing from this read was
+      // overwritten by a writer whose read predated ours. Fold it back in
+      // before rendering (so it never flickers out of the UI) and re-land it.
+      let state = normalizeRoomData(r.value);
+      const keep = [];
+      const lost = [];
+      for (const p of pendingRef.current) {
+        if (p.roomId !== roomId) { keep.push(p); continue; }
+        if (Date.now() - p.ts > PENDING_TTL) continue; // stop retrying eventually
+        const applied = p.apply(state);
+        if (applied === state) continue; // already there — nothing pending
+        state = normalizeRoomData(applied);
+        keep.push(p);
+        lost.push(p);
+      }
+      pendingRef.current = keep;
+      setRd(state);
       setRoomLoaded(true);
-      setSyncTrouble(false);
+      setSyncTrouble(lost.length > 0);
+      if (lost.length) {
+        mutateRoom(roomId, (d) => lost.reduce((acc, p) => p.apply(acc), d), { track: false });
+      }
     } else if (firstLoad) {
       // nothing to preserve yet — start empty rather than hanging
       setRd(emptyRoomData());
@@ -347,12 +457,29 @@ export default function SparkroomPOC() {
     }
   };
 
-  // read-merge-write with one retry; never throws
-  const mutateRoom = async (roomId, fn) => {
+  /*
+    Read-merge-write. The storage API has no conditional write, so two tabs can
+    read the same state and write in turn — the second silently erases the
+    first, and no amount of care inside a single write can prevent it.
+
+    So writes are repaired rather than prevented. Every content write is kept
+    in `pending` until a later read proves it landed; a poll that comes back
+    without it re-applies it (see pollRoom). Applies are idempotent by id, so
+    re-applying one that did land is a no-op, and an overwritten write is
+    restored within one poll cycle instead of being lost.
+
+    The repair rides along on the poll that already happens, so it costs no
+    extra requests in the steady state — which matters here, since polling too
+    many keys too often was the original bug this POC was built around.
+  */
+  const mutateRoom = async (roomId, fn, { track = true } = {}) => {
+    if (track) pendingRef.current = [...pendingRef.current, { roomId, apply: fn, ts: Date.now() }];
     for (let attempt = 0; attempt < 2; attempt++) {
       const r = await sGet(rKey(roomId));
       const base = r.ok && r.value ? normalizeRoomData(r.value) : normalizeRoomData(rdRef.current);
       const next = normalizeRoomData(fn(base));
+      next.v = base.v + 1;
+      next.w = CLIENT;
       // stamp own presence on every write (free heartbeat)
       if (meRef.current) next.pres = { ...next.pres, [meRef.current]: Date.now() };
       // prune stale presence
@@ -376,9 +503,9 @@ export default function SparkroomPOC() {
     setRoomLoaded(false);
     setSyncTrouble(false);
     pollRoom(roomId, true);
-    mutateRoom(roomId, (d) => d); // announce presence
+    mutateRoom(roomId, (d) => d, { track: false }); // announce presence
     const poll = setInterval(() => pollRoom(roomId, false), 6000);
-    const hb = setInterval(() => mutateRoom(roomId, (d) => d), 45000);
+    const hb = setInterval(() => mutateRoom(roomId, (d) => d, { track: false }), 45000);
     return () => {
       clearInterval(poll);
       clearInterval(hb);
@@ -397,16 +524,81 @@ export default function SparkroomPOC() {
     await sSet(ME_KEY, { name: nm }, false);
   };
 
-  const addMessage = (d, author, role, text) => ({
-    ...d,
-    msgs: [...d.msgs, { id: uid(), author, role, text, ts: Date.now() }].slice(-60),
-  });
+  const say = (roomId, author, role, text) => {
+    const msg = newMessage(author, role, text);
+    return mutateRoom(roomId, (d) => withMessage(d, msg));
+  };
 
   const undoDraft = async () => {
     if (!room || !undoTarget(rd.art)) return;
-    // mutateRoom re-reads before applying, so this undoes whatever is actually
-    // the newest revision — not the one this tab happened to be showing.
-    await mutateRoom(room.id, (d) => undoLast(d, me));
+    // One id for the whole attempt, but the target is recomputed against
+    // whatever is freshest — so this undoes the newest revision, not the one
+    // this tab happened to be showing, and a retry never undoes twice.
+    const id = uid();
+    await mutateRoom(room.id, (d) => {
+      if (d.art && d.art.log.some((e) => e.id === id)) return d;
+      const t = undoTarget(d.art);
+      if (!t) return d;
+      return withRevision(d, {
+        ...newRevision({ by: me, kind: "undo", title: t.prev.title, content: t.prev.content, undoOf: t.head.id }),
+        id,
+      });
+    });
+  };
+
+  /*
+    Saving an edit is a merge, not an overwrite. If a revision landed while the
+    editor was open, the two changes are merged when they touch different lines
+    and reported as a conflict when they touch the same ones — the editor stays
+    open with the text intact so nobody's work disappears on a race.
+    `force` is the human's explicit "keep mine" after seeing the conflict.
+  */
+  const saveEdit = async (force) => {
+    if (!room) return;
+    const txt = editText;
+    const base = editBase;
+    const id = uid();
+    let outcome = "clean";
+    let against = null;
+    await mutateRoom(room.id, (d) => {
+      if (d.art && d.art.log.some((e) => e.id === id)) return d; // already applied
+      const log = (d.art && d.art.log) || [];
+      const head = log.length ? log[log.length - 1] : null;
+      const moved = !!(head && base && base.id && head.id !== base.id);
+      const commit = (content, mergedWith) =>
+        withRevision(d, {
+          ...newRevision({ by: me, kind: "human", title: d.art && d.art.title, content, mergedWith }),
+          id,
+        });
+      if (head && head.content === txt) {
+        outcome = "clean";
+        return d; // identical to what is already there — don't log an empty revision
+      }
+      if (!moved) {
+        outcome = "clean";
+        return commit(txt, null);
+      }
+      against = head;
+      if (force) {
+        outcome = "forced";
+        return commit(txt, head.id);
+      }
+      const m = merge3(base.content, txt, head.content);
+      if (!m.ok) {
+        outcome = "conflict";
+        return d; // leave the room untouched; the human decides
+      }
+      outcome = "merged";
+      return commit(m.text, head.id);
+    });
+    if (outcome === "conflict") {
+      setConflict({ by: against.by, content: against.content, id: against.id });
+      return;
+    }
+    setEditing(false);
+    setConflict(null);
+    setEditBase(null);
+    setMergeNote(outcome === "merged" && against ? "Merged with " + against.by + "'s change." : null);
   };
 
   const callAI = async (roomId, roomInfo) => {
@@ -448,23 +640,18 @@ export default function SparkroomPOC() {
       const reply =
         (parsed && typeof parsed.message === "string" && parsed.message) ||
         (text ? text.slice(0, 400) : "I lost my train of thought — ask me again?");
+      const msg = newMessage(AI_NAME, "ai", reply);
+      const rev =
+        parsed && parsed.artifact && typeof parsed.artifact.content === "string" && parsed.artifact.content
+          ? newRevision({ by: AI_NAME, kind: "ai", title: parsed.artifact.title, content: parsed.artifact.content })
+          : null;
       await mutateRoom(roomId, (d) => {
-        let next = addMessage(d, AI_NAME, "ai", reply);
-        if (parsed && parsed.artifact && typeof parsed.artifact.content === "string" && parsed.artifact.content) {
-          next = commitRevision(next, {
-            by: AI_NAME,
-            kind: "ai",
-            title: parsed.artifact.title,
-            content: parsed.artifact.content,
-          });
-        }
-        return next;
+        const next = withMessage(d, msg);
+        return rev ? withRevision(next, rev) : next;
       });
     } catch (e) {
       console.error("AI call failed", e);
-      await mutateRoom(roomId, (d) =>
-        addMessage(d, AI_NAME, "ai", "I couldn't reach the model just now — try me again in a moment.")
-      );
+      await say(roomId, AI_NAME, "ai", "I couldn't reach the model just now — try me again in a moment.");
     } finally {
       setAiBusy(false);
     }
@@ -492,7 +679,7 @@ export default function SparkroomPOC() {
       setRoomLoaded(true);
       setTab("talk");
       setView({ screen: "room", id: r.id });
-      await mutateRoom(r.id, (d) => addMessage(d, me, "human", pitch));
+      await say(r.id, me, "human", pitch);
       await callAI(r.id, r);
     } finally {
       setCreating(false);
@@ -503,7 +690,7 @@ export default function SparkroomPOC() {
     const text = draft.trim();
     if (!text || !room) return;
     setDraft("");
-    await mutateRoom(room.id, (d) => addMessage(d, me, "human", text));
+    await say(room.id, me, "human", text);
     if (/@ai\b/i.test(text) || new RegExp("\\b" + AI_NAME + "\\b", "i").test(text)) {
       await callAI(room.id, room);
     }
@@ -511,9 +698,7 @@ export default function SparkroomPOC() {
 
   const askForDraft = async () => {
     if (aiBusy || !room) return;
-    await mutateRoom(room.id, (d) =>
-      addMessage(d, me, "human", "@ai — turn what we've got into a working draft we can all edit.")
-    );
+    await say(room.id, me, "human", "@ai — turn what we've got into a working draft we can all edit.");
     setTab("draft");
     await callAI(room.id, room);
   };
@@ -822,24 +1007,45 @@ export default function SparkroomPOC() {
                 </div>
               )}
 
+              {mergeNote && !editing && (
+                <div style={{ fontFamily: fontMeta, fontSize: 11, color: C.ai, background: C.aiTint, border: "1px solid " + C.ai, borderRadius: 9, padding: "7px 10px", marginBottom: 12 }}>
+                  ✓ {mergeNote} Both changes are in the draft.
+                </div>
+              )}
+
               {editing ? (
                 <>
+                  {conflict && (
+                    <div style={{ border: "1.5px solid " + C.danger, background: "#F7E9E6", borderRadius: 10, padding: 12, marginBottom: 10 }}>
+                      <div style={{ fontWeight: 700, fontSize: 13.5, color: C.danger, marginBottom: 4 }}>
+                        {conflict.by} changed the same lines while you were editing
+                      </div>
+                      <div style={{ fontSize: 13, lineHeight: 1.5, color: "#4A4F4B", marginBottom: 8 }}>
+                        Nothing was saved, so neither version is lost — yours is still in the box below. Their version:
+                      </div>
+                      <div style={{ background: C.panel, border: "1px solid " + C.line, borderRadius: 8, padding: 10, fontSize: 12.5, lineHeight: 1.5, whiteSpace: "pre-wrap", overflowWrap: "break-word", maxHeight: 140, overflowY: "auto", marginBottom: 8 }}>
+                        {conflict.content}
+                      </div>
+                      <div style={{ display: "flex", gap: 8 }}>
+                        <Btn kind="solidHuman" onClick={() => saveEdit(true)} style={{ flex: 1 }}>
+                          Keep mine
+                        </Btn>
+                        <Btn
+                          kind="ghost"
+                          onClick={() => { setEditText(conflict.content); setEditBase({ id: conflict.id, content: conflict.content }); setConflict(null); }}
+                          style={{ flex: 1 }}
+                        >
+                          Start from theirs
+                        </Btn>
+                      </div>
+                    </div>
+                  )}
                   <textarea value={editText} onChange={(e) => setEditText(e.target.value)} rows={14} style={{ width: "100%", padding: 12, fontSize: 14, lineHeight: 1.55, border: "1.5px solid " + C.human, borderRadius: 10, background: C.panel, color: C.ink }} />
                   <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
-                    <Btn
-                      kind="solidHuman"
-                      onClick={async () => {
-                        const txt = editText;
-                        setEditing(false);
-                        await mutateRoom(room.id, (d) =>
-                          commitRevision(d, { by: me, kind: "human", title: d.art && d.art.title, content: txt })
-                        );
-                      }}
-                      style={{ flex: 1 }}
-                    >
+                    <Btn kind="solidHuman" onClick={() => saveEdit(false)} style={{ flex: 1 }}>
                       Save your edit
                     </Btn>
-                    <Btn kind="ghost" onClick={() => setEditing(false)}>Cancel</Btn>
+                    <Btn kind="ghost" onClick={() => { setEditing(false); setConflict(null); }}>Cancel</Btn>
                   </div>
                 </>
               ) : (
@@ -848,7 +1054,7 @@ export default function SparkroomPOC() {
                     {rd.art.content}
                   </div>
                   <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
-                    <Btn kind="human" onClick={() => { setEditText(rd.art.content); setEditing(true); }} style={{ flex: 1 }}>
+                    <Btn kind="human" onClick={() => { setEditText(rd.art.content); setEditBase({ id: headRev ? headRev.id : null, content: rd.art.content }); setConflict(null); setEditing(true); }} style={{ flex: 1 }}>
                       Edit as {me}
                     </Btn>
                     <Btn kind="ai" onClick={askForDraft} disabled={aiBusy} style={{ flex: 1 }}>
