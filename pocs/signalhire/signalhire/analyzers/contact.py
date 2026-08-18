@@ -32,22 +32,35 @@ def analyze_contact(doc: ParsedDoc, ctx: Context) -> list[Signal]:
     me = doc.identity
 
     if me.email_hash or me.phone_hash:
+        # The pipeline pre-indexes every handle; direct analyzer calls build
+        # the same index from the identity map on first use. Self stays in
+        # the index — the query below filters it by doc_id.
+        if not ctx.contact_email and not ctx.contact_phone and ctx.identity:
+            for other_id, other in ctx.identity.items():
+                if other.email_hash:
+                    ctx.contact_email.setdefault(other.email_hash, []).append(
+                        (other_id, other.name_hash))
+                if other.phone_hash:
+                    ctx.contact_phone.setdefault(other.phone_hash, []).append(
+                        (other_id, other.name_hash))
+
+        # A collision needs both names present and different — otherwise it
+        # is the same person applying twice, or missing data.
         collisions = 0
         kinds: set[str] = set()
-        for other_id, other in ctx.identity.items():
-            if other_id == doc.doc_id:
-                continue
-            # A collision needs both names present and different — otherwise
-            # it is the same person applying twice, or missing data.
-            if not (me.name_hash and other.name_hash
-                    and me.name_hash != other.name_hash):
-                continue
-            if me.email_hash and me.email_hash == other.email_hash:
-                collisions += 1
-                kinds.add("email")
-            elif me.phone_hash and me.phone_hash == other.phone_hash:
-                collisions += 1
-                kinds.add("phone")
+        seen: set[str] = set()
+        if me.name_hash:
+            for other_id, other_name in ctx.contact_email.get(me.email_hash, []):
+                if other_id != doc.doc_id and other_name \
+                        and other_name != me.name_hash:
+                    collisions += 1
+                    seen.add(other_id)
+                    kinds.add("email")
+            for other_id, other_name in ctx.contact_phone.get(me.phone_hash, []):
+                if other_id != doc.doc_id and other_id not in seen \
+                        and other_name and other_name != me.name_hash:
+                    collisions += 1
+                    kinds.add("phone")
         if collisions:
             signals.append(Signal(
                 code="CONTACT_COLLISION", severity=Severity.STRONG,

@@ -20,7 +20,8 @@ from . import analyzers as analyzer_registry
 from .analyzers.boilerplate import gram_sequence
 from .analyzers.dedupe import SIMILARITY_THRESHOLD, body_text, minhash, new_index
 from .analyzers.forensics import creation_window
-from .analyzers.jd_mirror import terms
+from .analyzers.jd_mirror import ngrams as jd_ngrams
+from .analyzers.jd_mirror import terms, word_sequence
 from .analyzers.layout import has_authored_layout, layout_fingerprint
 from .parse import discover, parse_file, parse_pdf_date
 from .scoring import Thresholds, score_document
@@ -92,11 +93,29 @@ def build_context(docs: list[ParsedDoc], jd_text: str = "",
             df.update(term_set)
         ctx.global_idf = {t: math.log((n + 1) / (c + 1)) for t, c in df.items()}
 
+    # JD artifacts are per-scan constants; build them once instead of once
+    # per document inside the analyzer.
+    if jd_text.strip():
+        ctx.jd_terms = terms(jd_text)
+        ctx.jd_ngrams = jd_ngrams(word_sequence(jd_text))
+
+    # Contact-handle indexes: analyzer F drops from O(batch) per document to
+    # a dict lookup.
+    for d in docs:
+        ident = d.identity
+        if ident.email_hash:
+            ctx.contact_email.setdefault(ident.email_hash, []).append(
+                (d.doc_id, ident.name_hash))
+        if ident.phone_hash:
+            ctx.contact_phone.setdefault(ident.phone_hash, []).append(
+                (d.doc_id, ident.name_hash))
+
     # Near-duplicate index: build every signature first, then insert, so the
-    # result never depends on the order files were read.
+    # result never depends on the order files were read. The identity-masked
+    # body is cached — dedupe, boilerplate and the shingle index all reuse it.
     ctx.lsh = new_index()
     for d in docs:
-        body = body_text(d)
+        ctx.bodies[d.doc_id] = body = body_text(d)
         if body.strip():
             ctx.minhashes[d.doc_id] = minhash(body)
     with ctx.lsh.insertion_session() as session:
@@ -134,7 +153,7 @@ def build_context(docs: list[ParsedDoc], jd_text: str = "",
     owners: dict[str, set[str]] = defaultdict(set)
     for d in docs:
         who = d.identity.key() or d.doc_id
-        for g in set(gram_sequence(body_text(d))):
+        for g in set(gram_sequence(ctx.bodies[d.doc_id])):
             owners[g].add(who)
     ctx.shingle_owners = {g: len(w) for g, w in owners.items() if len(w) > 1}
 

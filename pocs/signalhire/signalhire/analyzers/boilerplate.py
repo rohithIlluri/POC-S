@@ -40,7 +40,8 @@ def gram_sequence(text: str, n: int = SHINGLE_N) -> list[str]:
 def analyze_boilerplate(doc: ParsedDoc, ctx: Context) -> list[Signal]:
     if not ctx.shingle_owners:
         return []
-    grams = gram_sequence(body_text(doc))
+    body = ctx.bodies.get(doc.doc_id)
+    grams = gram_sequence(body if body is not None else body_text(doc))
     if len(grams) < MIN_GRAMS:
         return []
 

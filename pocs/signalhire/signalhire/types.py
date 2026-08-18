@@ -111,6 +111,12 @@ class Context:
     clusters: dict[str, str] = field(default_factory=dict)         # doc_id -> stable cluster id
     creation_windows: dict[str, int] = field(default_factory=dict) # window key -> distinct applicants
     shingle_owners: dict[str, int] = field(default_factory=dict)   # 8-gram -> distinct applicants
+    # Batch-level caches so per-document analyzers stay O(doc), not O(batch):
+    bodies: dict[str, str] = field(default_factory=dict)           # doc_id -> identity-masked body
+    jd_terms: Any = None                                           # Counter, built once per scan
+    jd_ngrams: Any = None                                          # set, built once per scan
+    contact_email: dict[str, list] = field(default_factory=dict)   # email_hash -> [(doc_id, name_hash)]
+    contact_phone: dict[str, list] = field(default_factory=dict)   # phone_hash -> [(doc_id, name_hash)]
 
 
 Analyzer = Callable[[ParsedDoc, Context], "list[Signal]"]

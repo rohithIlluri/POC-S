@@ -104,6 +104,14 @@ Demo mode: no account → 1 scan of ≤5 files, results watermarked "demo".
   92 tests, 5 gates green.
   Frontier: HTML-launder full flagging (needs a 3rd family at trickle
   scale), invite email, Stripe keys, hosted deploy.
+- it7 (done): PERF — profile-driven 2.6x: MinHash update_batch (was 65%
+  of runtime at one update per shingle), per-scan Context caches (JD
+  terms/ngrams once, identity-masked bodies shared across dedupe/shingle
+  index/boilerplate, contact handles pre-indexed to O(1) per doc).
+  300 docs 2.41s → 0.91s; 500-doc Talent Cloud ceiling 1.53s. No
+  behavioral change; 92 tests + 5 gates identical.
+  Remaining work is operator-gated (Stripe keys, deploy target, email
+  provider) or research (3rd family for trickle-scale laundering).
 
 ## Rules for future iterations
 

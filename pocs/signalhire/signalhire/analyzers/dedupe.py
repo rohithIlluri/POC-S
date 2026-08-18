@@ -66,8 +66,11 @@ def shingles(text: str, k: int = SHINGLE_K) -> set[str]:
 
 def minhash(text: str) -> MinHash:
     m = MinHash(num_perm=NUM_PERM)
-    for sh in shingles(text):
-        m.update(sh.encode("utf8"))
+    batch = [sh.encode("utf8") for sh in shingles(text)]
+    if batch:
+        # One vectorized permutation pass instead of one per shingle —
+        # this is the pipeline's dominant cost on large batches.
+        m.update_batch(batch)
     return m
 
 
