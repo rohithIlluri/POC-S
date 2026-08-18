@@ -34,7 +34,10 @@ SUPPORTED_SUFFIXES = {".pdf", ".txt", ".md"}
 _EMAIL_RE = re.compile(r"[\w.+-]+@[\w-]+\.[\w.-]+")
 # Deliberately permissive: US-style and +country formats, 10-15 digits.
 _PHONE_RE = re.compile(r"(?:\+?\d{1,3}[\s.-]?)?(?:\(?\d{3}\)?[\s.-]?)\d{3}[\s.-]?\d{4}")
-_PDF_DATE_RE = re.compile(r"D:(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})")
+# The PDF spec (§7.9.4) allows truncated dates: everything after the year is
+# optional, defaulting to Jan 1 / midnight.
+_PDF_DATE_RE = re.compile(r"D:(\d{4})(\d{2})?(\d{2})?(\d{2})?(\d{2})?(\d{2})?")
+_PDF_DATE_DEFAULTS = (None, 1, 1, 0, 0, 0)
 
 
 def hash_salt() -> str:
@@ -57,8 +60,10 @@ def parse_pdf_date(s: str | None) -> datetime | None:
     m = _PDF_DATE_RE.match(s or "")
     if not m:
         return None
+    parts = [int(g) if g is not None else d
+             for g, d in zip(m.groups(), _PDF_DATE_DEFAULTS)]
     try:
-        return datetime(*map(int, m.groups()), tzinfo=timezone.utc)
+        return datetime(*parts, tzinfo=timezone.utc)
     except ValueError:
         return None
 
@@ -231,7 +236,8 @@ def discover(folder: str | Path, exclude: set[Path] | None = None) -> list[Path]
     folder = Path(folder)
     skip = {p.resolve() for p in (exclude or set())}
     if folder.is_file():
-        return [] if folder.resolve() in skip else [folder]
+        supported = folder.suffix.lower() in SUPPORTED_SUFFIXES
+        return [folder] if supported and folder.resolve() not in skip else []
     return sorted(
         p for p in folder.rglob("*")
         if p.is_file()

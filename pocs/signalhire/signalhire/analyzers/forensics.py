@@ -37,17 +37,20 @@ def analyze_forensics(doc: ParsedDoc, ctx: Context) -> list[Signal]:
                 },
                 analyzer=ANALYZER,
             ))
-    else:
+    elif doc.meta.get("source_kind") != "plaintext":
         # A stripped producer string is itself mildly interesting: authoring
         # tools all stamp one, and hygiene-conscious generators strip it.
+        # Plain-text sources (ATS text fields) never have one, so they are
+        # exempt — otherwise every text submission starts out suspicious.
         signals.append(Signal(
             code="NO_PRODUCER", severity=Severity.WEAK, score_impact=0.15,
             evidence={"note": "no producer or creator string in PDF metadata"},
             analyzer=ANALYZER,
         ))
 
-    created = parse_pdf_date(doc.meta.get("creationdate") or doc.meta.get("creationDate"))
-    modified = parse_pdf_date(doc.meta.get("moddate") or doc.meta.get("modDate"))
+    # parse_pdf lowercases every metadata key, so only the lowercase forms exist.
+    created = parse_pdf_date(doc.meta.get("creationdate"))
+    modified = parse_pdf_date(doc.meta.get("moddate"))
 
     # Wrapper sites render the PDF seconds before submitting it. Humans attach
     # a file they exported earlier.

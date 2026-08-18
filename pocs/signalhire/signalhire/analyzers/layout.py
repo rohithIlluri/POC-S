@@ -45,7 +45,7 @@ def layout_fingerprint(doc: ParsedDoc) -> str:
 
 
 def analyze_layout(doc: ParsedDoc, ctx: Context) -> list[Signal]:
-    fp = layout_fingerprint(doc)
+    fp = doc.layout_hash or layout_fingerprint(doc)
     doc.layout_hash = fp
     if not fp:
         return []

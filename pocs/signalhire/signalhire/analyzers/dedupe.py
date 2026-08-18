@@ -83,6 +83,13 @@ def _different_person(a: Identity, b: Identity) -> bool:
     return bool(ka) and bool(kb) and ka != kb
 
 
+def _same_person(a: Identity, b: Identity) -> bool:
+    """Both handles present and equal. Unknown identities are neither the same
+    person nor a different one — they only ever count toward DUP_CLUSTER."""
+    ka, kb = a.key(), b.key()
+    return bool(ka) and bool(kb) and ka == kb
+
+
 def analyze_dedupe(doc: ParsedDoc, ctx: Context) -> list[Signal]:
     if ctx.lsh is None or not doc.text.strip():
         return []
@@ -104,8 +111,8 @@ def analyze_dedupe(doc: ParsedDoc, ctx: Context) -> list[Signal]:
     me = ctx.identity.get(doc.doc_id, Identity())
     other_person = [d for d in near
                     if _different_person(me, ctx.identity.get(d, Identity()))]
-    same_person = [d for d in near if not _different_person(
-        me, ctx.identity.get(d, Identity()))]
+    same_person = [d for d in near
+                   if _same_person(me, ctx.identity.get(d, Identity()))]
 
     cluster_id = "cl_" + min([doc.doc_id, *near])[:8]
     signals: list[Signal] = []

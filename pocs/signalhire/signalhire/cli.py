@@ -96,6 +96,17 @@ def cmd_collect(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_web(args: argparse.Namespace) -> int:
+    try:
+        import uvicorn
+    except ImportError:
+        print("error: the web app needs the web extra — pip install -e '.[web]'",
+              file=sys.stderr)
+        return 2
+    uvicorn.run("webapp.app:app", host=args.host, port=args.port)
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="signalhire",
@@ -142,6 +153,11 @@ def build_parser() -> argparse.ArgumentParser:
     col.add_argument("--out", default="signatures.json")
     col.add_argument("--confidence", type=float, default=0.7)
     col.set_defaults(func=cmd_collect)
+
+    w = sub.add_parser("web", help="serve the recruiter web app (needs [web] extra)")
+    w.add_argument("--host", default="127.0.0.1")
+    w.add_argument("--port", type=int, default=8710)
+    w.set_defaults(func=cmd_web)
     return p
 
 

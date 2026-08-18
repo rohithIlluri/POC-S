@@ -34,6 +34,7 @@ CODE_TEXT = {
     "TEMPLATE_SWARM": "Many applicants in this batch share this exact layout",
     "HIDDEN_TEXT": "Text hidden from human readers but visible to an ATS parser",
     "PROMPT_INJECTION": "Instructions aimed at an AI reader embedded in the document",
+    "INJECTION_PHRASE": "Visible text resembles an instruction to an AI reader",
     "JD_MIRROR_EXTREME": "Resume mirrors the job description's rare terms almost exactly",
     "JD_MIRROR_HIGH": "Resume mirrors much of the job description's rare vocabulary",
     "JD_PHRASE_LIFT": "Exact multi-word phrases lifted from the job description",
