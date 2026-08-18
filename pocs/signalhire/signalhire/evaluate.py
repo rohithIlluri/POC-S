@@ -26,7 +26,10 @@ FLAGGED_LABELS = {"mass_generated", "high_risk"}
 
 MAX_FALSE_FLAG_RATE = 0.02
 MIN_WRAPPER_RECALL = 0.70
-MIN_EVASION_RECALL = 0.50   # deliberately track-covering wrapper output
+# Deliberately track-covering wrapper output. Raised from 0.50 to 0.90 once
+# correlation-aware evidence combination took the measured rate to 100%: a
+# floor far below the achieved rate stops being a regression guard.
+MIN_EVASION_RECALL = 0.90
 MIN_ATTACK_RECALL = 1.0
 FAIRNESS_Z_LIMIT = 1.96          # two-sided, alpha = 0.05
 

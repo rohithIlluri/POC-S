@@ -129,6 +129,9 @@ class ScoredApplication:
     effort_score: int
     risk_score: int
     label: str
+    # How the score was reached: per-signal likelihood ratios, the correlation
+    # discount each took, and how many independent analyzer families agreed.
+    evidence: dict[str, Any] = field(default_factory=dict)
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -142,5 +145,6 @@ class ScoredApplication:
             "effort_score": self.effort_score,
             "risk_score": self.risk_score,
             "reason_codes": [s.as_dict() for s in self.signals],
+            "evidence": self.evidence,
             "parse_error": self.doc.parse_error,
         }

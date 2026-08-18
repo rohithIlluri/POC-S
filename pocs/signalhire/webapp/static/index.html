@@ -166,6 +166,8 @@ header.top{
 .sig pre{margin:0;background:var(--paper);border:1px solid var(--line);
   padding:.5rem .6rem;font-size:.68rem;overflow-x:auto;font-family:var(--mono)}
 .empty-note{font-family:var(--mono);font-size:.78rem;color:var(--muted)}
+.combine{font-size:.78rem;color:var(--muted);border-left:2px solid var(--line);
+  padding:.15rem 0 .15rem .6rem;margin:0 0 .7rem}
 .skipped{font-family:var(--mono);font-size:.72rem;color:var(--burnt);margin-bottom:1rem}
 .assist{
   border-left:3px solid var(--amber); background:var(--card); padding:.75rem .95rem;
@@ -802,6 +804,14 @@ function renderResults(data) {
 
   $("#apps").innerHTML = data.applications.map(app => {
     const name = app.candidate || "(no name found)";
+    const ev = app.evidence || {};
+    const fams = ev.independent_families || 0;
+    const discounted = (ev.contributions || []).filter(
+      c => c.correlation_discount > 0 && c.correlation_discount < 1).length;
+    const combine = fams ? `<div class="combine">${fams} independent analyzer
+      ${fams === 1 ? "family" : "families"} produced evidence${discounted
+        ? `; ${discounted} corroborating signal${discounted === 1 ? "" : "s"}
+           discounted as correlated` : ""}</div>` : "";
     const reasons = (app.reason_codes || []).map(r => `
       <div class="sig">
         <span class="code">${esc(r.code)}</span>
@@ -824,6 +834,7 @@ function renderResults(data) {
         </summary>
         <div class="appbody">
           <div class="src">${esc(app.source_path)}</div>
+          ${combine}
           ${reasons}
         </div>
       </details>`;

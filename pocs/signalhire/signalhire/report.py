@@ -95,6 +95,8 @@ h1 { font-size:1.5rem; margin:0 0 .25rem; letter-spacing:-.01em; }
 pre { margin:0; background:var(--bg); border:1px solid var(--line); border-radius:6px;
   padding:.5rem .6rem; font-size:.74rem; overflow-x:auto; }
 .empty { color:var(--muted); font-size:.85rem; }
+.combine { font-size:.78rem; color:var(--muted); border-left:2px solid var(--line);
+  padding:.15rem 0 .15rem .6rem; margin:0 0 .7rem; }
 footer { margin-top:2rem; color:var(--muted); font-size:.75rem; }
 """
 
@@ -122,6 +124,26 @@ def _app_html(app: ScoredApplication) -> str:
     name = d["candidate"] or "(no name found)"
     reasons = "".join(_reason_html(r) for r in d["reason_codes"]) or \
         '<div class="empty">No signals fired — nothing to explain.</div>'
+
+    # How the evidence combined: corroboration across independent analyzer
+    # families is the thing that distinguishes a real finding from one noisy
+    # detector, so the report says it plainly.
+    ev = d.get("evidence") or {}
+    families = ev.get("independent_families")
+    combination = ""
+    if families:
+        discounted = sum(1 for c in ev.get("contributions", [])
+                         if 0 < c.get("correlation_discount", 1) < 1)
+        combination = (
+            '<div class="combine">'
+            f'{families} independent analyzer '
+            f'{"family" if families == 1 else "families"} produced evidence'
+            + (f'; {discounted} corroborating signal'
+               f'{"" if discounted == 1 else "s"} discounted as correlated'
+               if discounted else "")
+            + "</div>"
+        )
+
     return (
         '<details class="app">'
         "<summary>"
@@ -134,7 +156,7 @@ def _app_html(app: ScoredApplication) -> str:
         "</span></summary>"
         '<div class="body">'
         f'<div class="path">{html.escape(d["source_path"])}</div>'
-        f"{reasons}</div></details>"
+        f"{combination}{reasons}</div></details>"
     )
 
 
