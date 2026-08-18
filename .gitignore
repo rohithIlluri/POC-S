@@ -27,3 +27,6 @@ pocs/signalhire/eval/metrics.json
 # OS / editor
 .DS_Store
 *.swp
+
+# Subscription store (pocs/signalhire): local account/usage DB
+pocs/signalhire/data/

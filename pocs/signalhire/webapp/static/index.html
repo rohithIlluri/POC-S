@@ -172,6 +172,50 @@ header.top{
   font-size:.85rem; color:var(--muted); margin:0 0 1.4rem;
 }
 
+/* ---------- pricing ---------- */
+.pricing{border-top:1.5px solid var(--ink);padding:2.8rem 0 3.2rem}
+.pricing h2{font-family:var(--mono);font-size:.8rem;font-weight:600;
+  text-transform:uppercase;letter-spacing:.16em;color:var(--red);margin:0 0 .5rem}
+.pricing .promise{font-size:1rem;color:var(--muted);max-width:60ch;margin:0 0 1.8rem}
+.tiers-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:1.2rem}
+.tier{border:1.5px solid var(--ink);background:var(--card);padding:1.4rem 1.3rem;
+  display:flex;flex-direction:column;gap:.4rem;position:relative}
+.tier.feat{box-shadow:6px 6px 0 var(--red)}
+.tier .flag{position:absolute;top:-.8rem;right:.8rem;background:var(--red);color:#fff;
+  font-family:var(--mono);font-size:.6rem;font-weight:600;letter-spacing:.1em;
+  text-transform:uppercase;padding:.25rem .6rem}
+.tier h3{margin:0;font-size:1.35rem;font-weight:900}
+.tier .price{font-size:2rem;font-weight:900;font-variant-numeric:tabular-nums}
+.tier .price small{font-size:.85rem;font-weight:400;color:var(--muted)}
+.tier ul{margin:.6rem 0 1.2rem;padding:0;list-style:none;font-size:.85rem;color:var(--muted)}
+.tier ul li{padding:.28rem 0;border-bottom:1px dotted var(--line)}
+.tier ul li::before{content:"— ";color:var(--red)}
+.tier button{margin-top:auto;font-family:var(--mono);font-weight:600;font-size:.78rem;
+  text-transform:uppercase;letter-spacing:.1em;padding:.8rem;cursor:pointer;
+  background:var(--ink);color:var(--paper);border:1.5px solid var(--ink)}
+.tier button:hover{background:var(--red);border-color:var(--red)}
+.tier button.current{background:var(--paper);color:var(--muted);cursor:default;border-color:var(--line)}
+dialog{border:2px solid var(--ink);background:var(--card);color:var(--ink);
+  max-width:420px;width:92%;padding:1.6rem;box-shadow:8px 8px 0 var(--red)}
+dialog::backdrop{background:rgba(27,24,17,.45)}
+dialog h3{margin:0 0 .3rem;font-size:1.3rem;font-weight:900}
+dialog p{font-size:.85rem;color:var(--muted);margin:.2rem 0 1rem}
+dialog input{width:100%;border:1.5px solid var(--ink);background:var(--paper);
+  font:.85rem var(--mono);padding:.6rem;margin-bottom:.7rem;color:var(--ink)}
+dialog .keybox{font-family:var(--mono);font-size:.72rem;background:var(--paper);
+  border:1.5px dashed var(--red);padding:.7rem;word-break:break-all;margin-bottom:.8rem}
+dialog .row{display:flex;gap:.6rem;justify-content:flex-end}
+dialog button{font-family:var(--mono);font-size:.75rem;font-weight:600;
+  text-transform:uppercase;letter-spacing:.08em;padding:.6rem 1rem;cursor:pointer;
+  border:1.5px solid var(--ink);background:var(--ink);color:var(--paper)}
+dialog button.ghost{background:var(--card);color:var(--ink)}
+.demo-note{border:1.5px dashed var(--burnt);color:var(--burnt);background:var(--card);
+  font-family:var(--mono);font-size:.72rem;padding:.6rem .8rem;margin-bottom:1rem}
+.dl{font-family:var(--mono);font-size:.72rem;margin-bottom:1rem;display:inline-block;
+  border:1.5px solid var(--ink);padding:.45rem .8rem;color:var(--ink);
+  text-decoration:none;background:var(--card);cursor:pointer}
+.dl:hover{background:var(--ink);color:var(--paper)}
+
 /* ---------- honesty ---------- */
 .honest{border-top:1.5px solid var(--ink);background:var(--paper-deep);padding:2.6rem 0 3rem}
 .honest .cols{display:grid;grid-template-columns:1fr 1fr;gap:2rem}
@@ -192,6 +236,7 @@ footer{border-top:1.5px solid var(--ink);padding:1.4rem 0 2.2rem;
   <div class="wrap top-inner">
     <span class="wordmark">SIGNALHIRE<span class="dot">.</span></span>
     <span class="db" id="dbver">engine loading…</span>
+    <a class="jump" href="#pricing" id="acct">Sign up free</a>
     <a class="jump" href="#scanner">Run a scan →</a>
   </div>
 </header>
@@ -281,11 +326,81 @@ footer{border-top:1.5px solid var(--ink);padding:1.4rem 0 2.2rem;
     <div class="assist"><strong>Assistive output.</strong> These labels are a triage
       aid with the evidence attached, not a hiring decision. Nothing here should be
       used as a sole or automatic basis for rejecting a candidate.</div>
+    <div class="demo-note" id="demonote" hidden>DEMO SCAN — sign up free for 5
+      scans a month, or upgrade for full batches.</div>
+    <a class="dl" id="dljson" hidden>Download JSON</a>
     <div class="skipped" id="skipped" hidden></div>
     <div class="tiles" id="tiles"></div>
     <div id="apps"></div>
   </div>
 </section>
+
+<section class="pricing" id="pricing">
+  <div class="wrap">
+    <h2>Plans</h2>
+    <p class="promise">Every tier runs the identical detection engine — we will
+      never sell "better detection" to bigger budgets, because that would poison
+      trust in every label. Plans gate volume and workflow, and fund the weekly
+      signature-collection runs that make the engine sharper for everyone.</p>
+    <div class="tiers-grid">
+      <div class="tier">
+        <h3>Scout</h3>
+        <div class="price">$0<small> /mo</small></div>
+        <ul>
+          <li>5 scans a month, 25 files per scan</li>
+          <li>Full detection engine, all five detectors</li>
+          <li>JD mirroring &amp; sensitivity slider</li>
+          <li>1 seat</li>
+        </ul>
+        <button data-tier="scout">Start free</button>
+      </div>
+      <div class="tier feat">
+        <span class="flag">Most agencies</span>
+        <h3>Agency</h3>
+        <div class="price">$149<small> /mo</small></div>
+        <ul>
+          <li>200 scans a month, 200 files per scan</li>
+          <li>Full detection engine, all five detectors</li>
+          <li>JSON export &amp; API access</li>
+          <li>Weekly signature DB updates · 5 seats</li>
+        </ul>
+        <button data-tier="agency">Upgrade to Agency</button>
+      </div>
+      <div class="tier">
+        <h3>Talent Cloud</h3>
+        <div class="price">$499<small> /mo</small></div>
+        <ul>
+          <li>Unlimited scans, 500 files per scan</li>
+          <li>Full detection engine, all five detectors</li>
+          <li>Custom signature collection for your inbound tools</li>
+          <li>API access · unlimited seats</li>
+        </ul>
+        <button data-tier="talent_cloud">Upgrade to Talent Cloud</button>
+      </div>
+    </div>
+  </div>
+</section>
+
+<dialog id="signup">
+  <h3>Create your account</h3>
+  <p>Scout is free: 5 scans a month, full engine. Your API key is shown once —
+    it is the only credential.</p>
+  <div id="signup-form">
+    <input id="su-email" type="email" placeholder="you@agency.com" autocomplete="email">
+    <input id="su-org" type="text" placeholder="Organization (optional)">
+    <div class="row">
+      <button class="ghost" id="su-cancel">Cancel</button>
+      <button id="su-go">Create account</button>
+    </div>
+  </div>
+  <div id="signup-done" hidden>
+    <div class="keybox" id="su-key"></div>
+    <div class="row">
+      <button class="ghost" id="su-copy">Copy key</button>
+      <button id="su-close">Done</button>
+    </div>
+  </div>
+</dialog>
 
 <section class="honest">
   <div class="wrap">
@@ -360,6 +475,79 @@ fetch("/api/health").then(r => r.json()).then(h => {
   $("#fver").textContent = h.engine;
 }).catch(() => { $("#dbver").textContent = "engine offline"; });
 
+/* ---- account ---- */
+const keyStore = {
+  get: () => localStorage.getItem("sh_key") || "",
+  set: (k) => localStorage.setItem("sh_key", k),
+};
+let pendingTier = null;
+
+async function refreshAccount() {
+  const key = keyStore.get();
+  if (!key) { $("#acct").textContent = "Sign up free"; return null; }
+  try {
+    const r = await fetch("/api/me", { headers: { "X-API-Key": key } });
+    if (!r.ok) throw new Error();
+    const me = await r.json();
+    const e = me.entitlements;
+    const left = e.scans_left === null ? "∞" : e.scans_left;
+    $("#acct").textContent = `${e.label} · ${left} scans left`;
+    document.querySelectorAll(".tier button").forEach(b => {
+      const isCurrent = b.dataset.tier === me.tier;
+      b.classList.toggle("current", isCurrent);
+      if (isCurrent) b.textContent = "Current plan";
+    });
+    return me;
+  } catch { $("#acct").textContent = "Sign up free"; return null; }
+}
+refreshAccount();
+
+const dlg = $("#signup");
+function openSignup(tier) {
+  pendingTier = tier || null;
+  $("#signup-form").hidden = false;
+  $("#signup-done").hidden = true;
+  dlg.showModal();
+}
+$("#su-cancel").onclick = () => dlg.close();
+$("#su-close").onclick = () => { dlg.close(); refreshAccount(); };
+$("#su-copy").onclick = () => navigator.clipboard.writeText(keyStore.get());
+$("#su-go").onclick = async () => {
+  const r = await fetch("/api/signup", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email: $("#su-email").value, org: $("#su-org").value }),
+  });
+  const data = await r.json();
+  if (!r.ok) { alert(data.error || "signup failed"); return; }
+  keyStore.set(data.api_key);
+  $("#su-key").textContent = data.api_key;
+  $("#signup-form").hidden = true;
+  $("#signup-done").hidden = false;
+  if (pendingTier && pendingTier !== "scout") await upgradeTo(pendingTier);
+  refreshAccount();
+};
+
+async function upgradeTo(tier) {
+  const r = await fetch("/api/upgrade", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-API-Key": keyStore.get() },
+    body: JSON.stringify({ tier }),
+  });
+  const data = await r.json();
+  if (data.checkout_url) { window.location.href = data.checkout_url; return; }
+  if (data.upgraded) refreshAccount();
+  else alert(data.error || "upgrade failed");
+}
+
+document.querySelectorAll(".tier button").forEach(b => {
+  b.addEventListener("click", () => {
+    const tier = b.dataset.tier;
+    if (b.classList.contains("current")) return;
+    if (!keyStore.get()) openSignup(tier);
+    else if (tier !== "scout") upgradeTo(tier);
+  });
+});
+
 /* ---- file handling ---- */
 const drop = $("#drop"), input = $("#fileinput");
 const OK = [".pdf", ".docx", ".doc", ".odt", ".rtf", ".html", ".htm", ".txt", ".md"];
@@ -419,10 +607,18 @@ $("#run").addEventListener("click", async () => {
     state.files.forEach(f => fd.append("files", f, f.name));
     fd.append("jd", $("#jd").value);
     fd.append("sensitivity", state.sensitivity);
-    const res = await fetch("/api/scan", { method: "POST", body: fd });
+    const headers = {};
+    if (keyStore.get()) headers["X-API-Key"] = keyStore.get();
+    const res = await fetch("/api/scan", { method: "POST", body: fd, headers });
     const data = await res.json();
+    if (res.status === 402) {
+      $("#status").textContent = data.error;
+      document.querySelector("#pricing").scrollIntoView({ behavior: "smooth" });
+      return;
+    }
     if (!res.ok) throw new Error(data.error || `scan failed (${res.status})`);
     renderResults(data);
+    refreshAccount();
     $("#results").hidden = false;
     $("#results").scrollIntoView({ behavior: "smooth" });
   } catch (err) {
@@ -443,6 +639,15 @@ function meter(v, color) {
 }
 
 function renderResults(data) {
+  const plan = data.stats.plan || {};
+  $("#demonote").hidden = !plan.demo;
+  const dl = $("#dljson");
+  dl.hidden = !plan.json_export;
+  if (plan.json_export) {
+    dl.href = URL.createObjectURL(new Blob(
+      [JSON.stringify(data, null, 2)], { type: "application/json" }));
+    dl.download = "signalhire-scan.json";
+  }
   const labels = data.stats.labels || {};
   $("#tiles").innerHTML = LABEL_ORDER.map(k =>
     `<div class="tile ${TILE_CLASS[k]}"><div class="n">${labels[k] ?? 0}</div>
