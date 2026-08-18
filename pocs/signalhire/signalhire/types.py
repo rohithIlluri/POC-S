@@ -55,6 +55,9 @@ class Identity:
     phone_hash: str = ""
     name_hash: str = ""
     display_name: str = ""
+    # Domain only, never the mailbox: kept clear-text for the disposable-domain
+    # check. A domain identifies a provider, not a person.
+    email_domain: str = ""
 
     def key(self) -> str:
         """The identity key used for "same person?" comparisons.
@@ -97,6 +100,7 @@ class Context:
 
     signatures: list[Any] = field(default_factory=list)      # signatures.GeneratorSignature
     template_index: dict[str, str] = field(default_factory=dict)   # layout_hash -> label
+    template_index_loose: dict[str, str] = field(default_factory=dict)  # loose hash -> label
     template_allowlist: dict[str, str] = field(default_factory=dict)
     layout_counts: dict[str, int] = field(default_factory=dict)    # layout_hash -> distinct applicants
     global_idf: dict[str, float] = field(default_factory=dict)
@@ -104,6 +108,15 @@ class Context:
     jd_text: str = ""
     lsh: Any = None                                                # MinHashLSH
     minhashes: dict[str, Any] = field(default_factory=dict)        # doc_id -> MinHash
+    clusters: dict[str, str] = field(default_factory=dict)         # doc_id -> stable cluster id
+    creation_windows: dict[str, int] = field(default_factory=dict) # window key -> distinct applicants
+    shingle_owners: dict[str, int] = field(default_factory=dict)   # 8-gram -> distinct applicants
+    # Batch-level caches so per-document analyzers stay O(doc), not O(batch):
+    bodies: dict[str, str] = field(default_factory=dict)           # doc_id -> identity-masked body
+    jd_terms: Any = None                                           # Counter, built once per scan
+    jd_ngrams: Any = None                                          # set, built once per scan
+    contact_email: dict[str, list] = field(default_factory=dict)   # email_hash -> [(doc_id, name_hash)]
+    contact_phone: dict[str, list] = field(default_factory=dict)   # phone_hash -> [(doc_id, name_hash)]
 
 
 Analyzer = Callable[[ParsedDoc, Context], "list[Signal]"]
@@ -116,6 +129,9 @@ class ScoredApplication:
     effort_score: int
     risk_score: int
     label: str
+    # How the score was reached: per-signal likelihood ratios, the correlation
+    # discount each took, and how many independent analyzer families agreed.
+    evidence: dict[str, Any] = field(default_factory=dict)
 
     def as_dict(self) -> dict[str, Any]:
         return {
@@ -129,5 +145,6 @@ class ScoredApplication:
             "effort_score": self.effort_score,
             "risk_score": self.risk_score,
             "reason_codes": [s.as_dict() for s in self.signals],
+            "evidence": self.evidence,
             "parse_error": self.doc.parse_error,
         }

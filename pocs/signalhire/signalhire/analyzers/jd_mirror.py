@@ -77,7 +77,9 @@ def analyze_jd_mirror(doc: ParsedDoc, ctx: Context) -> list[Signal]:
     if not ctx.jd_text.strip() or not doc.text.strip():
         return []
 
-    jd_terms, doc_terms = terms(ctx.jd_text), terms(doc.text)
+    # The pipeline caches JD artifacts per scan; direct calls compute them.
+    jd_terms = ctx.jd_terms if ctx.jd_terms is not None else terms(ctx.jd_text)
+    doc_terms = terms(doc.text)
     rare = rare_jd_terms(jd_terms, ctx)
     signals: list[Signal] = []
 
@@ -100,7 +102,9 @@ def analyze_jd_mirror(doc: ParsedDoc, ctx: Context) -> list[Signal]:
                 evidence=evidence, analyzer=ANALYZER,
             ))
 
-    lifted = ngrams(word_sequence(ctx.jd_text)) & ngrams(word_sequence(doc.text))
+    jd_grams = (ctx.jd_ngrams if ctx.jd_ngrams is not None
+                else ngrams(word_sequence(ctx.jd_text)))
+    lifted = jd_grams & ngrams(word_sequence(doc.text))
     if len(lifted) >= PHRASE_LIFT_THRESHOLD:
         signals.append(Signal(
             code="JD_PHRASE_LIFT", severity=Severity.WEAK, score_impact=0.2,

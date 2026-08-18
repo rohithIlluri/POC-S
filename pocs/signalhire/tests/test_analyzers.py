@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+from signalhire.analyzers.boilerplate import analyze_boilerplate, gram_sequence
+from signalhire.analyzers.contact import analyze_contact
 from signalhire.analyzers.dedupe import (analyze_dedupe, body_text, minhash,
                                          new_index)
 from signalhire.analyzers.forensics import analyze_forensics
 from signalhire.analyzers.hidden import analyze_hidden, is_near_white
 from signalhire.analyzers.jd_mirror import analyze_jd_mirror
-from signalhire.analyzers.layout import analyze_layout, layout_fingerprint
+from signalhire.analyzers.layout import (analyze_layout, layout_fingerprint,
+                                         loose_fingerprint)
 from signalhire.types import Context, Identity
 
 from conftest import make_block, make_doc
@@ -146,6 +149,39 @@ def test_template_swarm_is_weak_and_allowlist_suppresses_it():
     assert "TEMPLATE_SWARM" not in codes(analyze_layout(doc, allow_ctx))
 
 
+def test_perturbed_template_still_matches_via_loose_fingerprint():
+    """Nudging the margin and adding a run beats the exact hash but not the
+    font-profile hash — the anti-evasion path for KNOWN_TEMPLATE."""
+    original = make_doc(blocks=[make_block("Name", size=20),
+                                make_block("body one"), make_block("body two")])
+    evaded = make_doc(blocks=[make_block("Name", size=20, x=65.0),  # margin nudge
+                              make_block("body one", x=65.0),
+                              make_block("body two", x=65.0),
+                              make_block("extra run", x=65.0)])
+    assert layout_fingerprint(original) != layout_fingerprint(evaded)
+    assert loose_fingerprint(original) == loose_fingerprint(evaded)
+
+    ctx = Context(template_index={layout_fingerprint(original): "acme_exact"},
+                  template_index_loose={loose_fingerprint(original): "acme_tmpl"})
+    hit = next(s for s in analyze_layout(evaded, ctx)
+               if s.code == "KNOWN_TEMPLATE")
+    assert hit.evidence["match"] == "font_profile"
+
+    exact_hit = next(s for s in analyze_layout(original, ctx)
+                     if s.code == "KNOWN_TEMPLATE")
+    assert exact_hit.evidence["match"] == "exact_structure"
+
+
+def test_synthetic_text_layouts_never_swarm():
+    """Thirty pasted ATS text bodies share one parser-made structure; that
+    must not read as a template swarm."""
+    doc = make_doc("plain resume body text", meta={"source_kind": "plaintext"})
+    fp = layout_fingerprint(doc)
+    ctx = Context(layout_counts={fp: 40},
+                  template_index={fp: "would_be_wrong"})
+    assert analyze_layout(doc, ctx) == []
+
+
 # --- JD mirroring ----------------------------------------------------------
 
 JD = ("Senior platform engineer to own our Kubernetes footprint and the "
@@ -234,6 +270,131 @@ def test_unrelated_documents_do_not_cluster():
                  "care, charge nurse at Meridian Health since 2019.",
                  doc_id="b", identity=Identity(email_hash="h_bo"))
     assert analyze_dedupe(a, _population([a, b])) == []
+
+
+def test_one_producer_string_scores_once():
+    """'Puppeteer / HeadlessChrome' matches two signatures but is one fact —
+    only the strongest match scores; the other is listed in evidence."""
+    from signalhire.signatures import load_signatures
+    ctx = Context(signatures=load_signatures())
+    doc = make_doc("resume", meta={
+        "producer": "Puppeteer 22.6.1 / HeadlessChrome 124"})
+    gen = [s for s in analyze_forensics(doc, ctx) if s.code == "GEN_TOOL_MATCH"]
+    assert len(gen) == 1
+    assert gen[0].evidence["matched"] == "puppeteer_pipeline"
+    assert gen[0].evidence["also_matched"] == ["headless_browser"]
+
+
+def test_batch_timestamp_cluster_needs_many_distinct_applicants():
+    doc = make_doc("resume", meta={"creationdate": "D:20260817120400"})
+    windowed = Context(creation_windows={"2026-08-17T12:00:00+00:00": 8})
+    assert "BATCH_TIMESTAMP_CLUSTER" in codes(analyze_forensics(doc, windowed))
+    quiet = Context(creation_windows={"2026-08-17T12:00:00+00:00": 2})
+    assert "BATCH_TIMESTAMP_CLUSTER" not in codes(analyze_forensics(doc, quiet))
+
+
+# --- contact handles --------------------------------------------------------
+
+def test_contact_collision_same_mailbox_different_names():
+    a = make_doc("body one", doc_id="a", identity=Identity(
+        email_hash="h_shared", name_hash="h_ana", display_name="Ana"))
+    b = make_doc("body two", doc_id="b", identity=Identity(
+        email_hash="h_shared", name_hash="h_bo", display_name="Bo"))
+    ctx = Context(identity={"a": a.identity, "b": b.identity})
+    hit = next(s for s in analyze_contact(a, ctx)
+               if s.code == "CONTACT_COLLISION")
+    assert hit.evidence["handles"] == ["email"]
+
+
+def test_same_person_shared_mailbox_is_not_a_collision():
+    same = Identity(email_hash="h_ana", name_hash="h_ana")
+    ctx = Context(identity={"a": same, "b": same})
+    doc = make_doc("body", doc_id="a", identity=same)
+    assert analyze_contact(doc, ctx) == []
+
+
+def test_missing_names_never_manufacture_a_collision():
+    a = Identity(email_hash="h_shared")            # no name extracted
+    b = Identity(email_hash="h_shared", name_hash="h_bo")
+    ctx = Context(identity={"a": a, "b": b})
+    assert analyze_contact(make_doc("x", doc_id="a", identity=a), ctx) == []
+
+
+def test_disposable_domain_is_weak():
+    doc = make_doc("body", identity=Identity(email_hash="h",
+                                             email_domain="mailinator.com"))
+    hit = next(s for s in analyze_contact(doc, Context())
+               if s.code == "DISPOSABLE_CONTACT")
+    assert hit.severity.value == "weak"
+
+
+# --- shared boilerplate -----------------------------------------------------
+
+BOILER = ("Results driven professional leveraging cutting edge cloud native "
+          "technologies to deliver scalable enterprise solutions across "
+          "distributed teams while championing operational excellence and "
+          "driving continuous improvement initiatives throughout the entire "
+          "software development lifecycle with measurable business impact")
+
+
+def _swarm_ctx(docs):
+    from collections import defaultdict
+    owners = defaultdict(set)
+    for d in docs:
+        for g in set(gram_sequence(body_text(d))):
+            owners[g].add(d.identity.key() or d.doc_id)
+    return Context(identity={d.doc_id: d.identity for d in docs},
+                   shingle_owners={g: len(w) for g, w in owners.items()
+                                   if len(w) > 1})
+
+
+def test_paraphrase_farm_below_minhash_threshold_is_caught():
+    """Five docs share one long paragraph but differ in the rest — Jaccard
+    stays under the dedupe threshold, the phrase swarm does not."""
+    docs = [make_doc(f"{BOILER} Additionally candidate number {i} spent years "
+                     f"at employer {i} doing specialty {i} work in city {i}.",
+                     doc_id=f"d{i}", identity=Identity(email_hash=f"h{i}"))
+            for i in range(5)]
+    hit = next(s for s in analyze_boilerplate(docs[0], _swarm_ctx(docs))
+               if s.code == "SHARED_BOILERPLATE")
+    assert hit.evidence["shared_phrase_fraction"] >= 0.25
+    assert hit.evidence["samples"]
+
+
+def test_unique_documents_share_no_boilerplate():
+    docs = [make_doc(f"Engineer {i} " + " ".join(
+                f"word{i}x{j}" for j in range(60)),
+                doc_id=f"d{i}", identity=Identity(email_hash=f"h{i}"))
+            for i in range(5)]
+    assert analyze_boilerplate(docs[0], _swarm_ctx(docs)) == []
+
+
+def test_industrial_scale_sharing_is_strong_below_the_fraction_bar():
+    """A third of the document shared with 20 strangers is STRONG even though
+    the same fraction shared with 4 classmates stays WEAK."""
+    farm = [make_doc(f"{BOILER} " + " ".join(f"unique{i}w{j}" for j in range(40)),
+                     doc_id=f"f{i}", identity=Identity(email_hash=f"h{i}"))
+            for i in range(21)]
+    hit = next(s for s in analyze_boilerplate(farm[0], _swarm_ctx(farm))
+               if s.code == "SHARED_BOILERPLATE")
+    assert hit.evidence["median_applicants_per_phrase"] >= 15
+    assert hit.severity.value == "strong"
+
+    small = [make_doc(f"{BOILER} " + " ".join(f"u{i}w{j}" for j in range(40)),
+                      doc_id=f"s{i}", identity=Identity(email_hash=f"h{i}"))
+             for i in range(5)]
+    hit = next(s for s in analyze_boilerplate(small[0], _swarm_ctx(small))
+               if s.code == "SHARED_BOILERPLATE")
+    assert hit.severity.value == "weak"
+
+
+def test_two_copies_are_dedupe_business_not_boilerplate():
+    """A pair is a duplicate, not a swarm: below the owner threshold."""
+    docs = [make_doc(BOILER + " plus a modest unique tail here for padding "
+                     + " ".join(f"pad{i}{j}" for j in range(30)),
+                     doc_id=f"d{i}", identity=Identity(email_hash=f"h{i}"))
+            for i in range(2)]
+    assert analyze_boilerplate(docs[0], _swarm_ctx(docs)) == []
 
 
 def test_body_text_masks_identity_tokens():

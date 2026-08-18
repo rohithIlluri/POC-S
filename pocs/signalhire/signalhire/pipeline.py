@@ -17,10 +17,13 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from . import analyzers as analyzer_registry
-from .analyzers.dedupe import body_text, minhash, new_index
-from .analyzers.jd_mirror import terms
-from .analyzers.layout import layout_fingerprint
-from .parse import discover, parse_file
+from .analyzers.boilerplate import gram_sequence
+from .analyzers.dedupe import SIMILARITY_THRESHOLD, body_text, minhash, new_index
+from .analyzers.forensics import creation_window
+from .analyzers.jd_mirror import ngrams as jd_ngrams
+from .analyzers.jd_mirror import terms, word_sequence
+from .analyzers.layout import has_authored_layout, layout_fingerprint
+from .parse import discover, parse_file, parse_pdf_date
 from .scoring import Thresholds, score_document
 from .signatures import SIGNATURE_DB_VERSION, load_signatures, template_indexes
 from .types import Context, ParsedDoc, ScoredApplication
@@ -52,42 +55,116 @@ class ScanResult:
 def build_context(docs: list[ParsedDoc], jd_text: str = "",
                   signatures_path: str | Path | None = None) -> Context:
     signatures = load_signatures(signatures_path)
-    known_templates, allowlist = template_indexes(signatures)
+    known_templates, allowlist, known_loose = template_indexes(signatures)
 
     ctx = Context(
         signatures=signatures,
         template_index=known_templates,
+        template_index_loose=known_loose,
         template_allowlist=allowlist,
         jd_text=jd_text,
         identity={d.doc_id: d.identity for d in docs},
     )
 
-    # Layout population counts: distinct applicants per structural fingerprint.
+    # Layout population counts: distinct applicants per structural
+    # fingerprint. Synthetic layouts (text formats) are excluded — they all
+    # share one parser-made structure and would swarm on honest batches.
     layout_applicants: dict[str, set[str]] = defaultdict(set)
     for d in docs:
         d.layout_hash = layout_fingerprint(d)
-        if d.layout_hash:
+        if d.layout_hash and has_authored_layout(d):
             layout_applicants[d.layout_hash].add(d.identity.key() or d.doc_id)
     ctx.layout_counts = {h: len(a) for h, a in layout_applicants.items()}
 
-    # Corpus idf for JD-mirroring rare-term selection.
+    # Corpus idf for JD-mirroring rare-term selection — computed over
+    # *distinct sources*, not raw documents. A farm submitting 50 mirrored
+    # resumes would otherwise vote the JD's rare vocabulary into commonness
+    # and blind the mirror exactly when the farm is biggest; collapsing each
+    # shared template to one voter means a swarm counts once.
+    # (Near-dup clusters aren't built yet at this point, so the collapse key
+    # is the structural fingerprint, which is what farm output shares.)
     if len(docs) >= MIN_CORPUS_FOR_IDF:
-        df: Counter = Counter()
+        source_terms: dict[str, set] = defaultdict(set)
         for d in docs:
-            df.update(set(terms(d.text)))
-        n = len(docs)
+            source_terms[d.layout_hash or d.doc_id].update(terms(d.text))
+        n = len(source_terms)
+        df: Counter = Counter()
+        for term_set in source_terms.values():
+            df.update(term_set)
         ctx.global_idf = {t: math.log((n + 1) / (c + 1)) for t, c in df.items()}
 
+    # JD artifacts are per-scan constants; build them once instead of once
+    # per document inside the analyzer.
+    if jd_text.strip():
+        ctx.jd_terms = terms(jd_text)
+        ctx.jd_ngrams = jd_ngrams(word_sequence(jd_text))
+
+    # Contact-handle indexes: analyzer F drops from O(batch) per document to
+    # a dict lookup.
+    for d in docs:
+        ident = d.identity
+        if ident.email_hash:
+            ctx.contact_email.setdefault(ident.email_hash, []).append(
+                (d.doc_id, ident.name_hash))
+        if ident.phone_hash:
+            ctx.contact_phone.setdefault(ident.phone_hash, []).append(
+                (d.doc_id, ident.name_hash))
+
     # Near-duplicate index: build every signature first, then insert, so the
-    # result never depends on the order files were read.
+    # result never depends on the order files were read. The identity-masked
+    # body is cached — dedupe, boilerplate and the shingle index all reuse it.
     ctx.lsh = new_index()
     for d in docs:
-        body = body_text(d)
+        ctx.bodies[d.doc_id] = body = body_text(d)
         if body.strip():
             ctx.minhashes[d.doc_id] = minhash(body)
     with ctx.lsh.insertion_session() as session:
         for doc_id, m in ctx.minhashes.items():
             session.insert(doc_id, m)
+
+    # Stable cluster ids: union-find over every *verified* near-duplicate
+    # pair, so all members of one recycling ring report the same cluster even
+    # when pairwise similarity is not transitive (A~B, B~C, A!~C).
+    parent = {d: d for d in ctx.minhashes}
+
+    def find(x: str) -> str:
+        while parent[x] != x:
+            parent[x] = parent[parent[x]]
+            x = parent[x]
+        return x
+
+    for doc_id, m in ctx.minhashes.items():
+        for cand in ctx.lsh.query(m):
+            if cand != doc_id and cand in ctx.minhashes \
+                    and ctx.minhashes[cand].jaccard(m) >= SIMILARITY_THRESHOLD:
+                parent[find(cand)] = find(doc_id)
+    rings: dict[str, list[str]] = defaultdict(list)
+    for d in parent:
+        rings[find(d)].append(d)
+    for members in rings.values():
+        if len(members) > 1:
+            cluster_id = "cl_" + min(members)[:8]
+            for d in members:
+                ctx.clusters[d] = cluster_id
+
+    # Phrase-swarm index: which 8-word runs appear under how many distinct
+    # applicants. Feeds the shared-boilerplate analyzer, which catches
+    # paraphrase farms that stay under the MinHash near-duplicate threshold.
+    owners: dict[str, set[str]] = defaultdict(set)
+    for d in docs:
+        who = d.identity.key() or d.doc_id
+        for g in set(gram_sequence(ctx.bodies[d.doc_id])):
+            owners[g].add(who)
+    ctx.shingle_owners = {g: len(w) for g, w in owners.items() if len(w) > 1}
+
+    # Creation-time clustering: distinct applicants whose documents were
+    # generated in the same ten-minute window (a batch off one rig).
+    windows: dict[str, set[str]] = defaultdict(set)
+    for d in docs:
+        created = parse_pdf_date(str(d.meta.get("creationdate", "")))
+        if created:
+            windows[creation_window(created)].add(d.identity.key() or d.doc_id)
+    ctx.creation_windows = {w: len(who) for w, who in windows.items()}
 
     return ctx
 

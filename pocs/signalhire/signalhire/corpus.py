@@ -295,7 +295,12 @@ WRAPPER_STYLE = {"body_font": "helv", "bold_font": "hebo", "base_size": 10.0,
 
 def build_corpus(out_dir: str | Path, seed: int = 7, humans: int = 60,
                  wrappers: int = 40, hybrids: int = 10,
-                 attack_pairs: int = 3) -> list[CorpusEntry]:
+                 attack_pairs: int = 3,
+                 evasions: int | None = None) -> list[CorpusEntry]:
+    """`evasions=None` scales with the wrapper count. Pass 0 for small
+    plumbing corpora: evasion detection is population-scale by design (idf,
+    template swarms and phrase swarms all need a real batch), so a handful of
+    documents cannot exercise it meaningfully."""
     rng = random.Random(seed)
     out = Path(out_dir)
     entries: list[CorpusEntry] = []
@@ -337,6 +342,43 @@ def build_corpus(out_dir: str | Path, seed: int = 7, humans: int = 60,
         )
         entries.append(CorpusEntry(
             str(path.relative_to(out)), "wrapper_generated", "native", "flagged"))
+
+    # --- wrapper evasions: same generation rig, covering its tracks --------
+    # Their own set (and gate): straightforward wrapper recall stays a clean
+    # metric while the evasions measure how the engine holds up when the
+    # forensic layer is deliberately stripped.
+    if evasions is None:
+        evasions = max(1, wrappers // 7)
+    # 1. metadata-stripped: no producer, no title, timestamps spread out.
+    #    The layout swarm, JD mirroring and shared boilerplate must carry it.
+    for i in range(evasions):
+        p = _persona(rng, 1500 + i)
+        created = now - timedelta(days=rng.randint(1, 90),
+                                  minutes=rng.randint(0, 1200))
+        path = out / "wrapper_evasion" / f"wrapper_stripped_{i:02d}.pdf"
+        _write_pdf(
+            path,
+            _place(_wrapper_body(rng, p), **WRAPPER_STYLE),
+            {"producer": "", "creator": "", "title": "", "author": ""},
+            created, created + timedelta(minutes=rng.randint(2, 300)),
+        )
+        entries.append(CorpusEntry(
+            str(path.relative_to(out)), "wrapper_evasion", "native", "flagged",
+            "wrapper output with stripped metadata and spread timestamps"))
+
+    # 2. format-laundered: the same generation rig exporting HTML instead of
+    #    PDF, no generator tag. Text-level signals are format-agnostic.
+    for i in range(evasions):
+        p = _persona(rng, 1600 + i)
+        lines = [t for t, _ in _wrapper_body(rng, p) if t]
+        html_doc = ("<html><body>" + "".join(f"<p>{ln}</p>" for ln in lines)
+                    + "</body></html>")
+        path = out / "wrapper_evasion" / f"wrapper_html_{i:02d}.html"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(html_doc)
+        entries.append(CorpusEntry(
+            str(path.relative_to(out)), "wrapper_evasion", "native", "flagged",
+            "wrapper output laundered through HTML export"))
 
     # --- hybrid (human content re-exported through a wrapper) --------------
     for i in range(hybrids):
@@ -414,6 +456,23 @@ def build_corpus(out_dir: str | Path, seed: int = 7, humans: int = 60,
             entries.append(CorpusEntry(
                 str(path.relative_to(out)), "attack", "native", "flagged",
                 f"identity swap pair {pair}: same body, different candidate"))
+
+    # 4. contact collision: different names, different bodies, one shared
+    # mailbox and phone — recycled contact infrastructure behind two personas.
+    shared = _persona(rng, 3500)
+    for twin in range(2):
+        p = _persona(rng, 3600 + twin)
+        p["email"], p["phone"] = shared["email"], shared["phone"]
+        style = _human_style(rng)
+        created = now - timedelta(days=rng.randint(2, 30))
+        path = out / "attack" / f"attack_contact_{twin}.pdf"
+        _write_pdf(path, _place(_human_body(rng, p, twin == 1), **style),
+                   {"producer": "Microsoft® Word for Microsoft 365",
+                    "creator": "Word", "title": f"{p['name']} Resume"},
+                   created, created + timedelta(minutes=45))
+        entries.append(CorpusEntry(
+            str(path.relative_to(out)), "attack", "native", "flagged",
+            "contact collision: one mailbox, two candidate names"))
 
     manifest = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
