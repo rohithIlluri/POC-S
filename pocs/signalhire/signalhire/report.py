@@ -12,6 +12,8 @@ import html
 import json
 from datetime import datetime, timezone
 
+from .phrasing import (LABEL_HEADLINE, LABEL_MEANING, effort_sentence,
+                       risk_sentence)
 from .pipeline import ScanResult
 from .types import ScoredApplication
 
@@ -86,17 +88,32 @@ h1 { font-size:1.5rem; margin:0 0 .25rem; letter-spacing:-.01em; }
 .body { border-top:1px solid var(--line); padding:.85rem .9rem; }
 .path { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:.72rem;
   color:var(--muted); word-break:break-all; margin-bottom:.7rem; }
-.reason { border-top:1px dashed var(--line); padding:.55rem 0; }
+.reason { border-top:1px dashed var(--line); padding:.8rem 0 .6rem; }
 .reason:first-of-type { border-top:none; }
+.rhead { display:flex; align-items:baseline; gap:.5rem; flex-wrap:wrap; }
+.rtitle { font-size:.98rem; font-weight:600; }
+.rdetail { font-size:.9rem; margin:.3rem 0 .35rem; line-height:1.55; }
+.rcaveat { font-size:.83rem; color:var(--muted); margin:0 0 .3rem; line-height:1.5; }
+.rcaveat strong { color:var(--fg); font-weight:600; }
+.radvice { font-size:.83rem; margin:.15rem 0 .3rem; padding:.4rem .6rem;
+  background:var(--bg); border-left:2px solid var(--genuine); border-radius:0 4px 4px 0; }
+.raw > summary { font-size:.72rem; color:var(--muted); cursor:pointer; list-style:none; }
+.raw > summary::-webkit-details-marker { display:none; }
+.raw > summary::before { content:"▸ "; }
+.raw[open] > summary::before { content:"▾ "; }
+.rcode { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:.72rem;
+  color:var(--muted); margin:.3rem 0; }
 .code { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:.78rem; font-weight:600; }
 .sev { font-size:.68rem; text-transform:uppercase; letter-spacing:.05em; color:var(--muted);
-  border:1px solid var(--line); border-radius:4px; padding:.05rem .35rem; margin-left:.4rem; }
+  border:1px solid var(--line); border-radius:4px; padding:.05rem .35rem; }
 .why { font-size:.85rem; color:var(--muted); margin:.15rem 0 .3rem; }
 pre { margin:0; background:var(--bg); border:1px solid var(--line); border-radius:6px;
   padding:.5rem .6rem; font-size:.74rem; overflow-x:auto; }
 .empty { color:var(--muted); font-size:.85rem; }
 .combine { font-size:.78rem; color:var(--muted); border-left:2px solid var(--line);
   padding:.15rem 0 .15rem .6rem; margin:0 0 .7rem; }
+.verdict { font-size:.95rem; margin:0 0 .35rem; line-height:1.55; }
+.reading { font-size:.85rem; color:var(--muted); margin:0 0 .7rem; }
 footer { margin-top:2rem; color:var(--muted); font-size:.75rem; }
 """
 
@@ -106,15 +123,24 @@ def _bar(value: int, color: str) -> str:
 
 
 def _reason_html(signal_dict: dict) -> str:
+    """One finding, written as prose. The raw evidence is still available,
+    folded away, for anyone who needs to cite the exact numbers."""
     code = signal_dict["code"]
     evidence = json.dumps(signal_dict["evidence"], indent=2, default=str)
+    sev = signal_dict.get("severity_label", signal_dict["severity"])
+    advice = signal_dict.get("advice", "")
     return (
         '<div class="reason">'
-        f'<span class="code">{html.escape(code)}</span>'
-        f'<span class="sev">{html.escape(signal_dict["severity"])}</span>'
-        f'<span class="sev">impact {signal_dict["score_impact"]:+.2f}</span>'
-        f'<div class="why">{html.escape(CODE_TEXT.get(code, "—"))}</div>'
-        f"<pre>{html.escape(evidence)}</pre>"
+        f'<div class="rhead"><span class="rtitle">'
+        f'{html.escape(signal_dict.get("headline", code))}</span>'
+        f'<span class="sev">{html.escape(sev)}</span></div>'
+        f'<p class="rdetail">{html.escape(signal_dict.get("detail", ""))}</p>'
+        f'<p class="rcaveat"><strong>Bear in mind:</strong> '
+        f'{html.escape(signal_dict.get("caveat", ""))}</p>'
+        + (f'<p class="radvice">{html.escape(advice)}</p>' if advice else "")
+        + '<details class="raw"><summary>Technical detail</summary>'
+        f'<div class="rcode">{html.escape(code)}</div>'
+        f"<pre>{html.escape(evidence)}</pre></details>"
         "</div>"
     )
 
@@ -144,17 +170,27 @@ def _app_html(app: ScoredApplication) -> str:
             + "</div>"
         )
 
+    n = len(d["reason_codes"])
     return (
         '<details class="app">'
         "<summary>"
-        f'<span class="chip {app.label}">{html.escape(LABEL_TEXT[app.label])}</span>'
+        f'<span class="chip {app.label}">'
+        f'{html.escape(LABEL_HEADLINE[app.label])}</span>'
         f'<span class="name">{html.escape(name)}</span>'
         '<span class="scores">'
-        f'<span>effort {app.effort_score}{_bar(app.effort_score, "var(--genuine)")}</span>'
-        f'<span>risk {app.risk_score}{_bar(app.risk_score, "var(--risk)")}</span>'
-        f'<span>{len(d["reason_codes"])} signals</span>'
+        f'<span>originality {app.effort_score}'
+        f'{_bar(app.effort_score, "var(--genuine)")}</span>'
+        + (f'<span>risk {app.risk_score}'
+           f'{_bar(app.risk_score, "var(--risk)")}</span>'
+           if app.risk_score else "")
+        + f'<span>{n} finding{"" if n == 1 else "s"}</span>'
         "</span></summary>"
         '<div class="body">'
+        f'<p class="verdict">{html.escape(LABEL_MEANING[app.label])}</p>'
+        f'<p class="reading">{html.escape(effort_sentence(app.effort_score))}'
+        + (f' {html.escape(risk_sentence(app.risk_score))}'
+           if app.risk_score else "")
+        + "</p>"
         f'<div class="path">{html.escape(d["source_path"])}</div>'
         f"{combination}{reasons}</div></details>"
     )
@@ -165,7 +201,7 @@ def render_html(result: ScanResult, title: str = "Application triage report") ->
     labels = stats["labels"]
     tiles = "".join(
         f'<div class="tile"><div class="n {key}">{labels[key]}</div>'
-        f'<div class="l">{html.escape(LABEL_TEXT[key])}</div></div>'
+        f'<div class="l">{html.escape(LABEL_HEADLINE[key])}</div></div>'
         for key in ("high_risk", "mass_generated", "needs_review", "genuine")
     )
     apps = "".join(_app_html(a) for a in result.applications) or \
@@ -201,26 +237,43 @@ def render_json(result: ScanResult) -> str:
 
 
 def render_text(result: ScanResult) -> str:
+    """The terminal summary: a reading order, not a data dump."""
     stats = result.stats
+    labels = stats["labels"]
+    total = stats["documents"]
+    flagged = labels["high_risk"] + labels["mass_generated"]
+
     lines = [
-        f"Scanned {stats['documents']} documents "
-        f"(sensitivity: {stats['sensitivity']}, "
-        f"signature DB: {stats['signature_db_version']})",
-        "",
-        "  {:<16}{}".format("high risk", stats["labels"]["high_risk"]),
-        "  {:<16}{}".format("mass generated", stats["labels"]["mass_generated"]),
-        "  {:<16}{}".format("needs review", stats["labels"]["needs_review"]),
-        "  {:<16}{}".format("genuine", stats["labels"]["genuine"]),
+        f"Scanned {total} application{'' if total == 1 else 's'}.",
         "",
     ]
+    if flagged:
+        lines.append(f"  {flagged} worth opening first, "
+                     f"{labels['needs_review']} worth a glance, "
+                     f"{labels['genuine']} raised nothing.")
+    else:
+        lines.append(f"  Nothing stood out. {labels['needs_review']} worth a "
+                     f"glance, {labels['genuine']} raised nothing.")
+    lines.append("")
+
     for app in result.applications:
         if app.label == "genuine":
             continue
         name = app.doc.identity.display_name or "(no name found)"
-        codes = ", ".join(s.code for s in app.signals[:4]) or "—"
-        lines.append(f"  [{app.label:<14}] effort {app.effort_score:>3} "
-                     f"risk {app.risk_score:>3}  {name[:32]:<32} {codes}")
-    if len(lines) == 8:
+        top = app.signals[0].as_dict()["headline"] if app.signals else "—"
+        extra = len(app.signals) - 1
+        also = f" (+{extra} more)" if extra > 0 else ""
+        lines.append(f"  {LABEL_HEADLINE[app.label]:<32} {name[:28]:<28} "
+                     f"originality {app.effort_score:>3}")
+        lines.append(f"      {top}{also}")
+        lines.append("")
+
+    if flagged == 0 and labels["needs_review"] == 0:
         lines.append("  Nothing flagged.")
-    lines += ["", "Assistive output — review the evidence before acting on any label."]
+        lines.append("")
+
+    lines += [
+        "These are findings about documents, not judgements about people.",
+        "Open the report to read the evidence before acting on any of them.",
+    ]
     return "\n".join(lines)

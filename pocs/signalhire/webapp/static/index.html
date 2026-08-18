@@ -156,7 +156,7 @@ header.top{
 .appbody{padding:.85rem .95rem}
 .appbody .src{font-family:var(--mono);font-size:.68rem;color:var(--muted);
   word-break:break-all;margin-bottom:.6rem}
-.sig{border-top:1px dashed var(--line);padding:.55rem 0}
+.sig{border-top:1px dashed var(--line);padding:.8rem 0 .6rem}
 .sig:first-of-type{border-top:none}
 .sig .code{font-family:var(--mono);font-size:.76rem;font-weight:600}
 .sig .tag{font-family:var(--mono);font-size:.6rem;text-transform:uppercase;
@@ -168,6 +168,28 @@ header.top{
 .empty-note{font-family:var(--mono);font-size:.78rem;color:var(--muted)}
 .combine{font-size:.78rem;color:var(--muted);border-left:2px solid var(--line);
   padding:.15rem 0 .15rem .6rem;margin:0 0 .7rem}
+.selfcheck{border:1.5px solid var(--ink);background:var(--card);padding:1.2rem 1.3rem;
+  margin-bottom:1.5rem}
+.selfcheck h3{margin:0 0 .2rem;font-size:1.5rem;font-weight:900}
+.selfcheck .verdictline{font-size:1rem;margin:0 0 .9rem;color:var(--muted)}
+.selfcheck ol{margin:.2rem 0 0;padding-left:1.1rem;font-size:.9rem;line-height:1.6}
+.selfcheck ol li{margin-bottom:.5rem}
+.selfcheck .allclear{font-size:.9rem;color:var(--green);margin:0}
+.verdict{font-size:.95rem;margin:0 0 .3rem;line-height:1.55}
+.reading{font-size:.85rem;color:var(--muted);margin:0 0 .7rem}
+.sighead{display:flex;align-items:baseline;gap:.5rem;flex-wrap:wrap}
+.sigtitle{font-size:.98rem;font-weight:600}
+.sigdetail{font-size:.9rem;margin:.3rem 0 .35rem;line-height:1.55}
+.sigcaveat{font-size:.83rem;color:var(--muted);margin:0 0 .3rem;line-height:1.5}
+.sigcaveat strong{color:var(--ink);font-weight:600}
+.sigadvice{font-size:.83rem;margin:.15rem 0 .3rem;padding:.45rem .65rem;
+  background:var(--paper);border-left:2px solid var(--green);border-radius:0 4px 4px 0}
+.sigraw > summary{font-family:var(--mono);font-size:.7rem;color:var(--muted);
+  cursor:pointer;list-style:none}
+.sigraw > summary::-webkit-details-marker{display:none}
+.sigraw > summary::before{content:"▸ "}
+.sigraw[open] > summary::before{content:"▾ "}
+.sigcode{font-family:var(--mono);font-size:.7rem;color:var(--muted);margin:.3rem 0}
 .skipped{font-family:var(--mono);font-size:.72rem;color:var(--burnt);margin-bottom:1rem}
 .assist{
   border-left:3px solid var(--amber); background:var(--card); padding:.75rem .95rem;
@@ -339,6 +361,7 @@ footer{border-top:1.5px solid var(--ink);padding:1.4rem 0 2.2rem;
     <a class="dl" id="dljson" hidden>Download JSON</a>
     <a class="dl" id="dlreport" hidden>Download report</a>
     <div class="skipped" id="skipped" hidden></div>
+    <div class="selfcheck" id="selfcheck" hidden></div>
     <div class="tiles" id="tiles"></div>
     <div id="apps"></div>
   </div>
@@ -523,8 +546,20 @@ const CODE_TEXT = {
   SHARED_BOILERPLATE: "Built largely from phrases shared verbatim across many applicants",
   PARSE_FAILED: "Document could not be parsed",
 };
-const LABEL_TEXT = { genuine: "Genuine effort", needs_review: "Needs review",
-  mass_generated: "Mass-generated", high_risk: "High risk" };
+const LABEL_TEXT = { genuine: "Nothing found", needs_review: "Worth a look",
+  mass_generated: "Signs of automated generation", high_risk: "Needs attention first" };
+const LABEL_MEANING = {
+  genuine: "Nothing in this application stood out. That is not a judgement of quality — only that the document itself raised nothing.",
+  needs_review: "A few things stood out, none of them conclusive. Read the findings and decide for yourself.",
+  mass_generated: "Several independent checks agree this document was produced by an automated tool rather than written for this role. That says nothing about whether the candidate is a good fit.",
+  high_risk: "Something objective and serious was found — hidden text, instructions aimed at screening software, or the same resume under another identity. Open this one first.",
+};
+function originalityReading(s) {
+  if (s >= 85) return "Reads as an application written for this role.";
+  if (s >= 60) return "Mostly reads as original work, with a few generic markers.";
+  if (s >= 35) return "Substantially built from reusable or generated material.";
+  return "Almost entirely generated or reused material.";
+}
 const LABEL_ORDER = ["high_risk", "mass_generated", "needs_review", "genuine"];
 const TILE_CLASS = { high_risk: "hr", mass_generated: "mg", needs_review: "nr", genuine: "ge" };
 
@@ -792,6 +827,28 @@ function renderResults(data) {
       [data.report_html], { type: "text/html" }));
     dlr.download = "signalhire-report.html";
   }
+  // A single document is almost always someone checking their own resume, so
+  // lead with what they can act on rather than with a triage queue of one.
+  const self = $("#selfcheck");
+  const apps = data.applications || [];
+  if (apps.length === 1) {
+    const a = apps[0];
+    const advice = (a.reason_codes || [])
+      .filter(r => r.advice && r.score_impact > 0)
+      .map(r => `<li><strong>${esc(r.headline)}.</strong> ${esc(r.advice)}</li>`);
+    self.hidden = false;
+    self.innerHTML = `
+      <h3>${a.effort_score}<span style="font-size:1rem;font-weight:400;color:var(--muted)">/100 originality</span></h3>
+      <p class="verdictline">${esc(originalityReading(a.effort_score))}</p>
+      ${advice.length
+        ? `<div style="font-size:.8rem;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin-bottom:.4rem">What you can change</div>
+           <ol>${advice.join("")}</ol>`
+        : `<p class="allclear">Nothing here needs fixing. Every check this
+             engine runs came back clean on your document.</p>`}`;
+  } else {
+    self.hidden = true;
+  }
+
   const labels = data.stats.labels || {};
   $("#tiles").innerHTML = LABEL_ORDER.map(k =>
     `<div class="tile ${TILE_CLASS[k]}"><div class="n">${labels[k] ?? 0}</div>
@@ -814,25 +871,34 @@ function renderResults(data) {
            discounted as correlated` : ""}</div>` : "";
     const reasons = (app.reason_codes || []).map(r => `
       <div class="sig">
-        <span class="code">${esc(r.code)}</span>
-        <span class="tag">${esc(r.severity)}</span>
-        <span class="tag">impact ${(r.score_impact >= 0 ? "+" : "") + r.score_impact.toFixed(2)}</span>
-        <div class="why">${esc(CODE_TEXT[r.code] || "—")}</div>
-        <pre>${esc(JSON.stringify(r.evidence, null, 2))}</pre>
+        <div class="sighead">
+          <span class="sigtitle">${esc(r.headline || r.code)}</span>
+          <span class="tag">${esc(r.severity_label || r.severity)}</span>
+        </div>
+        <p class="sigdetail">${esc(r.detail || "")}</p>
+        <p class="sigcaveat"><strong>Bear in mind:</strong> ${esc(r.caveat || "")}</p>
+        ${r.advice ? `<p class="sigadvice">${esc(r.advice)}</p>` : ""}
+        <details class="sigraw">
+          <summary>Technical detail</summary>
+          <div class="sigcode">${esc(r.code)}</div>
+          <pre>${esc(JSON.stringify(r.evidence, null, 2))}</pre>
+        </details>
       </div>`).join("")
-      || '<div class="empty-note">No signals fired — nothing to explain.</div>';
+      || '<div class="empty-note">Nothing stood out in this document.</div>';
     return `
       <details class="appcard">
         <summary>
           <span class="chip ${app.label}">${LABEL_TEXT[app.label]}</span>
           <span class="who">${esc(name)}</span>
           <span class="nums">
-            <span>effort ${app.effort_score}${meter(app.effort_score, "var(--green)")}</span>
-            <span>risk ${app.risk_score}${meter(app.risk_score, "var(--red)")}</span>
-            <span>${(app.reason_codes || []).length} signals</span>
+            <span>originality ${app.effort_score}${meter(app.effort_score, "var(--green)")}</span>
+            ${app.risk_score ? `<span>risk ${app.risk_score}${meter(app.risk_score, "var(--red)")}</span>` : ""}
+            <span>${(app.reason_codes || []).length} finding${(app.reason_codes || []).length === 1 ? "" : "s"}</span>
           </span>
         </summary>
         <div class="appbody">
+          <p class="verdict">${esc(LABEL_MEANING[app.label] || "")}</p>
+          <p class="reading">${esc(originalityReading(app.effort_score))}</p>
           <div class="src">${esc(app.source_path)}</div>
           ${combine}
           ${reasons}
