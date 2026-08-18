@@ -64,6 +64,30 @@ The population analyzers score the batch against itself, so results depend on
 what you scan together. Scan a whole requisition's inbox at once — that is
 where cross-applicant duplication becomes visible.
 
+### Web MVP
+
+The same engine behind a recruiter-facing site: drag-drop a batch of
+applications, paste the JD, get the triage dashboard with every reason code
+and its evidence.
+
+```bash
+pip install -e ".[web]"
+signalhire web            # serves http://127.0.0.1:8710
+```
+
+Uploads are parsed and scored in memory as one population batch and never
+written to disk; the upload time is used as the real submission timestamp,
+which makes the fresh-generation signal meaningful. The UI lives in
+`webapp/static/index.html` (no build step) and the API is
+`POST /api/scan` (multipart `files` + `jd` + `sensitivity`).
+
+A note on interview copilots (Cluely, Parakeet and similar): this engine reads
+the *application-side* artifacts those workflows produce — generator
+toolchains, JD mirroring, fresh-generation timestamps, template swarms,
+recycled identities. Detecting an overlay assistant live on a candidate's
+machine during a call is an interview-side surface and explicitly out of
+scope for Phase 0.
+
 ### Growing the signature DB
 
 ```bash

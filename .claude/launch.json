@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "signalhire-web",
+      "runtimeExecutable": "pocs/signalhire/.venv/bin/python",
+      "runtimeArgs": ["-m", "uvicorn", "webapp.app:app", "--app-dir", "pocs/signalhire", "--port", "8710"],
+      "port": 8710
+    }
+  ]
+}
