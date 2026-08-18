@@ -306,9 +306,11 @@ footer{border-top:1.5px solid var(--ink);padding:1.4rem 0 2.2rem;
       </div>
       <div class="side">
         <label for="req">Requisition (optional — names this scan in your history)</label>
-        <input type="text" id="req" placeholder="e.g. PLT-4471 Senior Platform Engineer"
+        <input type="text" id="req" list="reqlist"
+               placeholder="e.g. PLT-4471 Senior Platform Engineer"
                style="width:100%;border:1.5px solid var(--ink);background:var(--card);
                       font:.82rem var(--mono);padding:.6rem;margin-bottom:.9rem;color:var(--ink)">
+        <datalist id="reqlist"></datalist>
         <label for="jd">Job description (optional — enables JD-mirror signals)</label>
         <textarea id="jd" placeholder="Paste the posting for this requisition…"></textarea>
         <label>Sensitivity</label>
@@ -579,6 +581,26 @@ async function refreshHistory() {
 }
 refreshHistory();
 
+let knownReqs = [];
+async function refreshReqs() {
+  const key = keyStore.get();
+  if (!key) return;
+  try {
+    const r = await fetch("/api/requisitions", { headers: { "X-API-Key": key } });
+    if (!r.ok) return;
+    knownReqs = (await r.json()).requisitions;
+    $("#reqlist").innerHTML = knownReqs.map(q =>
+      `<option value="${esc(q.req)}"></option>`).join("");
+  } catch { /* offline */ }
+}
+refreshReqs();
+
+// Picking a known requisition recalls its JD.
+$("#req").addEventListener("change", () => {
+  const match = knownReqs.find(q => q.req === $("#req").value);
+  if (match && match.jd && !$("#jd").value.trim()) $("#jd").value = match.jd;
+});
+
 async function refreshTeam() {
   const key = keyStore.get();
   if (!key) { $("#teamsec").hidden = true; return; }
@@ -732,6 +754,7 @@ $("#run").addEventListener("click", async () => {
     renderResults(data);
     refreshAccount();
     refreshHistory();
+    refreshReqs();
     $("#results").hidden = false;
     $("#results").scrollIntoView({ behavior: "smooth" });
   } catch (err) {

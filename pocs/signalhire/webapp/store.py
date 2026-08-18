@@ -59,6 +59,16 @@ CREATE TABLE IF NOT EXISTS scans (
     created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS scans_user_month ON scans(user_id, created_at);
+CREATE TABLE IF NOT EXISTS requisitions (
+    root_id INTEGER NOT NULL,
+    req TEXT NOT NULL,
+    jd TEXT NOT NULL DEFAULT '',
+    scans INTEGER NOT NULL DEFAULT 0,
+    files INTEGER NOT NULL DEFAULT 0,
+    labels TEXT NOT NULL DEFAULT '{}',
+    updated_at TEXT NOT NULL,
+    PRIMARY KEY (root_id, req)
+);
 """
 
 # Columns added after the first release; applied to pre-existing dev DBs.
@@ -216,6 +226,43 @@ class Store:
                 (user_id, files, flagged, (req or "").strip()[:120],
                  json.dumps(labels or {}), _now()))
             self._conn.commit()
+
+    def upsert_requisition(self, root_id: int, req: str, jd: str,
+                           files: int, labels: dict) -> None:
+        """Per-requisition rollup: totals accumulate, the JD is remembered so
+        the next scan of the same req can prefill it."""
+        import json
+        req = (req or "").strip()[:120]
+        if not req:
+            return
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT scans, files, labels, jd FROM requisitions "
+                "WHERE root_id = ? AND req = ?", (root_id, req)).fetchone()
+            if row:
+                merged = json.loads(row["labels"])
+                for k, v in labels.items():
+                    merged[k] = merged.get(k, 0) + v
+                self._conn.execute(
+                    "UPDATE requisitions SET scans = ?, files = ?, labels = ?, "
+                    "jd = ?, updated_at = ? WHERE root_id = ? AND req = ?",
+                    (row["scans"] + 1, row["files"] + files,
+                     json.dumps(merged), jd or row["jd"], _now(), root_id, req))
+            else:
+                self._conn.execute(
+                    "INSERT INTO requisitions (root_id, req, jd, scans, files, "
+                    "labels, updated_at) VALUES (?, ?, ?, 1, ?, ?, ?)",
+                    (root_id, req, jd or "", files, json.dumps(labels), _now()))
+            self._conn.commit()
+
+    def requisitions(self, root_id: int) -> list[dict]:
+        import json
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT req, jd, scans, files, labels, updated_at "
+                "FROM requisitions WHERE root_id = ? ORDER BY updated_at DESC",
+                (root_id,)).fetchall()
+        return [{**dict(r), "labels": json.loads(r["labels"])} for r in rows]
 
     def history(self, user_id: int, limit: int = 20) -> list[dict]:
         import json

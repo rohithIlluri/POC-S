@@ -193,6 +193,15 @@ def history(x_api_key: str | None = Header(default=None)) -> JSONResponse:
     return JSONResponse({"scans": _store().history(user["id"])})
 
 
+@app.get("/api/requisitions")
+def requisitions(x_api_key: str | None = Header(default=None)) -> JSONResponse:
+    user = _user(x_api_key)
+    if user is None:
+        return JSONResponse({"error": "unknown API key"}, status_code=401)
+    root = _store().root_of(user)
+    return JSONResponse({"requisitions": _store().requisitions(root["id"])})
+
+
 @app.post("/api/billing/webhook")
 async def billing_webhook(
     payload: dict,
@@ -276,6 +285,8 @@ async def scan_batch(
     if user is not None:
         store.record_scan(user["id"], files=len(docs), flagged=flagged,
                           req=req, labels=result.stats["labels"])
+        store.upsert_requisition(store.root_of(user)["id"], req=req, jd=jd,
+                                 files=len(docs), labels=result.stats["labels"])
 
     ent = store.entitlements(user)
     result.stats["source"] = "upload"

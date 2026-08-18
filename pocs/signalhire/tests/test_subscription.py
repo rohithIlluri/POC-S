@@ -201,6 +201,33 @@ def test_member_scans_draw_from_the_org_quota(client):
         assert e["scans_left"] == 198
 
 
+def test_requisition_rollups_accumulate_across_the_org(client):
+    key = _signup(client)
+    h = {"X-API-Key": key}
+    client.post("/api/upgrade", json={"tier": "agency"}, headers=h)
+    mk = client.post("/api/team/invite", json={"email": "m@example.com"},
+                     headers=h).json()["api_key"]
+
+    client.post("/api/scan", files=[_resume(0), _resume(1)],
+                data={"req": "PLT-4471", "jd": "Senior platform engineer"},
+                headers=h)
+    client.post("/api/scan", files=[_resume(2)],
+                data={"req": "PLT-4471"}, headers={"X-API-Key": mk})
+    client.post("/api/scan", files=[_resume(3)],
+                data={"req": "OPS-12"}, headers=h)
+
+    # Both org members see the same rollups; totals accumulate per req.
+    for who in (h, {"X-API-Key": mk}):
+        reqs = client.get("/api/requisitions", headers=who).json()["requisitions"]
+        by_name = {q["req"]: q for q in reqs}
+        assert set(by_name) == {"PLT-4471", "OPS-12"}
+        assert by_name["PLT-4471"]["scans"] == 2
+        assert by_name["PLT-4471"]["files"] == 3
+        assert sum(by_name["PLT-4471"]["labels"].values()) == 3
+        # The JD is remembered from the first scan that supplied it.
+        assert "platform engineer" in by_name["PLT-4471"]["jd"]
+
+
 def test_key_rotation_invalidates_the_old_key(client):
     key = _signup(client)
     new_key = client.post("/api/rotate-key",

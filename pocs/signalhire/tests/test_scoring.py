@@ -101,6 +101,31 @@ def test_scores_are_not_interpreter_dependent():
     assert _clamp(Decimal("-3.2")) == 0
     assert _clamp(Decimal("140")) == 100
 
+def _weak(code: str, analyzer: str, impact: float = 0.2) -> Signal:
+    return Signal(code=code, severity=Severity.WEAK, score_impact=impact,
+                  evidence={}, analyzer=analyzer)
+
+
+def test_weak_convergence_across_four_families_escalates():
+    """Track-covering trades one strong signal for weak ones everywhere:
+    weak evidence from four independent analyzers below the review line is
+    mass_generated even with no STRONG signal."""
+    signals = [_weak("SHARED_BOILERPLATE", "boilerplate", 0.3),
+               _weak("TEMPLATE_SWARM", "layout", 0.2),
+               _weak("JD_MIRROR_HIGH", "jd_mirror", 0.25),
+               _weak("NO_PRODUCER", "forensics", 0.15)]
+    result = score(signals)
+    assert result["effort_score"] <= 55
+    assert result["label"] == "mass_generated"
+
+
+def test_weak_pile_from_few_families_stays_needs_review():
+    signals = [_weak("SHARED_BOILERPLATE", "boilerplate", 0.3),
+               _weak("JD_MIRROR_HIGH", "jd_mirror", 0.25),
+               _weak("JD_PHRASE_LIFT", "jd_mirror", 0.2),
+               _weak("DUP_CLUSTER", "dedupe", 0.25)]
+    assert score(signals)["label"] == "needs_review"
+
 
 def test_conservative_sensitivity_clears_a_borderline_application():
     borderline = [sig("GEN_TOOL_MATCH", Severity.STRONG, 0.6),

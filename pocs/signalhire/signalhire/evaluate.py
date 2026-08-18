@@ -26,6 +26,7 @@ FLAGGED_LABELS = {"mass_generated", "high_risk"}
 
 MAX_FALSE_FLAG_RATE = 0.02
 MIN_WRAPPER_RECALL = 0.70
+MIN_EVASION_RECALL = 0.50   # deliberately track-covering wrapper output
 MIN_ATTACK_RECALL = 1.0
 FAIRNESS_Z_LIMIT = 1.96          # two-sided, alpha = 0.05
 
@@ -159,6 +160,7 @@ def evaluate(corpus_dir: str | Path, sensitivity: str = "balanced",
 
     human = sets.get("human_verified", {"n": 0, "flag_rate": 0.0, "flagged": 0})
     wrapper = sets.get("wrapper_generated", {"n": 0, "flag_rate": 0.0})
+    evasion = sets.get("wrapper_evasion", {"n": 0, "flag_rate": 0.0})
     attack = sets.get("attack", {"n": 0, "flag_rate": 0.0})
 
     gates = [
@@ -170,6 +172,10 @@ def evaluate(corpus_dir: str | Path, sensitivity: str = "balanced",
              wrapper["flag_rate"] > MIN_WRAPPER_RECALL,
              f"{wrapper['flag_rate']:.2%} of {wrapper['n']} wrapper docs flagged "
              f"(floor {MIN_WRAPPER_RECALL:.0%})"),
+        Gate("evasion_recall",
+             evasion["n"] == 0 or evasion["flag_rate"] >= MIN_EVASION_RECALL,
+             f"{evasion['flag_rate']:.2%} of {evasion['n']} track-covering "
+             f"wrapper docs flagged (floor {MIN_EVASION_RECALL:.0%})"),
         Gate("attack_recall",
              attack["flag_rate"] >= MIN_ATTACK_RECALL,
              f"{attack['flag_rate']:.2%} of {attack['n']} attack docs flagged "

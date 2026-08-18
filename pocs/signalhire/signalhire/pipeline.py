@@ -73,12 +73,21 @@ def build_context(docs: list[ParsedDoc], jd_text: str = "",
             layout_applicants[d.layout_hash].add(d.identity.key() or d.doc_id)
     ctx.layout_counts = {h: len(a) for h, a in layout_applicants.items()}
 
-    # Corpus idf for JD-mirroring rare-term selection.
+    # Corpus idf for JD-mirroring rare-term selection — computed over
+    # *distinct sources*, not raw documents. A farm submitting 50 mirrored
+    # resumes would otherwise vote the JD's rare vocabulary into commonness
+    # and blind the mirror exactly when the farm is biggest; collapsing each
+    # shared template to one voter means a swarm counts once.
+    # (Near-dup clusters aren't built yet at this point, so the collapse key
+    # is the structural fingerprint, which is what farm output shares.)
     if len(docs) >= MIN_CORPUS_FOR_IDF:
-        df: Counter = Counter()
+        source_terms: dict[str, set] = defaultdict(set)
         for d in docs:
-            df.update(set(terms(d.text)))
-        n = len(docs)
+            source_terms[d.layout_hash or d.doc_id].update(terms(d.text))
+        n = len(source_terms)
+        df: Counter = Counter()
+        for term_set in source_terms.values():
+            df.update(term_set)
         ctx.global_idf = {t: math.log((n + 1) / (c + 1)) for t, c in df.items()}
 
     # Near-duplicate index: build every signature first, then insert, so the

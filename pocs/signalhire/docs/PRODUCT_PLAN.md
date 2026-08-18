@@ -79,6 +79,19 @@ Demo mode: no account → 1 scan of ≤5 files, results watermarked "demo".
   POST /api/rotate-key. 85 tests, gates green.
   Product is feature-complete for the MVP definition. Remaining backlog:
   invite email delivery, per-req rollups, real Stripe keys, hosted deploy.
+- it5 (done): ADVERSARIAL EVAL — new wrapper_evasion corpus set (metadata-
+  stripped PDFs + HTML-laundered farm output) with its own gate (floor 50%).
+  Two engine fixes it forced: (1) source-collapsed idf — df counted over
+  distinct layout groups, so a 50-doc farm can't vote its own mirrored
+  vocabulary into commonness and blind the JD mirror; (2) weak-convergence
+  scoring — weak signals from ≥4 independent analyzer families below the
+  review line escalate to mass_generated (a weak pile from ≤3 families still
+  caps at needs_review). Stripped PDFs: 0% → 100% flagged. HTML-laundered:
+  still miss at trickle scale (2 families only) — honest gap, gate at 50%.
+  PRODUCT — per-req rollups (org-scoped, label totals accumulate) + JD
+  memory (datalist recall in UI). 89 tests, 5 gates green.
+  Next: raise evasion floor as detection improves; invite email delivery;
+  real Stripe keys; hosted deploy.
 
 ## Rules for future iterations
 

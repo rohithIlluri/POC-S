@@ -29,6 +29,10 @@ LABELS = ("genuine", "needs_review", "mass_generated", "high_risk")
 RISK_CODES = {"RECYCLED_IDENTITY", "HIDDEN_TEXT", "PROMPT_INJECTION",
               "CONTACT_COLLISION"}
 
+# Weak signals from this many distinct analyzers escalate a below-review-line
+# effort score to mass_generated (see the convergence comment in score()).
+CONVERGENT_FAMILIES = 4
+
 
 @dataclass(frozen=True)
 class Thresholds:
@@ -98,12 +102,26 @@ def score(signals: list[Signal], thresholds: Thresholds | None = None) -> dict:
     has_strong_effort = any(
         s.severity is Severity.STRONG and s.code not in RISK_CODES for s in signals
     )
+    # Convergence: weak evidence from many *independent* analyzer families.
+    # A pile of weak signals from one analyzer stays capped at needs_review,
+    # but a document that is mildly suspicious to four unrelated detectors at
+    # once is what deliberate track-covering looks like — each evasion
+    # (strip the metadata, launder the format) trades a strong signal for
+    # several weak ones spread across families.
+    weak_families = {
+        s.analyzer for s in signals
+        if s.severity is Severity.WEAK and s.code not in RISK_CODES
+        and s.score_impact > 0
+    }
+    convergent = len(weak_families) >= CONVERGENT_FAMILIES
 
     if risk >= t.high_risk_at or has_hard or has_strong_risk:
         label = "high_risk"
     elif effort <= t.mass_generated_at and has_strong_effort:
         # `mass_generated` requires at least one STRONG signal by construction:
-        # a pile of WEAK signals can only ever reach `needs_review`.
+        # a pile of WEAK signals from one family can only reach `needs_review`.
+        label = "mass_generated"
+    elif effort <= t.needs_review_at and convergent:
         label = "mass_generated"
     elif effort <= t.needs_review_at:
         label = "needs_review"
