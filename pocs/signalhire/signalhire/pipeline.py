@@ -17,10 +17,11 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from . import analyzers as analyzer_registry
-from .analyzers.dedupe import body_text, minhash, new_index
+from .analyzers.dedupe import SIMILARITY_THRESHOLD, body_text, minhash, new_index
+from .analyzers.forensics import creation_window
 from .analyzers.jd_mirror import terms
 from .analyzers.layout import layout_fingerprint
-from .parse import discover, parse_file
+from .parse import discover, parse_file, parse_pdf_date
 from .scoring import Thresholds, score_document
 from .signatures import SIGNATURE_DB_VERSION, load_signatures, template_indexes
 from .types import Context, ParsedDoc, ScoredApplication
@@ -88,6 +89,40 @@ def build_context(docs: list[ParsedDoc], jd_text: str = "",
     with ctx.lsh.insertion_session() as session:
         for doc_id, m in ctx.minhashes.items():
             session.insert(doc_id, m)
+
+    # Stable cluster ids: union-find over every *verified* near-duplicate
+    # pair, so all members of one recycling ring report the same cluster even
+    # when pairwise similarity is not transitive (A~B, B~C, A!~C).
+    parent = {d: d for d in ctx.minhashes}
+
+    def find(x: str) -> str:
+        while parent[x] != x:
+            parent[x] = parent[parent[x]]
+            x = parent[x]
+        return x
+
+    for doc_id, m in ctx.minhashes.items():
+        for cand in ctx.lsh.query(m):
+            if cand != doc_id and cand in ctx.minhashes \
+                    and ctx.minhashes[cand].jaccard(m) >= SIMILARITY_THRESHOLD:
+                parent[find(cand)] = find(doc_id)
+    rings: dict[str, list[str]] = defaultdict(list)
+    for d in parent:
+        rings[find(d)].append(d)
+    for members in rings.values():
+        if len(members) > 1:
+            cluster_id = "cl_" + min(members)[:8]
+            for d in members:
+                ctx.clusters[d] = cluster_id
+
+    # Creation-time clustering: distinct applicants whose documents were
+    # generated in the same ten-minute window (a batch off one rig).
+    windows: dict[str, set[str]] = defaultdict(set)
+    for d in docs:
+        created = parse_pdf_date(str(d.meta.get("creationdate", "")))
+        if created:
+            windows[creation_window(created)].add(d.identity.key() or d.doc_id)
+    ctx.creation_windows = {w: len(who) for w, who in windows.items()}
 
     return ctx
 

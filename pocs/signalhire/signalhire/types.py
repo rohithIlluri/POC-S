@@ -55,6 +55,9 @@ class Identity:
     phone_hash: str = ""
     name_hash: str = ""
     display_name: str = ""
+    # Domain only, never the mailbox: kept clear-text for the disposable-domain
+    # check. A domain identifies a provider, not a person.
+    email_domain: str = ""
 
     def key(self) -> str:
         """The identity key used for "same person?" comparisons.
@@ -104,6 +107,8 @@ class Context:
     jd_text: str = ""
     lsh: Any = None                                                # MinHashLSH
     minhashes: dict[str, Any] = field(default_factory=dict)        # doc_id -> MinHash
+    clusters: dict[str, str] = field(default_factory=dict)         # doc_id -> stable cluster id
+    creation_windows: dict[str, int] = field(default_factory=dict) # window key -> distinct applicants
 
 
 Analyzer = Callable[[ParsedDoc, Context], "list[Signal]"]

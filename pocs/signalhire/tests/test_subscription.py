@@ -110,6 +110,48 @@ def test_pricing_lists_three_tiers_with_identical_detection(client):
                           "custom_signatures"}
 
 
+def test_history_records_requisition_and_label_counts(client):
+    key = _signup(client)
+    h = {"X-API-Key": key}
+    client.post("/api/scan", files=[_resume(i) for i in range(3)],
+                data={"req": "PLT-4471 Senior Platform Engineer"}, headers=h)
+    scans = client.get("/api/history", headers=h).json()["scans"]
+    assert len(scans) == 1
+    assert scans[0]["req"] == "PLT-4471 Senior Platform Engineer"
+    assert scans[0]["files"] == 3
+    assert sum(scans[0]["labels"].values()) == 3
+
+    assert client.get("/api/history").status_code == 401
+
+
+def test_billing_webhook_flips_tier_only_with_the_secret(client, monkeypatch):
+    key = _signup(client)
+    event = {"type": "checkout.session.completed",
+             "data": {"object": {"client_reference_id": key,
+                                 "metadata": {"tier": "talent_cloud"}}}}
+
+    # Unconfigured → disabled outright.
+    monkeypatch.delenv("SIGNALHIRE_WEBHOOK_SECRET", raising=False)
+    assert client.post("/api/billing/webhook", json=event).status_code == 503
+
+    monkeypatch.setenv("SIGNALHIRE_WEBHOOK_SECRET", "whsec_test")
+    r = client.post("/api/billing/webhook", json=event,
+                    headers={"X-Webhook-Secret": "wrong"})
+    assert r.status_code == 401
+
+    r = client.post("/api/billing/webhook", json=event,
+                    headers={"X-Webhook-Secret": "whsec_test"})
+    assert r.json()["ok"] is True
+    me = client.get("/api/me", headers={"X-API-Key": key}).json()
+    assert me["tier"] == "talent_cloud"
+
+    # Non-checkout events are acknowledged and ignored.
+    r = client.post("/api/billing/webhook",
+                    json={"type": "invoice.paid"},
+                    headers={"X-Webhook-Secret": "whsec_test"})
+    assert r.json() == {"ignored": "invoice.paid"}
+
+
 def test_scan_response_carries_plan_state(client):
     key = _signup(client)
     r = client.post("/api/scan", files=[_resume()], headers={"X-API-Key": key})

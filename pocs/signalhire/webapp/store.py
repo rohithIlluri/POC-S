@@ -53,10 +53,18 @@ CREATE TABLE IF NOT EXISTS scans (
     user_id INTEGER REFERENCES users(id),
     files INTEGER NOT NULL,
     flagged INTEGER NOT NULL DEFAULT 0,
+    req TEXT NOT NULL DEFAULT '',
+    labels TEXT NOT NULL DEFAULT '{}',
     created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS scans_user_month ON scans(user_id, created_at);
 """
+
+# Columns added after the first release; applied to pre-existing dev DBs.
+_MIGRATIONS = (
+    "ALTER TABLE scans ADD COLUMN req TEXT NOT NULL DEFAULT ''",
+    "ALTER TABLE scans ADD COLUMN labels TEXT NOT NULL DEFAULT '{}'",
+)
 
 
 def _now() -> str:
@@ -77,6 +85,11 @@ class Store:
         self._lock = threading.Lock()
         with self._lock:
             self._conn.executescript(_SCHEMA)
+            for migration in _MIGRATIONS:
+                try:
+                    self._conn.execute(migration)
+                except sqlite3.OperationalError:
+                    pass  # column already exists
             self._conn.commit()
 
     # -- accounts ----------------------------------------------------------
@@ -128,12 +141,25 @@ class Store:
                 (user_id, f"{_month_prefix()}%")).fetchone()
         return int(row["n"])
 
-    def record_scan(self, user_id: int | None, files: int, flagged: int) -> None:
+    def record_scan(self, user_id: int | None, files: int, flagged: int,
+                    req: str = "", labels: dict | None = None) -> None:
+        import json
         with self._lock:
             self._conn.execute(
-                "INSERT INTO scans (user_id, files, flagged, created_at) "
-                "VALUES (?, ?, ?, ?)", (user_id, files, flagged, _now()))
+                "INSERT INTO scans (user_id, files, flagged, req, labels, "
+                "created_at) VALUES (?, ?, ?, ?, ?, ?)",
+                (user_id, files, flagged, (req or "").strip()[:120],
+                 json.dumps(labels or {}), _now()))
             self._conn.commit()
+
+    def history(self, user_id: int, limit: int = 20) -> list[dict]:
+        import json
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT files, flagged, req, labels, created_at FROM scans "
+                "WHERE user_id = ? ORDER BY id DESC LIMIT ?",
+                (user_id, limit)).fetchall()
+        return [{**dict(r), "labels": json.loads(r["labels"])} for r in rows]
 
     # -- entitlements ------------------------------------------------------
 

@@ -415,6 +415,23 @@ def build_corpus(out_dir: str | Path, seed: int = 7, humans: int = 60,
                 str(path.relative_to(out)), "attack", "native", "flagged",
                 f"identity swap pair {pair}: same body, different candidate"))
 
+    # 4. contact collision: different names, different bodies, one shared
+    # mailbox and phone — recycled contact infrastructure behind two personas.
+    shared = _persona(rng, 3500)
+    for twin in range(2):
+        p = _persona(rng, 3600 + twin)
+        p["email"], p["phone"] = shared["email"], shared["phone"]
+        style = _human_style(rng)
+        created = now - timedelta(days=rng.randint(2, 30))
+        path = out / "attack" / f"attack_contact_{twin}.pdf"
+        _write_pdf(path, _place(_human_body(rng, p, twin == 1), **style),
+                   {"producer": "Microsoft® Word for Microsoft 365",
+                    "creator": "Word", "title": f"{p['name']} Resume"},
+                   created, created + timedelta(minutes=45))
+        entries.append(CorpusEntry(
+            str(path.relative_to(out)), "attack", "native", "flagged",
+            "contact collision: one mailbox, two candidate names"))
+
     manifest = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "seed": seed,

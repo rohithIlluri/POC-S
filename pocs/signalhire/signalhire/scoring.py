@@ -26,7 +26,8 @@ LABELS = ("genuine", "needs_review", "mass_generated", "high_risk")
 # Signals that speak to identity/fraud rather than effort. They feed the risk
 # score and are excluded from the effort score so a fraud signal can never be
 # explained away by a strong effort showing.
-RISK_CODES = {"RECYCLED_IDENTITY", "HIDDEN_TEXT", "PROMPT_INJECTION"}
+RISK_CODES = {"RECYCLED_IDENTITY", "HIDDEN_TEXT", "PROMPT_INJECTION",
+              "CONTACT_COLLISION"}
 
 
 @dataclass(frozen=True)

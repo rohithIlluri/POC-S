@@ -118,6 +118,7 @@ def extract_identity(text: str, pages: list[dict]) -> Identity:
         phone_hash=salted_hash(phone),
         name_hash=salted_hash(re.sub(r"\s+", " ", name)),
         display_name=name,
+        email_domain=email.rsplit("@", 1)[-1].lower() if "@" in email else "",
     )
 
 

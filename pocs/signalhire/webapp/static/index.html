@@ -305,6 +305,10 @@ footer{border-top:1.5px solid var(--ink);padding:1.4rem 0 2.2rem;
         <ul class="filelist" id="filelist"></ul>
       </div>
       <div class="side">
+        <label for="req">Requisition (optional — names this scan in your history)</label>
+        <input type="text" id="req" placeholder="e.g. PLT-4471 Senior Platform Engineer"
+               style="width:100%;border:1.5px solid var(--ink);background:var(--card);
+                      font:.82rem var(--mono);padding:.6rem;margin-bottom:.9rem;color:var(--ink)">
         <label for="jd">Job description (optional — enables JD-mirror signals)</label>
         <textarea id="jd" placeholder="Paste the posting for this requisition…"></textarea>
         <label>Sensitivity</label>
@@ -332,6 +336,13 @@ footer{border-top:1.5px solid var(--ink);padding:1.4rem 0 2.2rem;
     <div class="skipped" id="skipped" hidden></div>
     <div class="tiles" id="tiles"></div>
     <div id="apps"></div>
+  </div>
+</section>
+
+<section class="results" id="historysec" hidden>
+  <div class="wrap">
+    <h2 style="font-family:var(--mono);font-size:.8rem;font-weight:600;text-transform:uppercase;letter-spacing:.16em;color:var(--red);margin:0 0 1rem">Recent scans</h2>
+    <div id="historylist" style="font-family:var(--mono);font-size:.74rem"></div>
   </div>
 </section>
 
@@ -442,6 +453,8 @@ footer{border-top:1.5px solid var(--ink);padding:1.4rem 0 2.2rem;
 <script>
 "use strict";
 const $ = (s) => document.querySelector(s);
+const esc = (s) => String(s).replace(/[&<>"']/g,
+  c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const state = { files: [], sensitivity: "balanced", running: false };
 
 const CODE_TEXT = {
@@ -461,6 +474,9 @@ const CODE_TEXT = {
   JD_MIRROR_HIGH: "Resume mirrors much of the job description's rare vocabulary",
   JD_PHRASE_LIFT: "Exact multi-word phrases lifted from the job description",
   RECYCLED_IDENTITY: "This resume body appears under a different candidate identity",
+  CONTACT_COLLISION: "This contact email/phone appears under a different candidate name",
+  DISPOSABLE_CONTACT: "Contact email uses a throwaway-mail provider",
+  BATCH_TIMESTAMP_CLUSTER: "Generated in the same ten-minute window as many other applicants",
   SPRAY_APPLY: "The same document was submitted across many requisitions",
   DUP_CLUSTER: "Near-identical to other applications in this batch",
   PARSE_FAILED: "Document could not be parsed",
@@ -501,6 +517,30 @@ async function refreshAccount() {
   } catch { $("#acct").textContent = "Sign up free"; return null; }
 }
 refreshAccount();
+
+async function refreshHistory() {
+  const key = keyStore.get();
+  if (!key) { $("#historysec").hidden = true; return; }
+  try {
+    const r = await fetch("/api/history", { headers: { "X-API-Key": key } });
+    if (!r.ok) throw new Error();
+    const scans = (await r.json()).scans;
+    $("#historysec").hidden = scans.length === 0;
+    $("#historylist").innerHTML = scans.map(s => {
+      const l = s.labels || {};
+      const when = (s.created_at || "").slice(0, 16).replace("T", " ");
+      return `<div style="display:flex;gap:1rem;flex-wrap:wrap;padding:.45rem .2rem;border-bottom:1px dotted var(--line)">
+        <span style="color:var(--muted)">${esc(when)}</span>
+        <span style="font-weight:600;flex:1">${esc(s.req || "(unnamed scan)")}</span>
+        <span>${s.files} files</span>
+        <span style="color:var(--red)">${l.high_risk ?? 0} high-risk</span>
+        <span style="color:var(--burnt)">${l.mass_generated ?? 0} mass-gen</span>
+        <span style="color:var(--green)">${l.genuine ?? 0} genuine</span>
+      </div>`;
+    }).join("");
+  } catch { $("#historysec").hidden = true; }
+}
+refreshHistory();
 
 const dlg = $("#signup");
 function openSignup(tier) {
@@ -607,6 +647,7 @@ $("#run").addEventListener("click", async () => {
     state.files.forEach(f => fd.append("files", f, f.name));
     fd.append("jd", $("#jd").value);
     fd.append("sensitivity", state.sensitivity);
+    fd.append("req", $("#req").value);
     const headers = {};
     if (keyStore.get()) headers["X-API-Key"] = keyStore.get();
     const res = await fetch("/api/scan", { method: "POST", body: fd, headers });
@@ -619,6 +660,7 @@ $("#run").addEventListener("click", async () => {
     if (!res.ok) throw new Error(data.error || `scan failed (${res.status})`);
     renderResults(data);
     refreshAccount();
+    refreshHistory();
     $("#results").hidden = false;
     $("#results").scrollIntoView({ behavior: "smooth" });
   } catch (err) {
@@ -631,9 +673,6 @@ $("#run").addEventListener("click", async () => {
 });
 
 /* ---- render ---- */
-const esc = (s) => String(s).replace(/[&<>"']/g,
-  c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-
 function meter(v, color) {
   return `<span class="meter"><i style="width:${v}%;background:${color}"></i></span>`;
 }

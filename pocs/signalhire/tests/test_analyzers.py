@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from signalhire.analyzers.contact import analyze_contact
 from signalhire.analyzers.dedupe import (analyze_dedupe, body_text, minhash,
                                          new_index)
 from signalhire.analyzers.forensics import analyze_forensics
@@ -234,6 +235,62 @@ def test_unrelated_documents_do_not_cluster():
                  "care, charge nurse at Meridian Health since 2019.",
                  doc_id="b", identity=Identity(email_hash="h_bo"))
     assert analyze_dedupe(a, _population([a, b])) == []
+
+
+def test_one_producer_string_scores_once():
+    """'Puppeteer / HeadlessChrome' matches two signatures but is one fact —
+    only the strongest match scores; the other is listed in evidence."""
+    from signalhire.signatures import load_signatures
+    ctx = Context(signatures=load_signatures())
+    doc = make_doc("resume", meta={
+        "producer": "Puppeteer 22.6.1 / HeadlessChrome 124"})
+    gen = [s for s in analyze_forensics(doc, ctx) if s.code == "GEN_TOOL_MATCH"]
+    assert len(gen) == 1
+    assert gen[0].evidence["matched"] == "puppeteer_pipeline"
+    assert gen[0].evidence["also_matched"] == ["headless_browser"]
+
+
+def test_batch_timestamp_cluster_needs_many_distinct_applicants():
+    doc = make_doc("resume", meta={"creationdate": "D:20260817120400"})
+    windowed = Context(creation_windows={"2026-08-17T12:00:00+00:00": 8})
+    assert "BATCH_TIMESTAMP_CLUSTER" in codes(analyze_forensics(doc, windowed))
+    quiet = Context(creation_windows={"2026-08-17T12:00:00+00:00": 2})
+    assert "BATCH_TIMESTAMP_CLUSTER" not in codes(analyze_forensics(doc, quiet))
+
+
+# --- contact handles --------------------------------------------------------
+
+def test_contact_collision_same_mailbox_different_names():
+    a = make_doc("body one", doc_id="a", identity=Identity(
+        email_hash="h_shared", name_hash="h_ana", display_name="Ana"))
+    b = make_doc("body two", doc_id="b", identity=Identity(
+        email_hash="h_shared", name_hash="h_bo", display_name="Bo"))
+    ctx = Context(identity={"a": a.identity, "b": b.identity})
+    hit = next(s for s in analyze_contact(a, ctx)
+               if s.code == "CONTACT_COLLISION")
+    assert hit.evidence["handles"] == ["email"]
+
+
+def test_same_person_shared_mailbox_is_not_a_collision():
+    same = Identity(email_hash="h_ana", name_hash="h_ana")
+    ctx = Context(identity={"a": same, "b": same})
+    doc = make_doc("body", doc_id="a", identity=same)
+    assert analyze_contact(doc, ctx) == []
+
+
+def test_missing_names_never_manufacture_a_collision():
+    a = Identity(email_hash="h_shared")            # no name extracted
+    b = Identity(email_hash="h_shared", name_hash="h_bo")
+    ctx = Context(identity={"a": a, "b": b})
+    assert analyze_contact(make_doc("x", doc_id="a", identity=a), ctx) == []
+
+
+def test_disposable_domain_is_weak():
+    doc = make_doc("body", identity=Identity(email_hash="h",
+                                             email_domain="mailinator.com"))
+    hit = next(s for s in analyze_contact(doc, Context())
+               if s.code == "DISPOSABLE_CONTACT")
+    assert hit.severity.value == "weak"
 
 
 def test_body_text_masks_identity_tokens():

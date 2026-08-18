@@ -29,11 +29,11 @@ Demo mode: no account → 1 scan of ≤5 files, results watermarked "demo".
 - [x] M2 Subscription backbone: accounts, API keys, tier gating, usage
       metering (SQLite, stdlib), demo mode (it1)
 - [x] M3 Pricing page + signup/key management + plan/usage in the UI (it1)
-- [ ] M4 Billing: Stripe checkout links behind env config (dev-mode upgrade
-      stub until keys exist), webhook to flip tiers
+- [x] M4 Billing: Stripe checkout links behind env config, webhook
+      (X-Webhook-Secret) to flip tiers on checkout.session.completed (it2)
 - [ ] M5 Team seats: invite by email hash, per-org rollups
-- [ ] M6 Recruiter workflow: saved requisitions, scan history, re-scan,
-      per-req signature stats
+- [x] M6 Recruiter workflow v1: requisition-named scans + per-account scan
+      history with label counts (it2). Later: re-scan, per-req rollups
 - [ ] M7 API docs page for Agency+ (POST /api/scan with X-API-Key)
 - [ ] M8 Hosted deploy story (Dockerfile; Fluid Compute later)
 
@@ -46,6 +46,19 @@ Demo mode: no account → 1 scan of ≤5 files, results watermarked "demo".
   tests/test_subscription.py; verified live (signup → scout → dev upgrade →
   agency, quota shown in header, "Current plan" state on cards).
   Next (it2): M4 Stripe webhook stub + M6 scan history per account.
+- it2 (done): ALGORITHM — analyzer F (contact.py): CONTACT_COLLISION
+  (STRONG, risk code: same email/phone hash under different names, catches
+  recycled contact infrastructure even with unique bodies) +
+  DISPOSABLE_CONTACT (WEAK, throwaway-mail domains, clear-text domain only);
+  BATCH_TIMESTAMP_CLUSTER (WEAK: ≥5 distinct applicants generated in one
+  10-min window); stable cluster ids via union-find over verified pairs
+  (closes the skipped review finding); producer matches deduped to the
+  strongest per direction (no more double-counting Puppeteer+HeadlessChrome).
+  Corpus attack set +2 contact-collision docs, recall still 100%, humans 0%.
+  PRODUCT — billing webhook (503 unset / 401 bad secret / flips tier);
+  req-named scans; /api/history + Recent Scans panel. 77 tests.
+  Next (it3): M5 seats, M7 API docs page, evasion-hardening pass on layout
+  fingerprints (perturbation-resistant secondary hash).
 
 ## Rules for future iterations
 

@@ -52,6 +52,21 @@ def test_scan_is_order_independent(tiny_corpus):
            {x.doc.source_path: x.label for x in b.applications}
 
 
+def test_cluster_ids_are_stable_across_ring_members(tiny_corpus):
+    """Every member of one near-duplicate ring reports the same cluster id."""
+    result = scan(tiny_corpus, exclude={tiny_corpus / "jd.txt"})
+    seen: dict[str, set[str]] = {}
+    for app in result.applications:
+        for s in app.signals:
+            cluster = s.evidence.get("cluster")
+            if cluster:
+                seen.setdefault(cluster, set()).add(app.doc.doc_id)
+    assert seen, "no cluster signals fired on the corpus"
+    for cluster, members in seen.items():
+        assert members <= set(result.context.clusters), cluster
+        assert {result.context.clusters[m] for m in members} == {cluster}
+
+
 def test_reports_render(tiny_corpus):
     result = scan(tiny_corpus, exclude={tiny_corpus / "jd.txt"})
 

@@ -114,7 +114,10 @@ def analyze_dedupe(doc: ParsedDoc, ctx: Context) -> list[Signal]:
     same_person = [d for d in near
                    if _same_person(me, ctx.identity.get(d, Identity()))]
 
-    cluster_id = "cl_" + min([doc.doc_id, *near])[:8]
+    # Stable id from the pipeline's union-find over all verified pairs, so
+    # every member of a ring reports the same cluster even when similarity is
+    # not transitive; the local fallback covers direct analyzer calls.
+    cluster_id = ctx.clusters.get(doc.doc_id) or "cl_" + min([doc.doc_id, *near])[:8]
     signals: list[Signal] = []
 
     if other_person:

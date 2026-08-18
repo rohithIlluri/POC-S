@@ -125,11 +125,49 @@ async def upgrade(payload: dict,
     })
 
 
+@app.get("/api/history")
+def history(x_api_key: str | None = Header(default=None)) -> JSONResponse:
+    user = _user(x_api_key)
+    if user is None:
+        return JSONResponse({"error": "unknown API key"}, status_code=401)
+    return JSONResponse({"scans": _store().history(user["id"])})
+
+
+@app.post("/api/billing/webhook")
+async def billing_webhook(
+    payload: dict,
+    x_webhook_secret: str | None = Header(default=None),
+) -> JSONResponse:
+    """Payment-provider callback (Stripe-shaped). Flips the payer's tier.
+
+    Enabled only when SIGNALHIRE_WEBHOOK_SECRET is set; the provider is
+    configured to send that value in X-Webhook-Secret. The API key travels as
+    the checkout session's client_reference_id and the tier in its metadata.
+    """
+    secret = os.environ.get("SIGNALHIRE_WEBHOOK_SECRET")
+    if not secret:
+        return JSONResponse({"error": "billing webhook not configured"},
+                            status_code=503)
+    if x_webhook_secret != secret:
+        return JSONResponse({"error": "bad webhook secret"}, status_code=401)
+    if payload.get("type") != "checkout.session.completed":
+        return JSONResponse({"ignored": payload.get("type", "unknown")})
+    session = payload.get("data", {}).get("object", {})
+    api_key = session.get("client_reference_id", "")
+    tier = session.get("metadata", {}).get("tier", "")
+    try:
+        user = _store().set_tier(api_key, tier)
+    except ValueError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=422)
+    return JSONResponse({"ok": True, "email": user["email"], "tier": tier})
+
+
 @app.post("/api/scan")
 async def scan_batch(
     files: list[UploadFile] = File(...),
     jd: str = Form(""),
     sensitivity: str = Form("balanced"),
+    req: str = Form(""),
     x_api_key: str | None = Header(default=None),
 ) -> JSONResponse:
     if sensitivity not in ("conservative", "balanced", "aggressive"):
@@ -176,7 +214,8 @@ async def scan_batch(
     result = score_documents(docs, jd_text=jd, sensitivity=sensitivity)
     flagged = sum(1 for a in result.applications if a.label in FLAGGED)
     if user is not None:
-        store.record_scan(user["id"], files=len(docs), flagged=flagged)
+        store.record_scan(user["id"], files=len(docs), flagged=flagged,
+                          req=req, labels=result.stats["labels"])
 
     ent = store.entitlements(user)
     result.stats["source"] = "upload"
