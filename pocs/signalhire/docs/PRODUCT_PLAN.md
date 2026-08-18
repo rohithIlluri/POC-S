@@ -31,10 +31,11 @@ Demo mode: no account → 1 scan of ≤5 files, results watermarked "demo".
 - [x] M3 Pricing page + signup/key management + plan/usage in the UI (it1)
 - [x] M4 Billing: Stripe checkout links behind env config, webhook
       (X-Webhook-Secret) to flip tiers on checkout.session.completed (it2)
-- [ ] M5 Team seats: invite by email hash, per-org rollups
+- [x] M5 Team seats: owner-invited seats gated by tier (1/5/unlimited),
+      org-wide quota metering, seat upgrades upgrade the org (it3)
 - [x] M6 Recruiter workflow v1: requisition-named scans + per-account scan
       history with label counts (it2). Later: re-scan, per-req rollups
-- [ ] M7 API docs page for Agency+ (POST /api/scan with X-API-Key)
+- [x] M7 API section on the site (curl example, /docs schema link) (it3)
 - [ ] M8 Hosted deploy story (Dockerfile; Fluid Compute later)
 
 ## Iteration log
@@ -59,6 +60,15 @@ Demo mode: no account → 1 scan of ≤5 files, results watermarked "demo".
   req-named scans; /api/history + Recent Scans panel. 77 tests.
   Next (it3): M5 seats, M7 API docs page, evasion-hardening pass on layout
   fingerprints (perturbation-resistant secondary hash).
+- it3 (done): ALGORITHM — loose_fingerprint (font/size profile, no
+  x-buckets/page count): survives margin nudges and added runs; used only
+  for KNOWN_TEMPLATE matching (never swarm counting, never allowlisting);
+  collector proposes layout_hash_loose entries behind the same human-corpus
+  gate. PRODUCT — M5 seats (users.owner_id one level deep; invite owner-only,
+  seat caps 1/5/unlimited; org-wide monthly metering; member upgrade
+  upgrades the org; Team panel with invite in UI) + M7 API section.
+  80 tests. Remaining: M8 deploy story (Dockerfile), per-req rollups,
+  email delivery for invites, Stripe links when real keys exist.
 
 ## Rules for future iterations
 

@@ -100,6 +100,7 @@ class Context:
 
     signatures: list[Any] = field(default_factory=list)      # signatures.GeneratorSignature
     template_index: dict[str, str] = field(default_factory=dict)   # layout_hash -> label
+    template_index_loose: dict[str, str] = field(default_factory=dict)  # loose hash -> label
     template_allowlist: dict[str, str] = field(default_factory=dict)
     layout_counts: dict[str, int] = field(default_factory=dict)    # layout_hash -> distinct applicants
     global_idf: dict[str, float] = field(default_factory=dict)

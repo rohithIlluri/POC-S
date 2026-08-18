@@ -106,7 +106,7 @@ def test_pricing_lists_three_tiers_with_identical_detection(client):
     # No tier config may ever mention detection quality — volume/workflow only.
     for t in tiers:
         assert set(t) <= {"id", "label", "price_usd", "scans_per_month",
-                          "max_files", "json_export", "api_access",
+                          "max_files", "seats", "json_export", "api_access",
                           "custom_signatures"}
 
 
@@ -150,6 +150,55 @@ def test_billing_webhook_flips_tier_only_with_the_secret(client, monkeypatch):
                     json={"type": "invoice.paid"},
                     headers={"X-Webhook-Secret": "whsec_test"})
     assert r.json() == {"ignored": "invoice.paid"}
+
+
+def test_seats_are_gated_by_tier(client):
+    key = _signup(client)
+    h = {"X-API-Key": key}
+
+    # Scout is a single seat.
+    r = client.post("/api/team/invite", json={"email": "b@example.com"}, headers=h)
+    assert r.status_code == 422 and "1 seat" in r.json()["error"]
+
+    client.post("/api/upgrade", json={"tier": "agency"}, headers=h)
+    member_keys = []
+    for i in range(4):
+        r = client.post("/api/team/invite",
+                        json={"email": f"m{i}@example.com"}, headers=h)
+        assert r.status_code == 201
+        member_keys.append(r.json()["api_key"])
+
+    # Five seats total on Agency: owner + 4 members, the next one refuses.
+    r = client.post("/api/team/invite", json={"email": "m5@example.com"}, headers=h)
+    assert r.status_code == 422 and "Upgrade" in r.json()["error"]
+
+    team = client.get("/api/team", headers=h).json()
+    assert team["entitlements"]["seats_used"] == 5
+    assert len(team["members"]) == 4
+
+    # Members inherit the org tier and cannot invite.
+    mh = {"X-API-Key": member_keys[0]}
+    me = client.get("/api/me", headers=mh).json()
+    assert me["entitlements"]["tier"] == "agency"
+    assert me["entitlements"]["role"] == "member"
+    r = client.post("/api/team/invite", json={"email": "x@example.com"}, headers=mh)
+    assert r.status_code == 422
+
+
+def test_member_scans_draw_from_the_org_quota(client):
+    key = _signup(client)
+    h = {"X-API-Key": key}
+    client.post("/api/upgrade", json={"tier": "agency"}, headers=h)
+    mk = client.post("/api/team/invite", json={"email": "m@example.com"},
+                     headers=h).json()["api_key"]
+
+    client.post("/api/scan", files=[_resume()], headers={"X-API-Key": mk})
+    client.post("/api/scan", files=[_resume()], headers=h)
+
+    for who in (h, {"X-API-Key": mk}):
+        e = client.get("/api/me", headers=who).json()["entitlements"]
+        assert e["scans_used"] == 2
+        assert e["scans_left"] == 198
 
 
 def test_scan_response_carries_plan_state(client):

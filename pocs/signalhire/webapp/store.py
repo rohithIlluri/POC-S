@@ -22,17 +22,17 @@ _EMAIL_RE = re.compile(r"^[\w.+-]+@[\w-]+\.[\w.-]+$")
 TIERS: dict[str, dict[str, Any]] = {
     "scout": {
         "label": "Scout", "price_usd": 0,
-        "scans_per_month": 5, "max_files": 25,
+        "scans_per_month": 5, "max_files": 25, "seats": 1,
         "json_export": False, "api_access": False, "custom_signatures": False,
     },
     "agency": {
         "label": "Agency", "price_usd": 149,
-        "scans_per_month": 200, "max_files": 200,
+        "scans_per_month": 200, "max_files": 200, "seats": 5,
         "json_export": True, "api_access": True, "custom_signatures": False,
     },
     "talent_cloud": {
         "label": "Talent Cloud", "price_usd": 499,
-        "scans_per_month": None, "max_files": 500,
+        "scans_per_month": None, "max_files": 500, "seats": None,
         "json_export": True, "api_access": True, "custom_signatures": True,
     },
 }
@@ -46,6 +46,7 @@ CREATE TABLE IF NOT EXISTS users (
     org TEXT NOT NULL DEFAULT '',
     api_key TEXT NOT NULL UNIQUE,
     tier TEXT NOT NULL DEFAULT 'scout',
+    owner_id INTEGER,
     created_at TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS scans (
@@ -64,6 +65,7 @@ CREATE INDEX IF NOT EXISTS scans_user_month ON scans(user_id, created_at);
 _MIGRATIONS = (
     "ALTER TABLE scans ADD COLUMN req TEXT NOT NULL DEFAULT ''",
     "ALTER TABLE scans ADD COLUMN labels TEXT NOT NULL DEFAULT '{}'",
+    "ALTER TABLE users ADD COLUMN owner_id INTEGER",
 )
 
 
@@ -118,27 +120,77 @@ class Store:
                 "SELECT * FROM users WHERE api_key = ?", (api_key,)).fetchone()
         return dict(row) if row else None
 
+    def root_of(self, user: dict) -> dict:
+        """The billing account: the org owner for a seat, the user themself
+        otherwise. Seats are one level deep by construction."""
+        if not user.get("owner_id"):
+            return user
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT * FROM users WHERE id = ?", (user["owner_id"],)).fetchone()
+        return dict(row) if row else user
+
+    def _org_ids(self, root_id: int) -> list[int]:
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT id FROM users WHERE id = ? OR owner_id = ?",
+                (root_id, root_id)).fetchall()
+        return [r["id"] for r in rows]
+
+    def members(self, root_id: int) -> list[dict]:
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT email, created_at FROM users WHERE owner_id = ? "
+                "ORDER BY id", (root_id,)).fetchall()
+        return [dict(r) for r in rows]
+
+    def invite(self, api_key: str, email: str) -> dict:
+        """Add a seat to the caller's org. Owner-only; capped by tier."""
+        user = self.by_key(api_key)
+        if user is None:
+            raise ValueError("unknown API key")
+        if user.get("owner_id"):
+            raise ValueError("only the account owner can invite teammates")
+        cap = TIERS[user["tier"]]["seats"]
+        seats_used = 1 + len(self.members(user["id"]))
+        if cap is not None and seats_used >= cap:
+            raise ValueError(
+                f"{TIERS[user['tier']]['label']} includes {cap} "
+                f"seat{'s' if cap != 1 else ''} and all are in use. "
+                "Upgrade to add teammates.")
+        member = self.signup(email, org=user["org"])
+        with self._lock:
+            self._conn.execute("UPDATE users SET owner_id = ? WHERE id = ?",
+                               (user["id"], member["id"]))
+            self._conn.commit()
+        member["owner_id"] = user["id"]
+        return member
+
     def set_tier(self, api_key: str, tier: str) -> dict:
         if tier not in TIERS:
             raise ValueError(f"unknown tier: {tier}")
         user = self.by_key(api_key)
         if user is None:
             raise ValueError("unknown API key")
+        root = self.root_of(user)  # a seat's upgrade upgrades the org
         with self._lock:
             self._conn.execute("UPDATE users SET tier = ? WHERE id = ?",
-                               (tier, user["id"]))
+                               (tier, root["id"]))
             self._conn.commit()
-        user["tier"] = tier
-        return user
+        root["tier"] = tier
+        return root
 
     # -- metering ----------------------------------------------------------
 
-    def scans_this_month(self, user_id: int) -> int:
+    def scans_this_month(self, root_id: int) -> int:
+        """Org-wide: every seat draws from the owner's monthly quota."""
+        org = self._org_ids(root_id)
+        marks = ",".join("?" * len(org))
         with self._lock:
             row = self._conn.execute(
-                "SELECT COUNT(*) AS n FROM scans "
-                "WHERE user_id = ? AND created_at LIKE ?",
-                (user_id, f"{_month_prefix()}%")).fetchone()
+                f"SELECT COUNT(*) AS n FROM scans "
+                f"WHERE user_id IN ({marks}) AND created_at LIKE ?",
+                (*org, f"{_month_prefix()}%")).fetchone()
         return int(row["n"])
 
     def record_scan(self, user_id: int | None, files: int, flagged: int,
@@ -169,16 +221,21 @@ class Store:
             return {"tier": "demo", "label": "Demo",
                     "max_files": DEMO_MAX_FILES,
                     "scans_per_month": 1, "scans_used": 0, "scans_left": 1,
+                    "seats": 1, "seats_used": 1, "role": "demo",
                     "json_export": False, "api_access": False,
                     "custom_signatures": False}
-        tier = TIERS[user["tier"]]
-        used = self.scans_this_month(user["id"])
+        root = self.root_of(user)
+        tier = TIERS[root["tier"]]
+        used = self.scans_this_month(root["id"])
         cap = tier["scans_per_month"]
         return {
-            "tier": user["tier"], "label": tier["label"],
+            "tier": root["tier"], "label": tier["label"],
             "max_files": tier["max_files"],
             "scans_per_month": cap, "scans_used": used,
             "scans_left": None if cap is None else max(0, cap - used),
+            "seats": tier["seats"],
+            "seats_used": 1 + len(self.members(root["id"])),
+            "role": "member" if user.get("owner_id") else "owner",
             "json_export": tier["json_export"],
             "api_access": tier["api_access"],
             "custom_signatures": tier["custom_signatures"],

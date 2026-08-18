@@ -25,7 +25,7 @@ from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
 
-from .analyzers.layout import layout_fingerprint
+from .analyzers.layout import layout_fingerprint, loose_fingerprint
 from .parse import discover, parse_file
 from .signatures import SIGNATURE_DB_VERSION
 
@@ -72,6 +72,7 @@ def propose(sample_dir: str | Path, tool_label: str,
         f'{d.meta.get("producer", "")} {d.meta.get("creator", "")}' for d in human_docs
     ]
     human_layouts = {layout_fingerprint(d) for d in human_docs}
+    human_loose = {loose_fingerprint(d) for d in human_docs}
     source = f"collect:{Path(sample_dir).name}:n={len(samples)}"
 
     proposals: list[Proposal] = []
@@ -96,21 +97,24 @@ def propose(sample_dir: str | Path, tool_label: str,
                        f"{'' if human_docs else ' (no human corpus supplied)'}"),
         ))
 
-    # --- layout fingerprints ----------------------------------------------
-    layouts = Counter(fp for d in samples if (fp := layout_fingerprint(d)))
-    for fp, count in layouts.items():
-        if count < 2:
-            continue  # a one-off layout is a document, not a template
-        collides = fp in human_layouts
-        proposals.append(Proposal(
-            kind="layout_hash", pattern=fp, tool_label=f"{tool_label}_template",
-            confidence=0.6,
-            active=count == len(samples) and not collides,
-            source=source, version=SIGNATURE_DB_VERSION,
-            rationale=(f"shared by {count}/{len(samples)} samples, "
-                       f"{'collides with' if collides else 'no collision in'} "
-                       "the human corpus"),
-        ))
+    # --- layout fingerprints (exact + perturbation-resistant loose) --------
+    for kind, fingerprint, human_set in (
+            ("layout_hash", layout_fingerprint, human_layouts),
+            ("layout_hash_loose", loose_fingerprint, human_loose)):
+        counts = Counter(fp for d in samples if (fp := fingerprint(d)))
+        for fp, count in counts.items():
+            if count < 2:
+                continue  # a one-off layout is a document, not a template
+            collides = fp in human_set
+            proposals.append(Proposal(
+                kind=kind, pattern=fp, tool_label=f"{tool_label}_template",
+                confidence=0.6,
+                active=count == len(samples) and not collides,
+                source=source, version=SIGNATURE_DB_VERSION,
+                rationale=(f"shared by {count}/{len(samples)} samples, "
+                           f"{'collides with' if collides else 'no collision in'} "
+                           "the human corpus"),
+            ))
 
     return proposals
 

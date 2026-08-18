@@ -6,7 +6,8 @@ from signalhire.analyzers.dedupe import (analyze_dedupe, body_text, minhash,
 from signalhire.analyzers.forensics import analyze_forensics
 from signalhire.analyzers.hidden import analyze_hidden, is_near_white
 from signalhire.analyzers.jd_mirror import analyze_jd_mirror
-from signalhire.analyzers.layout import analyze_layout, layout_fingerprint
+from signalhire.analyzers.layout import (analyze_layout, layout_fingerprint,
+                                         loose_fingerprint)
 from signalhire.types import Context, Identity
 
 from conftest import make_block, make_doc
@@ -145,6 +146,29 @@ def test_template_swarm_is_weak_and_allowlist_suppresses_it():
     allow_ctx = Context(layout_counts={fp: 40},
                         template_allowlist={fp: "google_docs_serif"})
     assert "TEMPLATE_SWARM" not in codes(analyze_layout(doc, allow_ctx))
+
+
+def test_perturbed_template_still_matches_via_loose_fingerprint():
+    """Nudging the margin and adding a run beats the exact hash but not the
+    font-profile hash — the anti-evasion path for KNOWN_TEMPLATE."""
+    original = make_doc(blocks=[make_block("Name", size=20),
+                                make_block("body one"), make_block("body two")])
+    evaded = make_doc(blocks=[make_block("Name", size=20, x=65.0),  # margin nudge
+                              make_block("body one", x=65.0),
+                              make_block("body two", x=65.0),
+                              make_block("extra run", x=65.0)])
+    assert layout_fingerprint(original) != layout_fingerprint(evaded)
+    assert loose_fingerprint(original) == loose_fingerprint(evaded)
+
+    ctx = Context(template_index={layout_fingerprint(original): "acme_exact"},
+                  template_index_loose={loose_fingerprint(original): "acme_tmpl"})
+    hit = next(s for s in analyze_layout(evaded, ctx)
+               if s.code == "KNOWN_TEMPLATE")
+    assert hit.evidence["match"] == "font_profile"
+
+    exact_hit = next(s for s in analyze_layout(original, ctx)
+                     if s.code == "KNOWN_TEMPLATE")
+    assert exact_hit.evidence["match"] == "exact_structure"
 
 
 # --- JD mirroring ----------------------------------------------------------

@@ -111,12 +111,18 @@ def load_signatures(path: str | Path | None = None) -> list[GeneratorSignature]:
 
 def template_indexes(
     signatures: list[GeneratorSignature],
-) -> tuple[dict[str, str], dict[str, str]]:
-    """Split layout_hash signatures into (known wrapper templates, allowlist)."""
+) -> tuple[dict[str, str], dict[str, str], dict[str, str]]:
+    """Split layout signatures into (known exact, allowlist, known loose).
+
+    Loose (font-profile) hashes only ever *flag* templates — an allowlist
+    entry must match exactly, because suppressing the swarm signal on a loose
+    profile would let a wrapper hide behind Helvetica-11."""
     known: dict[str, str] = {}
     allow: dict[str, str] = {}
+    known_loose: dict[str, str] = {}
     for s in signatures:
-        if s.kind != "layout_hash":
-            continue
-        (known if s.confidence > 0 else allow)[s.pattern] = s.tool_label
-    return known, allow
+        if s.kind == "layout_hash":
+            (known if s.confidence > 0 else allow)[s.pattern] = s.tool_label
+        elif s.kind == "layout_hash_loose" and s.confidence > 0:
+            known_loose[s.pattern] = s.tool_label
+    return known, allow, known_loose

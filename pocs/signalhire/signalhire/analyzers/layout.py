@@ -44,6 +44,30 @@ def layout_fingerprint(doc: ParsedDoc) -> str:
     return hashlib.sha256(canon.encode()).hexdigest()[:16]
 
 
+def loose_fingerprint(doc: ParsedDoc) -> str:
+    """Perturbation-resistant secondary hash: fonts and rounded sizes only.
+
+    The exact fingerprint dies to trivial evasion — nudge the margin 5pt or
+    add one run and the hash changes. This one survives both, at the cost of
+    being too loose for population swarm counting, so it is used *only* to
+    match known wrapper templates from the signature DB, where a false match
+    still needs a colliding font/size profile that cleared the collector's
+    human-corpus gate."""
+    feats: Counter = Counter(
+        (b["font"], round(b["size"]))
+        for page in doc.pages
+        for b in page["blocks"]
+        if b["text"].strip()
+    )
+    if not feats:
+        return ""
+    canon = "|".join(
+        f"{font}:{size}:{int(math.log2(count)) + 1}"
+        for (font, size), count in sorted(feats.items())
+    )
+    return "L" + hashlib.sha256(canon.encode()).hexdigest()[:15]
+
+
 def analyze_layout(doc: ParsedDoc, ctx: Context) -> list[Signal]:
     fp = doc.layout_hash or layout_fingerprint(doc)
     doc.layout_hash = fp
@@ -56,8 +80,19 @@ def analyze_layout(doc: ParsedDoc, ctx: Context) -> list[Signal]:
     if tmpl:
         signals.append(Signal(
             code="KNOWN_TEMPLATE", severity=Severity.STRONG, score_impact=0.6,
-            evidence={"template": tmpl}, analyzer=ANALYZER,
+            evidence={"template": tmpl, "match": "exact_structure"},
+            analyzer=ANALYZER,
         ))
+    else:
+        loose = ctx.template_index_loose.get(loose_fingerprint(doc))
+        if loose:
+            signals.append(Signal(
+                code="KNOWN_TEMPLATE", severity=Severity.STRONG, score_impact=0.6,
+                evidence={"template": loose, "match": "font_profile",
+                          "note": "exact structure perturbed; font/size "
+                                  "profile still matches the template"},
+                analyzer=ANALYZER,
+            ))
 
     allow = ctx.template_allowlist.get(fp)
     if allow:

@@ -346,6 +346,42 @@ footer{border-top:1.5px solid var(--ink);padding:1.4rem 0 2.2rem;
   </div>
 </section>
 
+<section class="results" id="teamsec" hidden>
+  <div class="wrap">
+    <h2 style="font-family:var(--mono);font-size:.8rem;font-weight:600;text-transform:uppercase;letter-spacing:.16em;color:var(--red);margin:0 0 1rem">Team</h2>
+    <div id="teamlist" style="font-family:var(--mono);font-size:.74rem;margin-bottom:.8rem"></div>
+    <div id="inviterow" style="display:flex;gap:.6rem;max-width:460px">
+      <input type="email" id="invite-email" placeholder="teammate@agency.com"
+             style="flex:1;border:1.5px solid var(--ink);background:var(--card);
+                    font:.8rem var(--mono);padding:.55rem;color:var(--ink)">
+      <button class="dl" id="invite-go" style="margin:0">Invite</button>
+    </div>
+    <div id="invite-out" class="demo-note" hidden style="margin-top:.8rem"></div>
+  </div>
+</section>
+
+<section class="caps" id="apidocs">
+  <div class="wrap">
+    <h2>API — Agency &amp; Talent Cloud</h2>
+    <p style="font-size:.92rem;color:var(--muted);max-width:62ch;margin:0 0 1rem">
+      Everything the dashboard does is one endpoint. Send a batch, get the full
+      triage report as JSON — labels, scores, and every reason code with its
+      evidence. Wire it into your ATS webhook and score applications as they
+      arrive.</p>
+    <pre style="background:var(--card);border:1.5px solid var(--ink);padding:1rem;
+                font-size:.74rem;overflow-x:auto;font-family:var(--mono)">curl -X POST https://your-host/api/scan \
+  -H "X-API-Key: sh_your_key" \
+  -F "files=@inbox/candidate_1.pdf" \
+  -F "files=@inbox/candidate_2.docx" \
+  -F "req=PLT-4471" \
+  -F "jd=&lt;req-4471.txt" \
+  -F "sensitivity=balanced"</pre>
+    <p style="font-family:var(--mono);font-size:.72rem;color:var(--muted);margin-top:.6rem">
+      Interactive schema at <a href="/docs" style="color:var(--red)">/docs</a> ·
+      quota state rides on every response under <code>stats.plan</code>.</p>
+  </div>
+</section>
+
 <section class="pricing" id="pricing">
   <div class="wrap">
     <h2>Plans</h2>
@@ -541,6 +577,40 @@ async function refreshHistory() {
   } catch { $("#historysec").hidden = true; }
 }
 refreshHistory();
+
+async function refreshTeam() {
+  const key = keyStore.get();
+  if (!key) { $("#teamsec").hidden = true; return; }
+  try {
+    const r = await fetch("/api/team", { headers: { "X-API-Key": key } });
+    if (!r.ok) throw new Error();
+    const t = await r.json();
+    const e = t.entitlements;
+    $("#teamsec").hidden = false;
+    const seatCap = e.seats === null ? "unlimited" : e.seats;
+    $("#teamlist").innerHTML =
+      `<div style="color:var(--muted);margin-bottom:.4rem">${esc(t.owner)} (owner) · ${e.seats_used}/${seatCap} seats</div>` +
+      t.members.map(m =>
+        `<div style="padding:.3rem .2rem;border-bottom:1px dotted var(--line)">${esc(m.email)}</div>`).join("");
+    $("#inviterow").style.display = e.role === "owner" ? "flex" : "none";
+  } catch { $("#teamsec").hidden = true; }
+}
+refreshTeam();
+
+$("#invite-go").addEventListener("click", async () => {
+  const r = await fetch("/api/team/invite", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-API-Key": keyStore.get() },
+    body: JSON.stringify({ email: $("#invite-email").value }),
+  });
+  const data = await r.json();
+  const out = $("#invite-out");
+  out.hidden = false;
+  out.textContent = r.ok
+    ? `Seat added. Hand this key to ${data.email}: ${data.api_key}`
+    : data.error;
+  if (r.ok) { $("#invite-email").value = ""; refreshTeam(); }
+});
 
 const dlg = $("#signup");
 function openSignup(tier) {

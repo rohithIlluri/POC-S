@@ -53,11 +53,12 @@ class ScanResult:
 def build_context(docs: list[ParsedDoc], jd_text: str = "",
                   signatures_path: str | Path | None = None) -> Context:
     signatures = load_signatures(signatures_path)
-    known_templates, allowlist = template_indexes(signatures)
+    known_templates, allowlist, known_loose = template_indexes(signatures)
 
     ctx = Context(
         signatures=signatures,
         template_index=known_templates,
+        template_index_loose=known_loose,
         template_allowlist=allowlist,
         jd_text=jd_text,
         identity={d.doc_id: d.identity for d in docs},

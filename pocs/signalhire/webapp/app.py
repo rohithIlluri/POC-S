@@ -125,6 +125,34 @@ async def upgrade(payload: dict,
     })
 
 
+@app.get("/api/team")
+def team(x_api_key: str | None = Header(default=None)) -> JSONResponse:
+    user = _user(x_api_key)
+    if user is None:
+        return JSONResponse({"error": "unknown API key"}, status_code=401)
+    root = _store().root_of(user)
+    return JSONResponse({
+        "owner": root["email"],
+        "members": _store().members(root["id"]),
+        "entitlements": _store().entitlements(user),
+    })
+
+
+@app.post("/api/team/invite")
+async def team_invite(payload: dict,
+                      x_api_key: str | None = Header(default=None)) -> JSONResponse:
+    user = _user(x_api_key)
+    if user is None:
+        return JSONResponse({"error": "unknown API key"}, status_code=401)
+    try:
+        member = _store().invite(x_api_key or "", payload.get("email", ""))
+    except ValueError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=422)
+    # The owner hands the key to the teammate; the MVP sends no email.
+    return JSONResponse({"email": member["email"],
+                         "api_key": member["api_key"]}, status_code=201)
+
+
 @app.get("/api/history")
 def history(x_api_key: str | None = Header(default=None)) -> JSONResponse:
     user = _user(x_api_key)
