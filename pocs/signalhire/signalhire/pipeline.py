@@ -17,6 +17,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from . import analyzers as analyzer_registry
+from .analyzers.boilerplate import gram_sequence
 from .analyzers.dedupe import SIMILARITY_THRESHOLD, body_text, minhash, new_index
 from .analyzers.forensics import creation_window
 from .analyzers.jd_mirror import terms
@@ -115,6 +116,16 @@ def build_context(docs: list[ParsedDoc], jd_text: str = "",
             cluster_id = "cl_" + min(members)[:8]
             for d in members:
                 ctx.clusters[d] = cluster_id
+
+    # Phrase-swarm index: which 8-word runs appear under how many distinct
+    # applicants. Feeds the shared-boilerplate analyzer, which catches
+    # paraphrase farms that stay under the MinHash near-duplicate threshold.
+    owners: dict[str, set[str]] = defaultdict(set)
+    for d in docs:
+        who = d.identity.key() or d.doc_id
+        for g in set(gram_sequence(body_text(d))):
+            owners[g].add(who)
+    ctx.shingle_owners = {g: len(w) for g, w in owners.items() if len(w) > 1}
 
     # Creation-time clustering: distinct applicants whose documents were
     # generated in the same ten-minute window (a batch off one rig).

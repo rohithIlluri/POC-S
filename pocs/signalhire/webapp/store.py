@@ -120,6 +120,19 @@ class Store:
                 "SELECT * FROM users WHERE api_key = ?", (api_key,)).fetchone()
         return dict(row) if row else None
 
+    def rotate_key(self, api_key: str) -> dict:
+        """Issue a fresh key and invalidate the old one immediately."""
+        user = self.by_key(api_key)
+        if user is None:
+            raise ValueError("unknown API key")
+        new_key = "sh_" + secrets.token_urlsafe(24)
+        with self._lock:
+            self._conn.execute("UPDATE users SET api_key = ? WHERE id = ?",
+                               (new_key, user["id"]))
+            self._conn.commit()
+        user["api_key"] = new_key
+        return user
+
     def root_of(self, user: dict) -> dict:
         """The billing account: the org owner for a seat, the user themself
         otherwise. Seats are one level deep by construction."""

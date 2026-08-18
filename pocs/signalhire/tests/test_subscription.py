@@ -201,6 +201,28 @@ def test_member_scans_draw_from_the_org_quota(client):
         assert e["scans_left"] == 198
 
 
+def test_key_rotation_invalidates_the_old_key(client):
+    key = _signup(client)
+    new_key = client.post("/api/rotate-key",
+                          headers={"X-API-Key": key}).json()["api_key"]
+    assert new_key != key
+    assert client.get("/api/me", headers={"X-API-Key": key}).status_code == 401
+    assert client.get("/api/me", headers={"X-API-Key": new_key}).status_code == 200
+
+
+def test_signup_rate_limit(client, monkeypatch):
+    from webapp.app import _signup_hits
+    _signup_hits.clear()
+    monkeypatch.setenv("SIGNALHIRE_SIGNUPS_PER_HOUR", "2")
+    assert client.post("/api/signup",
+                       json={"email": "a@example.com"}).status_code == 201
+    assert client.post("/api/signup",
+                       json={"email": "b@example.com"}).status_code == 201
+    assert client.post("/api/signup",
+                       json={"email": "c@example.com"}).status_code == 429
+    _signup_hits.clear()
+
+
 def test_scan_response_carries_plan_state(client):
     key = _signup(client)
     r = client.post("/api/scan", files=[_resume()], headers={"X-API-Key": key})

@@ -22,7 +22,10 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
-from fastapi import FastAPI, File, Form, Header, UploadFile
+import time
+from collections import defaultdict, deque
+
+from fastapi import FastAPI, File, Form, Header, Request, UploadFile
 from fastapi.responses import FileResponse, JSONResponse
 
 from signalhire import __version__ as engine_version
@@ -78,8 +81,28 @@ def pricing() -> dict:
     ], "demo_max_files": DEMO_MAX_FILES}
 
 
+# Per-IP signup throttle: free-tier accounts are the only unauthenticated
+# write path, so they get a simple sliding-hour cap.
+_signup_hits: dict[str, deque] = defaultdict(deque)
+
+
+def _signup_limited(ip: str) -> bool:
+    cap = int(os.environ.get("SIGNALHIRE_SIGNUPS_PER_HOUR", "20"))
+    hits = _signup_hits[ip]
+    now = time.monotonic()
+    while hits and now - hits[0] > 3600:
+        hits.popleft()
+    if len(hits) >= cap:
+        return True
+    hits.append(now)
+    return False
+
+
 @app.post("/api/signup")
-async def signup(payload: dict) -> JSONResponse:
+async def signup(payload: dict, request: Request) -> JSONResponse:
+    if _signup_limited(request.client.host if request.client else "?"):
+        return JSONResponse({"error": "too many signups from this address — "
+                                      "try again later"}, status_code=429)
     try:
         user = _store().signup(payload.get("email", ""), payload.get("org", ""))
     except ValueError as exc:
@@ -123,6 +146,15 @@ async def upgrade(payload: dict,
         "note": "no Stripe payment link configured — tier switched directly",
         "entitlements": _store().entitlements(user),
     })
+
+
+@app.post("/api/rotate-key")
+def rotate_key(x_api_key: str | None = Header(default=None)) -> JSONResponse:
+    try:
+        user = _store().rotate_key(x_api_key or "")
+    except ValueError:
+        return JSONResponse({"error": "unknown API key"}, status_code=401)
+    return JSONResponse({"api_key": user["api_key"]})
 
 
 @app.get("/api/team")

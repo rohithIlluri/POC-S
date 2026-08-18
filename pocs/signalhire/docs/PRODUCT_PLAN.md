@@ -36,7 +36,8 @@ Demo mode: no account → 1 scan of ≤5 files, results watermarked "demo".
 - [x] M6 Recruiter workflow v1: requisition-named scans + per-account scan
       history with label counts (it2). Later: re-scan, per-req rollups
 - [x] M7 API section on the site (curl example, /docs schema link) (it3)
-- [ ] M8 Hosted deploy story (Dockerfile; Fluid Compute later)
+- [x] M8 Deploy story: Dockerfile + volume-backed SQLite + env-armed
+      billing; signup rate limiting; API key rotation (it4)
 
 ## Iteration log
 
@@ -69,6 +70,15 @@ Demo mode: no account → 1 scan of ≤5 files, results watermarked "demo".
   upgrades the org; Team panel with invite in UI) + M7 API section.
   80 tests. Remaining: M8 deploy story (Dockerfile), per-req rollups,
   email delivery for invites, Stripe links when real keys exist.
+- it4 (done): ALGORITHM — analyzer G (boilerplate.py): SHARED_BOILERPLATE
+  phrase-swarm detection over 8-word shingles shared by ≥4 distinct
+  applicants; catches paraphrase farms below the MinHash 0.8 threshold
+  (verified E2E: 5 rewritten docs, dedupe silent, fraction 0.52). WEAK at
+  25% shared, STRONG at 60%. Humans still 0% flagged. PRODUCT — M8
+  Dockerfile/.dockerignore; per-IP signup throttle (429, env-tunable);
+  POST /api/rotate-key. 85 tests, gates green.
+  Product is feature-complete for the MVP definition. Remaining backlog:
+  invite email delivery, per-req rollups, real Stripe keys, hosted deploy.
 
 ## Rules for future iterations
 

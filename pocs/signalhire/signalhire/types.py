@@ -110,6 +110,7 @@ class Context:
     minhashes: dict[str, Any] = field(default_factory=dict)        # doc_id -> MinHash
     clusters: dict[str, str] = field(default_factory=dict)         # doc_id -> stable cluster id
     creation_windows: dict[str, int] = field(default_factory=dict) # window key -> distinct applicants
+    shingle_owners: dict[str, int] = field(default_factory=dict)   # 8-gram -> distinct applicants
 
 
 Analyzer = Callable[[ParsedDoc, Context], "list[Signal]"]

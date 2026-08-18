@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from signalhire.analyzers.boilerplate import analyze_boilerplate, gram_sequence
 from signalhire.analyzers.contact import analyze_contact
 from signalhire.analyzers.dedupe import (analyze_dedupe, body_text, minhash,
                                          new_index)
@@ -315,6 +316,56 @@ def test_disposable_domain_is_weak():
     hit = next(s for s in analyze_contact(doc, Context())
                if s.code == "DISPOSABLE_CONTACT")
     assert hit.severity.value == "weak"
+
+
+# --- shared boilerplate -----------------------------------------------------
+
+BOILER = ("Results driven professional leveraging cutting edge cloud native "
+          "technologies to deliver scalable enterprise solutions across "
+          "distributed teams while championing operational excellence and "
+          "driving continuous improvement initiatives throughout the entire "
+          "software development lifecycle with measurable business impact")
+
+
+def _swarm_ctx(docs):
+    from collections import defaultdict
+    owners = defaultdict(set)
+    for d in docs:
+        for g in set(gram_sequence(body_text(d))):
+            owners[g].add(d.identity.key() or d.doc_id)
+    return Context(identity={d.doc_id: d.identity for d in docs},
+                   shingle_owners={g: len(w) for g, w in owners.items()
+                                   if len(w) > 1})
+
+
+def test_paraphrase_farm_below_minhash_threshold_is_caught():
+    """Five docs share one long paragraph but differ in the rest — Jaccard
+    stays under the dedupe threshold, the phrase swarm does not."""
+    docs = [make_doc(f"{BOILER} Additionally candidate number {i} spent years "
+                     f"at employer {i} doing specialty {i} work in city {i}.",
+                     doc_id=f"d{i}", identity=Identity(email_hash=f"h{i}"))
+            for i in range(5)]
+    hit = next(s for s in analyze_boilerplate(docs[0], _swarm_ctx(docs))
+               if s.code == "SHARED_BOILERPLATE")
+    assert hit.evidence["shared_phrase_fraction"] >= 0.25
+    assert hit.evidence["samples"]
+
+
+def test_unique_documents_share_no_boilerplate():
+    docs = [make_doc(f"Engineer {i} " + " ".join(
+                f"word{i}x{j}" for j in range(60)),
+                doc_id=f"d{i}", identity=Identity(email_hash=f"h{i}"))
+            for i in range(5)]
+    assert analyze_boilerplate(docs[0], _swarm_ctx(docs)) == []
+
+
+def test_two_copies_are_dedupe_business_not_boilerplate():
+    """A pair is a duplicate, not a swarm: below the owner threshold."""
+    docs = [make_doc(BOILER + " plus a modest unique tail here for padding "
+                     + " ".join(f"pad{i}{j}" for j in range(30)),
+                     doc_id=f"d{i}", identity=Identity(email_hash=f"h{i}"))
+            for i in range(2)]
+    assert analyze_boilerplate(docs[0], _swarm_ctx(docs)) == []
 
 
 def test_body_text_masks_identity_tokens():

@@ -44,6 +44,7 @@ CODE_TEXT = {
     "BATCH_TIMESTAMP_CLUSTER": "Generated in the same ten-minute window as many other applicants",
     "SPRAY_APPLY": "The same document was submitted across many requisitions",
     "DUP_CLUSTER": "Near-identical to other applications in this batch",
+    "SHARED_BOILERPLATE": "Built largely from phrases shared verbatim across many applicants",
     "PARSE_FAILED": "Document could not be parsed",
 }
 

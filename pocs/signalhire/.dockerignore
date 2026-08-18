@@ -1,0 +1,10 @@
+.venv
+data
+eval/corpus
+eval/corpus.local
+eval/metrics.json
+tests
+docs
+__pycache__
+*.pyc
+.pytest_cache

@@ -86,6 +86,12 @@ which makes the fresh-generation signal meaningful. The UI lives in
 `webapp/static/index.html` (no build step) and the API is
 `POST /api/scan` (multipart `files` + `jd` + `sensitivity`).
 
+Deploying: `docker build -t signalhire .` then
+`docker run -p 8710:8710 -v signalhire-data:/data -e SIGNALHIRE_HASH_SALT=…
+signalhire`. Set `SIGNALHIRE_WEBHOOK_SECRET` and `STRIPE_LINK_AGENCY` /
+`STRIPE_LINK_TALENT_CLOUD` to arm real billing; until then upgrades run in
+labeled dev mode.
+
 A note on interview copilots (Cluely, Parakeet and similar): this engine reads
 the *application-side* artifacts those workflows produce — generator
 toolchains, JD mirroring, fresh-generation timestamps, template swarms,
