@@ -252,10 +252,11 @@ footer{border-top:1.5px solid var(--ink);padding:1.4rem 0 2.2rem;
         <div class="drop" id="drop" role="button" tabindex="0"
              aria-label="Add application files">
           <div class="big">Drop applications here</div>
-          <div class="hint">PDF · TXT · MD — up to 200 files, 15 MB each.<br>
+          <div class="hint">PDF · DOCX · ODT · RTF · HTML · TXT · MD — up to 200 files, 15 MB each.<br>
             Files are scored in memory and never stored.</div>
         </div>
-        <input type="file" id="fileinput" multiple accept=".pdf,.txt,.md" hidden>
+        <input type="file" id="fileinput" multiple
+               accept=".pdf,.docx,.doc,.odt,.rtf,.html,.htm,.txt,.md" hidden>
         <ul class="filelist" id="filelist"></ul>
       </div>
       <div class="side">
@@ -361,7 +362,7 @@ fetch("/api/health").then(r => r.json()).then(h => {
 
 /* ---- file handling ---- */
 const drop = $("#drop"), input = $("#fileinput");
-const OK = [".pdf", ".txt", ".md"];
+const OK = [".pdf", ".docx", ".doc", ".odt", ".rtf", ".html", ".htm", ".txt", ".md"];
 function addFiles(list) {
   for (const f of list) {
     const dot = f.name.lastIndexOf(".");

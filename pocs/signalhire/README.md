@@ -57,7 +57,12 @@ signalhire scan ./inbox --json results.json --quiet
 signalhire scan ./inbox --sensitivity conservative
 ```
 
-Accepts `.pdf`, `.txt` and `.md`. Passing `--jd` enables the JD-mirroring
+Accepts `.pdf`, `.docx`, `.odt`, `.rtf`, `.html`/`.htm`, `.txt` and `.md`.
+DOCX keeps the full forensic layer — authoring application, timestamps, and
+run-level concealment (white text, sub-3pt fonts, `w:vanish`); HTML surfaces
+`display:none` / white-ink stuffing; ODT and RTF contribute their generator
+strings. Legacy binary `.doc` is accepted but reported as a parse failure —
+export it as `.docx` or PDF. Passing `--jd` enables the JD-mirroring
 analyzer; everything else works without it.
 
 The population analyzers score the batch against itself, so results depend on

@@ -108,6 +108,10 @@ def analyze_hidden(doc: ParsedDoc, ctx: Context) -> list[Signal]:
                 why.append("sub_3pt_font")
             if _off_page(b["bbox"], width, height):
                 why.append("off_page_position")
+            if b.get("markup_hidden"):
+                # DOCX w:vanish runs, HTML display:none / visibility:hidden —
+                # concealment declared by the markup itself.
+                why.append("markup_hidden")
             if why:
                 hidden_words += len(text.split())
                 reasons.update(why)

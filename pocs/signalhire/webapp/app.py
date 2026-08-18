@@ -20,7 +20,7 @@ from fastapi import FastAPI, File, Form, UploadFile
 from fastapi.responses import FileResponse, JSONResponse
 
 from signalhire import __version__ as engine_version
-from signalhire.parse import SUPPORTED_SUFFIXES, parse_pdf, parse_text
+from signalhire.parse import SUPPORTED_SUFFIXES, parse_bytes
 from signalhire.pipeline import score_documents
 from signalhire.signatures import SIGNATURE_DB_VERSION
 
@@ -72,17 +72,14 @@ async def scan_batch(
             continue
         doc_id = hashlib.sha256(data + name.encode()).hexdigest()[:16]
         application_id = str(uuid.uuid4())
-        if suffix == ".pdf":
-            doc = parse_pdf(doc_id, application_id, data, source_path=name)
-        else:
-            doc = parse_text(doc_id, application_id, data, source_path=name)
+        doc = parse_bytes(doc_id, application_id, data, source_path=name)
         doc.submitted_at = submitted_at
         docs.append(doc)
 
     if not docs:
         return JSONResponse(
             {"error": "no supported documents in the upload "
-                      "(PDF, .txt and .md are accepted)",
+                      "(PDF, DOCX, DOC, ODT, RTF, HTML, TXT and MD are accepted)",
              "skipped": skipped},
             status_code=422)
 

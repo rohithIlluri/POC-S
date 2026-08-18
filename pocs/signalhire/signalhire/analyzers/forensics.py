@@ -37,11 +37,13 @@ def analyze_forensics(doc: ParsedDoc, ctx: Context) -> list[Signal]:
                 },
                 analyzer=ANALYZER,
             ))
-    elif doc.meta.get("source_kind") != "plaintext":
+    elif doc.meta.get("source_kind") not in ("plaintext", "html", "rtf", "doc"):
         # A stripped producer string is itself mildly interesting: authoring
         # tools all stamp one, and hygiene-conscious generators strip it.
-        # Plain-text sources (ATS text fields) never have one, so they are
-        # exempt — otherwise every text submission starts out suspicious.
+        # Formats that routinely carry no producer (pasted text, HTML, RTF,
+        # legacy .doc) are exempt — otherwise those submissions start out
+        # suspicious. PDF, DOCX and ODT keep the signal: their authoring
+        # tools always stamp one.
         signals.append(Signal(
             code="NO_PRODUCER", severity=Severity.WEAK, score_impact=0.15,
             evidence={"note": "no producer or creator string in PDF metadata"},

@@ -23,7 +23,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-SIGNATURE_DB_VERSION = "seed-2026.08.1"
+SIGNATURE_DB_VERSION = "seed-2026.08.2"
 
 
 @dataclass
@@ -57,6 +57,9 @@ _PRODUCER_SEEDS: list[tuple[str, str, float]] = [
     (r"Prince",                        "princexml_pipeline",    0.5),
     (r"jsPDF",                         "jspdf_builder",         0.6),
     (r"ReportLab",                     "reportlab_pipeline",    0.4),
+    (r"python-docx|docx4j",            "docx_builder",          0.6),
+    (r"PhpWord|PHPWord",               "phpword_builder",       0.6),
+    (r"Aspose",                        "aspose_pipeline",       0.4),
     (r"Canva",                         "canva",                 0.1),  # ambiguous
     # --- human authoring tools (negative = reduces suspicion) ---------------
     (r"Microsoft.*Word",               "ms_word",              -0.4),
