@@ -154,6 +154,59 @@ const btn = (label) => [...document.querySelectorAll("button")].find((b) => b.te
   check("redo is also append-only", stored4.art.log.length === logBefore + 2);
   check("draft content matches its head revision", stored4.art.content === stored4.art.log[stored4.art.log.length - 1].content);
 
+  // Another client commits a revision straight into storage, as a second
+  // browser would, without this tab knowing.
+  function otherRevision(by, content) {
+    const d = JSON.parse(db[roomKey]);
+    d.art.log.push({
+      id: "ext-" + Math.random().toString(36).slice(2, 8),
+      by,
+      kind: "human",
+      ts: Date.now(),
+      title: d.art.title,
+      content,
+      undoOf: null,
+      mergedWith: null,
+      dropped: false,
+    });
+    d.art.content = content;
+    d.art.editedBy = by;
+    d.art.ts = Date.now();
+    d.v = (d.v || 0) + 1;
+    d.w = "priya-tab";
+    db[roomKey] = JSON.stringify(d);
+  }
+  const editBox = () => [...document.querySelectorAll("textarea")].find((t) => t.rows === 14);
+
+  // ---- concurrent draft edits that don't collide are merged ----
+  btn("Edit as Rohith").click();
+  await sleep(100);
+  otherRevision("Priya", "# MVP v2\nHuman-edited plan\nAdded by Priya"); // lands while the editor is open
+  setValue(editBox(), "# MVP v3\nHuman-edited plan");
+  await sleep(50);
+  btn("Save your edit").click();
+  await sleep(500);
+  check("non-overlapping concurrent edits both survive", bodyText().includes("# MVP v3") && bodyText().includes("Added by Priya"));
+  check("the merge is announced, not silent", bodyText().includes("Merged with Priya's change"));
+  const mergedHead = (() => { const l = JSON.parse(db[roomKey]).art.log; return l[l.length - 1]; })();
+  check("merged revision records what it merged with", !!mergedHead.mergedWith);
+
+  // ---- colliding edits are surfaced, never silently resolved ----
+  btn("Edit as Rohith").click();
+  await sleep(100);
+  otherRevision("Priya", "# MVP v4 by Priya\nHuman-edited plan\nAdded by Priya");
+  setValue(editBox(), "# MVP v9 by Rohith\nHuman-edited plan\nAdded by Priya");
+  await sleep(50);
+  btn("Save your edit").click();
+  await sleep(500);
+  check("colliding edits are reported, not guessed at", bodyText().includes("changed the same lines while you were editing"));
+  check("their version is shown for comparison", bodyText().includes("# MVP v4 by Priya"));
+  check("nothing is written while a conflict is open", JSON.parse(db[roomKey]).art.content.startsWith("# MVP v4 by Priya"));
+  check("the human's text is still in the editor", editBox().value.startsWith("# MVP v9 by Rohith"));
+  btn("Keep mine").click();
+  await sleep(500);
+  check("keeping mine saves only after an explicit choice", JSON.parse(db[roomKey]).art.content.startsWith("# MVP v9 by Rohith"));
+
   // simulate ANOTHER user writing to the same room (multi-user sync via polling)
   const other = JSON.parse(db[roomKey]);
   other.msgs.push({ id: "ext1", author: "Priya", role: "human", text: "Joining from my phone!", ts: Date.now() });
@@ -163,6 +216,30 @@ const btn = (label) => [...document.querySelectorAll("button")].find((b) => b.te
   await sleep(6800); // wait one poll cycle
   check("second user's message arrives via polling", bodyText().includes("Joining from my phone!"));
   check("second user appears in presence", bodyText().includes("Priya"));
+
+  // ---- a write clobbered by another client is repaired, not lost ----
+  // Priya's tab read the room before our next message, then writes on top of
+  // that stale read — erasing ours exactly the way a lost update happens.
+  const preRace = db[roomKey];
+  setValue(document.querySelector("textarea"), "my line races Priya's");
+  await sleep(50);
+  btn("Send").click();
+  await sleep(400);
+  const stale = JSON.parse(preRace);
+  stale.msgs.push({ id: "ext2", author: "Priya", role: "human", text: "Priya's racing line", ts: Date.now() });
+  stale.v = (stale.v || 0) + 1;
+  stale.w = "priya-tab";
+  db[roomKey] = JSON.stringify(stale);
+  check("the clobbering write really did erase ours", !db[roomKey].includes("races Priya"));
+  await sleep(6800);
+  check("clobbered message is re-landed within one poll", bodyText().includes("my line races Priya's"));
+  check("the clobbering client's own message survives", bodyText().includes("Priya's racing line"));
+  const repaired = JSON.parse(db[roomKey]);
+  check(
+    "both writes converge in storage",
+    repaired.msgs.some((m) => m.text === "my line races Priya's") &&
+      repaired.msgs.some((m) => m.text === "Priya's racing line")
+  );
 
   // resilience: storage goes flaky — UI must keep last good state, not wipe
   flaky = true;

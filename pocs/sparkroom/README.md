@@ -80,14 +80,28 @@ A working, tested proof of concept of the **core loop**:
   Only the newest 12 revisions keep their bodies (older ones survive as
   attribution-only entries), so undo has a finite window that the UI reports
   honestly instead of offering a no-op.
+- **Concurrent writes are repaired, not prevented.** The storage API has no
+  conditional write, so two tabs can read the same state and write in turn,
+  the second erasing the first. Every content write is therefore held as
+  *pending* until a read proves it landed; a poll that comes back without it
+  folds it into what's rendered and re-lands it. Applies are idempotent by id,
+  so re-applying one that did survive is a no-op. The repair rides on the poll
+  that already happens, so it costs nothing extra in the steady state.
+- **Concurrent draft edits are merged.** Saving is a three-way merge against
+  the revision the editor opened from, not an overwrite. Edits to different
+  lines both survive (Sable appends a section while a human rewrites the
+  title); edits to the same lines stop and ask, showing both versions with the
+  human's text still in the box, because guessing there destroys someone's
+  work. A merged revision records what it merged with.
 - Tested end-to-end with a simulated multi-user browser harness
   (`tests/harness.cjs`) covering: onboarding, room creation, AI auto-reply,
   plain vs. `@ai` messages, draft creation + human edit + attribution log,
   undo/redo (append-only, correctly attributed), migration of drafts written
-  before revisions existed, a second simulated user's messages/presence
-  arriving via polling, storage failures (verifies no data wipe), AI network
-  failures (graceful message, no crash), and archive. 38/38 checks passing as
-  of the last run.
+  before revisions existed, concurrent draft edits that merge and that
+  collide, a write clobbered by another client being re-landed, a second
+  simulated user's messages/presence arriving via polling, storage failures
+  (verifies no data wipe), AI network failures (graceful message, no crash),
+  and archive. 50/50 checks passing as of the last run.
 
 ### Known limitations (by design, at this stage)
 
@@ -97,7 +111,13 @@ A working, tested proof of concept of the **core loop**:
 - **No real authentication** — display names are self-reported and stored
   locally per-browser, not verified.
 - **Polling, not push** — up to ~6 seconds of lag between what one person
-  sees and what another does.
+  sees and what another does. A write that another client overwrites is
+  restored on the next poll rather than never being lost in the first place;
+  preventing it outright needs a conditional write (compare-and-set) the
+  Artifact storage API doesn't offer.
+- **Merging is line-granular** — two people rewriting the same line conflict
+  and a human resolves it. Character-level concurrent editing is what the CRDT
+  layer in the roadmap buys.
 - **Single AI model, single persona** — no model choice, no per-room agent
   customization yet.
 
@@ -109,7 +129,9 @@ Per the research, the recommended path to a real (non-Artifact) version:
 - **Backend / DB / Auth:** Supabase (Postgres — SQL transfers directly).
 - **Real-time layer:** Liveblocks (or tldraw sync) + Yjs (CRDTs) —
   replaces polling with true live presence, cursors, and conflict-free
-  concurrent editing between humans AND the AI agent.
+  concurrent editing between humans AND the AI agent. The merge and repair
+  behaviour above is the floor it has to clear, and the harness cases are the
+  spec for it.
 - **AI integration:** Vercel AI SDK, agent-as-room-participant pattern
   (the agent holds its own identity/session in the room, same as a human).
 - **Attribution & undo** as a first-class feature, not a nice-to-have —
@@ -140,14 +162,14 @@ Requires Node ≥ 20.11.
 ```sh
 cd pocs/sparkroom
 npm install
-npm test          # bundles the component, then runs the 38-check harness
+npm test          # bundles the component, then runs the 50-check harness
 ```
 
 `npm test` runs `npm run build` first (esbuild → `tests/bundle.cjs`, gitignored),
 because the harness loads the component as a CommonJS bundle inside jsdom. The
-run takes ~25s: several checks deliberately wait out a full poll cycle to
-prove that a second user's messages arrive and that a flaky storage backend
-never wipes the UI.
+run takes ~40s: several checks deliberately wait out a full poll cycle to
+prove that a second user's messages arrive, that a clobbered write is
+re-landed, and that a flaky storage backend never wipes the UI.
 
 To run the POC for real, paste `app/sparkroom.jsx` into a Claude.ai Artifact —
 it needs that environment's `window.storage` and its Anthropic API access. There
@@ -156,5 +178,5 @@ above, not a wrapper around this file.
 
 ## Status
 
-Proof of concept. Not deployed. Built and tested Aug 2026. 38/38 harness checks
+Proof of concept. Not deployed. Built and tested Aug 2026. 50/50 harness checks
 passing.
