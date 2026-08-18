@@ -1,0 +1,9 @@
+{
+  "corpus": "corpus",
+  "synthetic": true,
+  "headline": {
+    "human_verified_flag_rate": 0.0,
+    "wrapper_generated_flag_rate": 1.0,
+    "attack_flag_rate": 1.0
+  }
+}

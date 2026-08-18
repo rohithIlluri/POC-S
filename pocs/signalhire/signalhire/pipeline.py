@@ -1,0 +1,216 @@
+"""Stage orchestration: documents in, scored applications out.
+
+    parse  →  build population context  →  per-document analyzers
+           →  population analyzers      →  score
+
+In production stages 1–2 run per document on Cloud Run and stage 3 reads
+rollups from BigQuery/Redis. Here the whole batch is the population, which is
+what makes the Phase-0 CLI a real demo rather than a toy: pointed at one req's
+inbox folder, it sees exactly the cross-applicant patterns the product sells.
+"""
+
+from __future__ import annotations
+
+import math
+from collections import Counter, defaultdict
+from dataclasses import dataclass, field
+from pathlib import Path
+
+from . import analyzers as analyzer_registry
+from .analyzers.boilerplate import gram_sequence
+from .analyzers.dedupe import SIMILARITY_THRESHOLD, body_text, minhash, new_index
+from .analyzers.forensics import creation_window
+from .analyzers.jd_mirror import ngrams as jd_ngrams
+from .analyzers.jd_mirror import terms, word_sequence
+from .analyzers.layout import has_authored_layout, layout_fingerprint
+from .parse import discover, parse_file, parse_pdf_date
+from .scoring import Thresholds, score_document
+from .signatures import SIGNATURE_DB_VERSION, load_signatures, template_indexes
+from .types import Context, ParsedDoc, ScoredApplication
+
+# Below this many documents, batch-derived idf is noise; jd_mirror falls back
+# to its static common-terms list instead.
+MIN_CORPUS_FOR_IDF = 25
+
+
+@dataclass
+class ScanResult:
+    applications: list[ScoredApplication]
+    context: Context
+    stats: dict = field(default_factory=dict)
+
+    def by_label(self) -> dict[str, list[ScoredApplication]]:
+        out: dict[str, list[ScoredApplication]] = defaultdict(list)
+        for app in self.applications:
+            out[app.label].append(app)
+        return dict(out)
+
+    def as_dict(self) -> dict:
+        return {
+            "stats": self.stats,
+            "applications": [a.as_dict() for a in self.applications],
+        }
+
+
+def build_context(docs: list[ParsedDoc], jd_text: str = "",
+                  signatures_path: str | Path | None = None) -> Context:
+    signatures = load_signatures(signatures_path)
+    known_templates, allowlist, known_loose = template_indexes(signatures)
+
+    ctx = Context(
+        signatures=signatures,
+        template_index=known_templates,
+        template_index_loose=known_loose,
+        template_allowlist=allowlist,
+        jd_text=jd_text,
+        identity={d.doc_id: d.identity for d in docs},
+    )
+
+    # Layout population counts: distinct applicants per structural
+    # fingerprint. Synthetic layouts (text formats) are excluded — they all
+    # share one parser-made structure and would swarm on honest batches.
+    layout_applicants: dict[str, set[str]] = defaultdict(set)
+    for d in docs:
+        d.layout_hash = layout_fingerprint(d)
+        if d.layout_hash and has_authored_layout(d):
+            layout_applicants[d.layout_hash].add(d.identity.key() or d.doc_id)
+    ctx.layout_counts = {h: len(a) for h, a in layout_applicants.items()}
+
+    # Corpus idf for JD-mirroring rare-term selection — computed over
+    # *distinct sources*, not raw documents. A farm submitting 50 mirrored
+    # resumes would otherwise vote the JD's rare vocabulary into commonness
+    # and blind the mirror exactly when the farm is biggest; collapsing each
+    # shared template to one voter means a swarm counts once.
+    # (Near-dup clusters aren't built yet at this point, so the collapse key
+    # is the structural fingerprint, which is what farm output shares.)
+    if len(docs) >= MIN_CORPUS_FOR_IDF:
+        source_terms: dict[str, set] = defaultdict(set)
+        for d in docs:
+            source_terms[d.layout_hash or d.doc_id].update(terms(d.text))
+        n = len(source_terms)
+        df: Counter = Counter()
+        for term_set in source_terms.values():
+            df.update(term_set)
+        ctx.global_idf = {t: math.log((n + 1) / (c + 1)) for t, c in df.items()}
+
+    # JD artifacts are per-scan constants; build them once instead of once
+    # per document inside the analyzer.
+    if jd_text.strip():
+        ctx.jd_terms = terms(jd_text)
+        ctx.jd_ngrams = jd_ngrams(word_sequence(jd_text))
+
+    # Contact-handle indexes: analyzer F drops from O(batch) per document to
+    # a dict lookup.
+    for d in docs:
+        ident = d.identity
+        if ident.email_hash:
+            ctx.contact_email.setdefault(ident.email_hash, []).append(
+                (d.doc_id, ident.name_hash))
+        if ident.phone_hash:
+            ctx.contact_phone.setdefault(ident.phone_hash, []).append(
+                (d.doc_id, ident.name_hash))
+
+    # Near-duplicate index: build every signature first, then insert, so the
+    # result never depends on the order files were read. The identity-masked
+    # body is cached — dedupe, boilerplate and the shingle index all reuse it.
+    ctx.lsh = new_index()
+    for d in docs:
+        ctx.bodies[d.doc_id] = body = body_text(d)
+        if body.strip():
+            ctx.minhashes[d.doc_id] = minhash(body)
+    with ctx.lsh.insertion_session() as session:
+        for doc_id, m in ctx.minhashes.items():
+            session.insert(doc_id, m)
+
+    # Stable cluster ids: union-find over every *verified* near-duplicate
+    # pair, so all members of one recycling ring report the same cluster even
+    # when pairwise similarity is not transitive (A~B, B~C, A!~C).
+    parent = {d: d for d in ctx.minhashes}
+
+    def find(x: str) -> str:
+        while parent[x] != x:
+            parent[x] = parent[parent[x]]
+            x = parent[x]
+        return x
+
+    for doc_id, m in ctx.minhashes.items():
+        for cand in ctx.lsh.query(m):
+            if cand != doc_id and cand in ctx.minhashes \
+                    and ctx.minhashes[cand].jaccard(m) >= SIMILARITY_THRESHOLD:
+                parent[find(cand)] = find(doc_id)
+    rings: dict[str, list[str]] = defaultdict(list)
+    for d in parent:
+        rings[find(d)].append(d)
+    for members in rings.values():
+        if len(members) > 1:
+            cluster_id = "cl_" + min(members)[:8]
+            for d in members:
+                ctx.clusters[d] = cluster_id
+
+    # Phrase-swarm index: which 8-word runs appear under how many distinct
+    # applicants. Feeds the shared-boilerplate analyzer, which catches
+    # paraphrase farms that stay under the MinHash near-duplicate threshold.
+    owners: dict[str, set[str]] = defaultdict(set)
+    for d in docs:
+        who = d.identity.key() or d.doc_id
+        for g in set(gram_sequence(ctx.bodies[d.doc_id])):
+            owners[g].add(who)
+    ctx.shingle_owners = {g: len(w) for g, w in owners.items() if len(w) > 1}
+
+    # Creation-time clustering: distinct applicants whose documents were
+    # generated in the same ten-minute window (a batch off one rig).
+    windows: dict[str, set[str]] = defaultdict(set)
+    for d in docs:
+        created = parse_pdf_date(str(d.meta.get("creationdate", "")))
+        if created:
+            windows[creation_window(created)].add(d.identity.key() or d.doc_id)
+    ctx.creation_windows = {w: len(who) for w, who in windows.items()}
+
+    return ctx
+
+
+def score_documents(docs: list[ParsedDoc], jd_text: str = "",
+                    signatures_path: str | Path | None = None,
+                    sensitivity: str = "balanced") -> ScanResult:
+    ctx = build_context(docs, jd_text=jd_text, signatures_path=signatures_path)
+    thresholds = Thresholds.for_sensitivity(sensitivity)
+
+    applications: list[ScoredApplication] = []
+    for doc in docs:
+        signals = []
+        for analyze in analyzer_registry.PER_DOCUMENT:
+            signals.extend(analyze(doc, ctx))
+        for analyze in analyzer_registry.POPULATION:
+            signals.extend(analyze(doc, ctx))
+        applications.append(score_document(doc, signals, thresholds))
+
+    applications.sort(key=lambda a: (-a.risk_score, a.effort_score))
+
+    label_counts = Counter(a.label for a in applications)
+    stats = {
+        "documents": len(applications),
+        "parse_failures": sum(1 for a in applications if a.doc.parse_error),
+        "labels": {label: label_counts.get(label, 0)
+                   for label in ("genuine", "needs_review",
+                                 "mass_generated", "high_risk")},
+        "sensitivity": sensitivity,
+        "signature_db_version": SIGNATURE_DB_VERSION,
+        "signatures_active": len(ctx.signatures),
+        "jd_provided": bool(jd_text.strip()),
+        "idf_source": "batch" if ctx.global_idf else "static_fallback",
+    }
+    return ScanResult(applications=applications, context=ctx, stats=stats)
+
+
+def scan(target: str | Path, jd_text: str = "",
+         signatures_path: str | Path | None = None,
+         sensitivity: str = "balanced",
+         exclude: set[Path] | None = None) -> ScanResult:
+    """Parse every supported document under `target` and score the batch."""
+    paths = discover(target, exclude=exclude)
+    docs = [parse_file(p) for p in paths]
+    result = score_documents(docs, jd_text=jd_text,
+                             signatures_path=signatures_path,
+                             sensitivity=sensitivity)
+    result.stats["source"] = str(target)
+    return result

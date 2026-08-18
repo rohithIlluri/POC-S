@@ -1,0 +1,36 @@
+name: signalhire CI
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - "pocs/signalhire/**"
+      - ".github/workflows/ci-signalhire.yml"
+  pull_request:
+    paths:
+      - "pocs/signalhire/**"
+      - ".github/workflows/ci-signalhire.yml"
+
+defaults:
+  run:
+    working-directory: pocs/signalhire
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: pocs/signalhire/pyproject.toml
+      - run: pip install -e ".[dev]"
+      - run: pytest -q
+      # Release gates: false-flag rate, wrapper recall, attack recall and the
+      # fairness slice, plus a regression check against eval/baseline.json.
+      # The synthetic corpus is generated on the fly — it is never committed.
+      - run: python eval/run.py
