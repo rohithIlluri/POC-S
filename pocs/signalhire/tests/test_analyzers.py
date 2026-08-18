@@ -172,6 +172,16 @@ def test_perturbed_template_still_matches_via_loose_fingerprint():
     assert exact_hit.evidence["match"] == "exact_structure"
 
 
+def test_synthetic_text_layouts_never_swarm():
+    """Thirty pasted ATS text bodies share one parser-made structure; that
+    must not read as a template swarm."""
+    doc = make_doc("plain resume body text", meta={"source_kind": "plaintext"})
+    fp = layout_fingerprint(doc)
+    ctx = Context(layout_counts={fp: 40},
+                  template_index={fp: "would_be_wrong"})
+    assert analyze_layout(doc, ctx) == []
+
+
 # --- JD mirroring ----------------------------------------------------------
 
 JD = ("Senior platform engineer to own our Kubernetes footprint and the "
@@ -357,6 +367,25 @@ def test_unique_documents_share_no_boilerplate():
                 doc_id=f"d{i}", identity=Identity(email_hash=f"h{i}"))
             for i in range(5)]
     assert analyze_boilerplate(docs[0], _swarm_ctx(docs)) == []
+
+
+def test_industrial_scale_sharing_is_strong_below_the_fraction_bar():
+    """A third of the document shared with 20 strangers is STRONG even though
+    the same fraction shared with 4 classmates stays WEAK."""
+    farm = [make_doc(f"{BOILER} " + " ".join(f"unique{i}w{j}" for j in range(40)),
+                     doc_id=f"f{i}", identity=Identity(email_hash=f"h{i}"))
+            for i in range(21)]
+    hit = next(s for s in analyze_boilerplate(farm[0], _swarm_ctx(farm))
+               if s.code == "SHARED_BOILERPLATE")
+    assert hit.evidence["median_applicants_per_phrase"] >= 15
+    assert hit.severity.value == "strong"
+
+    small = [make_doc(f"{BOILER} " + " ".join(f"u{i}w{j}" for j in range(40)),
+                      doc_id=f"s{i}", identity=Identity(email_hash=f"h{i}"))
+             for i in range(5)]
+    hit = next(s for s in analyze_boilerplate(small[0], _swarm_ctx(small))
+               if s.code == "SHARED_BOILERPLATE")
+    assert hit.severity.value == "weak"
 
 
 def test_two_copies_are_dedupe_business_not_boilerplate():

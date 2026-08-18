@@ -25,6 +25,11 @@ MIN_OTHER_OWNERS = 3      # shared with at least this many other applicants
 MIN_GRAMS = 30            # below this the fraction is noise
 WEAK_FRACTION = 0.25
 STRONG_FRACTION = 0.60
+# Sharing a third of the document is STRONG when the sharing is industrial:
+# a study group might converge on phrasing with three classmates, not with
+# fifteen strangers.
+INDUSTRIAL_FRACTION = 0.35
+INDUSTRIAL_OWNERS = 15
 
 
 def gram_sequence(text: str, n: int = SHINGLE_N) -> list[str]:
@@ -47,7 +52,10 @@ def analyze_boilerplate(doc: ParsedDoc, ctx: Context) -> list[Signal]:
     if fraction < WEAK_FRACTION:
         return []
 
-    strong = fraction >= STRONG_FRACTION
+    owner_counts = sorted(ctx.shingle_owners.get(g, 0) for g in shared)
+    median_owners = owner_counts[len(owner_counts) // 2]
+    strong = fraction >= STRONG_FRACTION or (
+        fraction >= INDUSTRIAL_FRACTION and median_owners >= INDUSTRIAL_OWNERS)
     samples = sorted(shared, key=lambda g: -ctx.shingle_owners.get(g, 0))[:3]
     return [Signal(
         code="SHARED_BOILERPLATE",
@@ -56,6 +64,7 @@ def analyze_boilerplate(doc: ParsedDoc, ctx: Context) -> list[Signal]:
         evidence={
             "shared_phrase_fraction": round(fraction, 2),
             "distinct_shared_phrases": len(shared),
+            "median_applicants_per_phrase": median_owners,
             "min_other_applicants": MIN_OTHER_OWNERS,
             "samples": samples,
         },

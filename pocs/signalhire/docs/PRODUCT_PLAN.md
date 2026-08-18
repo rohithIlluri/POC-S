@@ -92,6 +92,18 @@ Demo mode: no account → 1 scan of ≤5 files, results watermarked "demo".
   memory (datalist recall in UI). 89 tests, 5 gates green.
   Next: raise evasion floor as detection improves; invite email delivery;
   real Stripe keys; hosted deploy.
+- it6 (done): ALGORITHM — synthetic text-format layouts (plaintext/html/
+  rtf/odt/doc) excluded from fingerprinting and swarm counting: 30 pasted
+  ATS text bodies share one parser-made structure and were one batch away
+  from a mass TEMPLATE_SWARM false positive (latent FP bug, now tested).
+  Boilerplate industrial escalation: fraction ≥0.35 with median ≥15 owners
+  is STRONG (a study group converges with classmates, not 15 strangers) —
+  HTML-laundered farm docs moved genuine → needs_review; every evasion doc
+  now reaches the review queue. PRODUCT — self-contained HTML triage report
+  as an Agency+ export (report_html on /api/scan, Download report button).
+  92 tests, 5 gates green.
+  Frontier: HTML-launder full flagging (needs a 3rd family at trickle
+  scale), invite email, Stripe keys, hosted deploy.
 
 ## Rules for future iterations
 

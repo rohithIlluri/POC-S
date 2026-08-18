@@ -21,7 +21,7 @@ from .analyzers.boilerplate import gram_sequence
 from .analyzers.dedupe import SIMILARITY_THRESHOLD, body_text, minhash, new_index
 from .analyzers.forensics import creation_window
 from .analyzers.jd_mirror import terms
-from .analyzers.layout import layout_fingerprint
+from .analyzers.layout import has_authored_layout, layout_fingerprint
 from .parse import discover, parse_file, parse_pdf_date
 from .scoring import Thresholds, score_document
 from .signatures import SIGNATURE_DB_VERSION, load_signatures, template_indexes
@@ -65,11 +65,13 @@ def build_context(docs: list[ParsedDoc], jd_text: str = "",
         identity={d.doc_id: d.identity for d in docs},
     )
 
-    # Layout population counts: distinct applicants per structural fingerprint.
+    # Layout population counts: distinct applicants per structural
+    # fingerprint. Synthetic layouts (text formats) are excluded — they all
+    # share one parser-made structure and would swarm on honest batches.
     layout_applicants: dict[str, set[str]] = defaultdict(set)
     for d in docs:
         d.layout_hash = layout_fingerprint(d)
-        if d.layout_hash:
+        if d.layout_hash and has_authored_layout(d):
             layout_applicants[d.layout_hash].add(d.identity.key() or d.doc_id)
     ctx.layout_counts = {h: len(a) for h, a in layout_applicants.items()}
 

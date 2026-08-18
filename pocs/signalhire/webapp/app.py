@@ -31,6 +31,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from signalhire import __version__ as engine_version
 from signalhire.parse import SUPPORTED_SUFFIXES, parse_bytes
 from signalhire.pipeline import score_documents
+from signalhire.report import render_html
 from signalhire.signatures import SIGNATURE_DB_VERSION
 
 from .store import DEMO_MAX_FILES, TIERS, Store
@@ -296,6 +297,11 @@ async def scan_batch(
                             "json_export": ent["json_export"],
                             "demo": user is None}
     payload = result.as_dict()
+    if ent["json_export"]:
+        # The self-contained HTML triage report — the artifact an agency
+        # forwards to a client. Same export right as the JSON.
+        payload["report_html"] = render_html(
+            result, title=req or "Application triage report")
     # Round-trip through the engine's JSON encoder so datetimes serialize the
     # same way they do in the CLI report.
     return JSONResponse(json.loads(json.dumps(payload, default=str)))

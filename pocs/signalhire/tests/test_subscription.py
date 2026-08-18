@@ -228,6 +228,19 @@ def test_requisition_rollups_accumulate_across_the_org(client):
         assert "platform engineer" in by_name["PLT-4471"]["jd"]
 
 
+def test_html_report_is_an_export_right(client):
+    key = _signup(client)
+    h = {"X-API-Key": key}
+    r = client.post("/api/scan", files=[_resume()], headers=h).json()
+    assert "report_html" not in r          # Scout has no export rights
+
+    client.post("/api/upgrade", json={"tier": "agency"}, headers=h)
+    r = client.post("/api/scan", files=[_resume()],
+                    data={"req": "PLT-1"}, headers=h).json()
+    assert "Assistive output" in r["report_html"]
+    assert "PLT-1" in r["report_html"]
+
+
 def test_key_rotation_invalidates_the_old_key(client):
     key = _signup(client)
     new_key = client.post("/api/rotate-key",

@@ -335,6 +335,7 @@ footer{border-top:1.5px solid var(--ink);padding:1.4rem 0 2.2rem;
     <div class="demo-note" id="demonote" hidden>DEMO SCAN — sign up free for 5
       scans a month, or upgrade for full batches.</div>
     <a class="dl" id="dljson" hidden>Download JSON</a>
+    <a class="dl" id="dlreport" hidden>Download report</a>
     <div class="skipped" id="skipped" hidden></div>
     <div class="tiles" id="tiles"></div>
     <div id="apps"></div>
@@ -777,9 +778,17 @@ function renderResults(data) {
   const dl = $("#dljson");
   dl.hidden = !plan.json_export;
   if (plan.json_export) {
+    const { report_html, ...jsonOnly } = data;
     dl.href = URL.createObjectURL(new Blob(
-      [JSON.stringify(data, null, 2)], { type: "application/json" }));
+      [JSON.stringify(jsonOnly, null, 2)], { type: "application/json" }));
     dl.download = "signalhire-scan.json";
+  }
+  const dlr = $("#dlreport");
+  dlr.hidden = !data.report_html;
+  if (data.report_html) {
+    dlr.href = URL.createObjectURL(new Blob(
+      [data.report_html], { type: "text/html" }));
+    dlr.download = "signalhire-report.html";
   }
   const labels = data.stats.labels || {};
   $("#tiles").innerHTML = LABEL_ORDER.map(k =>

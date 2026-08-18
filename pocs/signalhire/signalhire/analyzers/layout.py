@@ -17,6 +17,16 @@ from ..types import Context, ParsedDoc, Severity, Signal
 ANALYZER = "layout"
 SWARM_THRESHOLD = 25
 
+# Formats whose "layout" is synthesized by our own parser (fixed font, fixed
+# size, fixed x) rather than authored. Fingerprinting them is meaningless and
+# actively dangerous: thirty pasted ATS text bodies would all share one hash
+# and fire TEMPLATE_SWARM on honest applicants.
+SYNTHETIC_LAYOUT_KINDS = {"plaintext", "html", "rtf", "odt", "doc"}
+
+
+def has_authored_layout(doc: ParsedDoc) -> bool:
+    return doc.meta.get("source_kind") not in SYNTHETIC_LAYOUT_KINDS
+
 
 def layout_fingerprint(doc: ParsedDoc) -> str:
     """Structure-only hash: font name, rounded size, x-start bucketed to 5pt,
@@ -69,6 +79,8 @@ def loose_fingerprint(doc: ParsedDoc) -> str:
 
 
 def analyze_layout(doc: ParsedDoc, ctx: Context) -> list[Signal]:
+    if not has_authored_layout(doc):
+        return []
     fp = doc.layout_hash or layout_fingerprint(doc)
     doc.layout_hash = fp
     if not fp:
