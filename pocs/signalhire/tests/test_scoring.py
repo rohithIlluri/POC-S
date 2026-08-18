@@ -77,16 +77,29 @@ def test_sensitivity_slider_moves_the_boundary():
 
 
 def test_scores_are_not_interpreter_dependent():
-    """A half-way score must not depend on float summation order or on
-    round()'s banker's rounding — the same resume has to score the same on
-    every deployment, or a reason code is not reproducible for an audit."""
-    from signalhire.scoring import _clamp
+    """The same resume must score the same on every deployment, or a reason
+    code is not reproducible for an audit.
 
-    assert _clamp(39.5) == 40
-    assert _clamp(39.50000000000001) == 40
-    assert _clamp(40.5) == 41          # plain round() gives 40 here
-    assert _clamp(-3.2) == 0
-    assert _clamp(140.0) == 100
+    These weights sum to exactly 1.1, putting the raw effort score on 39.5 —
+    a boundary. In binary floating point that expression evaluates to
+    39.49999999999999 or 39.50000000000001 depending on accumulation order,
+    which is why the same input scored 39 on Python 3.11 and 40 on 3.12.
+    """
+    from decimal import Decimal
+
+    from signalhire.scoring import _clamp, _exact
+
+    # The arithmetic is exact: no drift at the 15th decimal place.
+    weights = [_exact(0.7), _exact(0.3), _exact(0.1)]
+    assert sum(weights, Decimal(0)) == Decimal("1.1")
+    assert Decimal(100) - Decimal("1.1") * _exact(55.0) == Decimal("39.5")
+
+    # And the boundary resolves half-up, not banker's rounding.
+    assert _clamp(Decimal("39.5")) == 40
+    assert _clamp(Decimal("40.5")) == 41       # plain round() gives 40 here
+    assert _clamp(39.5) == 40                  # float callers too
+    assert _clamp(Decimal("-3.2")) == 0
+    assert _clamp(Decimal("140")) == 100
 
 
 def test_conservative_sensitivity_clears_a_borderline_application():

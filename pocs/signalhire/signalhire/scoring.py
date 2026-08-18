@@ -51,29 +51,44 @@ class Thresholds:
         return cls()
 
 
-def _clamp(value: float) -> int:
-    """Round half *up*, deterministically, then clamp to 0-100.
+def _exact(value: float) -> Decimal:
+    """A float's intended decimal value, not its binary artifact.
 
-    Plain `round()` is round-half-to-even on a float that binary arithmetic
-    has already nudged: summing the same weights can land on 39.5 under one
-    interpreter and 39.50000000000001 under another, which then round to 39
-    and 40. That is a score — and near a threshold, a label — that depends on
-    the Python version a deployment happens to run. Quantizing through Decimal
-    with ROUND_HALF_UP makes the boundary a property of the weights alone, so
-    a reason code stays reproducible for an audit.
+    `Decimal(0.7)` is 0.6999999999999999555910790149937383830547332763671875;
+    `Decimal(str(0.7))` is 0.7. Going through `str` recovers the number the
+    weights were written as, which is what the scoring math is supposed to be
+    about.
     """
-    quantized = Decimal(value).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
+    return Decimal(str(value))
+
+
+def _clamp(value: Decimal | float) -> int:
+    """Round half up, then clamp to 0-100."""
+    if not isinstance(value, Decimal):
+        value = _exact(value)
+    quantized = value.quantize(Decimal("1"), rounding=ROUND_HALF_UP)
     return max(0, min(100, int(quantized)))
 
 
 def score(signals: list[Signal], thresholds: Thresholds | None = None) -> dict:
     t = thresholds or Thresholds()
 
-    effort_raw = sum(s.score_impact for s in signals if s.code not in RISK_CODES)
-    risk_raw = sum(s.score_impact for s in signals if s.code in RISK_CODES)
+    # Scores are computed in Decimal, not binary floating point. These weights
+    # sum to exactly 1.1, and 100 - 1.1 * 55 is exactly 39.5 — a boundary the
+    # rounding rule below is supposed to resolve. In binary the same
+    # expression lands on 39.49999999999999 or 39.50000000000001 depending on
+    # accumulation order, which differs across interpreter versions: the same
+    # resume scored 39 on Python 3.11 and 40 on 3.12. Near a threshold that is
+    # a different *label*, and a reason code that cannot be reproduced for an
+    # audit. No rounding mode can repair a value already on the wrong side of
+    # the boundary, so the arithmetic itself has to be exact.
+    effort_raw = sum((_exact(s.score_impact) for s in signals
+                      if s.code not in RISK_CODES), Decimal(0))
+    risk_raw = sum((_exact(s.score_impact) for s in signals
+                    if s.code in RISK_CODES), Decimal(0))
 
-    effort = _clamp(100 - effort_raw * t.effort_multiplier)
-    risk = _clamp(risk_raw * t.risk_multiplier)
+    effort = _clamp(Decimal(100) - effort_raw * _exact(t.effort_multiplier))
+    risk = _clamp(risk_raw * _exact(t.risk_multiplier))
 
     has_hard = any(s.severity is Severity.DETERMINISTIC for s in signals)
     has_strong_risk = any(
