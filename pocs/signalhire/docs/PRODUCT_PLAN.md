@@ -112,6 +112,13 @@ Demo mode: no account → 1 scan of ≤5 files, results watermarked "demo".
   behavioral change; 92 tests + 5 gates identical.
   Remaining work is operator-gated (Stripe keys, deploy target, email
   provider) or research (3rd family for trickle-scale laundering).
+- it8 (done): SECURITY, pre-payments — API keys hashed at rest (sha256;
+  clear key exists only in the signup/rotate response), with an in-place
+  migration for pre-hashing DBs; webhook secret compared with
+  hmac.compare_digest; total-batch byte cap (SIGNALHIRE_MAX_BATCH_MB,
+  413); nosniff / DENY / no-referrer headers. The live dev DB caught a
+  migration bug the single-row test missed (UNIQUE + NOT NULL on the old
+  column) — fixed and covered with a two-row test. 95 tests, gates green.
 
 ## Rules for future iterations
 

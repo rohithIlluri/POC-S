@@ -7,6 +7,7 @@ workflow, never detection quality — every tier runs the identical engine.
 
 from __future__ import annotations
 
+import hashlib
 import os
 import re
 import secrets
@@ -44,7 +45,7 @@ CREATE TABLE IF NOT EXISTS users (
     id INTEGER PRIMARY KEY,
     email TEXT NOT NULL UNIQUE,
     org TEXT NOT NULL DEFAULT '',
-    api_key TEXT NOT NULL UNIQUE,
+    key_hash TEXT UNIQUE,
     tier TEXT NOT NULL DEFAULT 'scout',
     owner_id INTEGER,
     created_at TEXT NOT NULL
@@ -76,7 +77,14 @@ _MIGRATIONS = (
     "ALTER TABLE scans ADD COLUMN req TEXT NOT NULL DEFAULT ''",
     "ALTER TABLE scans ADD COLUMN labels TEXT NOT NULL DEFAULT '{}'",
     "ALTER TABLE users ADD COLUMN owner_id INTEGER",
+    "ALTER TABLE users ADD COLUMN key_hash TEXT",
 )
+
+
+def _key_hash(api_key: str) -> str:
+    """Keys are 24 random url-safe bytes, so an unsalted digest is fine: at
+    rest the DB holds only hashes, and a leaked dump cannot be replayed."""
+    return hashlib.sha256(api_key.encode()).hexdigest()
 
 
 def _now() -> str:
@@ -102,6 +110,25 @@ class Store:
                     self._conn.execute(migration)
                 except sqlite3.OperationalError:
                     pass  # column already exists
+            # Pre-hashing installs stored the clear API key; hash it in place
+            # and overwrite the old column. That column is both NOT NULL and
+            # UNIQUE in the legacy schema, so the overwrite value can be
+            # neither NULL nor a shared '' — it has to stay distinct per row.
+            # Fresh databases have no api_key column at all.
+            try:
+                rows = self._conn.execute(
+                    "SELECT id, api_key FROM users WHERE key_hash IS NULL"
+                ).fetchall()
+                for row in rows:
+                    if not row["api_key"]:
+                        continue
+                    self._conn.execute(
+                        "UPDATE users SET key_hash = ?, api_key = ? "
+                        "WHERE id = ?",
+                        (_key_hash(row["api_key"]),
+                         f"migrated:{row['id']}", row["id"]))
+            except sqlite3.OperationalError:
+                pass  # no legacy api_key column
             self._conn.commit()
 
     # -- accounts ----------------------------------------------------------
@@ -114,20 +141,26 @@ class Store:
         with self._lock:
             try:
                 self._conn.execute(
-                    "INSERT INTO users (email, org, api_key, created_at) "
+                    "INSERT INTO users (email, org, key_hash, created_at) "
                     "VALUES (?, ?, ?, ?)",
-                    (email, (org or "").strip()[:120], api_key, _now()))
+                    (email, (org or "").strip()[:120], _key_hash(api_key),
+                     _now()))
                 self._conn.commit()
             except sqlite3.IntegrityError:
                 raise ValueError("that email already has an account") from None
-        return self.by_key(api_key)  # type: ignore[return-value]
+        user = self.by_key(api_key)
+        assert user is not None
+        # The clear key exists only in this return value — show-once.
+        user["api_key"] = api_key
+        return user
 
     def by_key(self, api_key: str) -> dict | None:
         if not api_key:
             return None
         with self._lock:
             row = self._conn.execute(
-                "SELECT * FROM users WHERE api_key = ?", (api_key,)).fetchone()
+                "SELECT * FROM users WHERE key_hash = ?",
+                (_key_hash(api_key),)).fetchone()
         return dict(row) if row else None
 
     def rotate_key(self, api_key: str) -> dict:
@@ -137,8 +170,8 @@ class Store:
             raise ValueError("unknown API key")
         new_key = "sh_" + secrets.token_urlsafe(24)
         with self._lock:
-            self._conn.execute("UPDATE users SET api_key = ? WHERE id = ?",
-                               (new_key, user["id"]))
+            self._conn.execute("UPDATE users SET key_hash = ? WHERE id = ?",
+                               (_key_hash(new_key), user["id"]))
             self._conn.commit()
         user["api_key"] = new_key
         return user

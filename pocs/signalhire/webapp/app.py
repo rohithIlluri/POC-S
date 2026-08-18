@@ -16,6 +16,7 @@ Run:  uvicorn webapp.app:app --reload      (from pocs/signalhire)
 from __future__ import annotations
 
 import hashlib
+import hmac
 import json
 import os
 import uuid
@@ -37,11 +38,21 @@ from signalhire.signatures import SIGNATURE_DB_VERSION
 from .store import DEMO_MAX_FILES, TIERS, Store
 
 MAX_FILE_BYTES = 15 * 1024 * 1024
+MAX_BATCH_BYTES = int(os.environ.get("SIGNALHIRE_MAX_BATCH_MB", "250")) * 1024 * 1024
 FLAGGED = {"mass_generated", "high_risk"}
 
 STATIC = Path(__file__).parent / "static"
 
 app = FastAPI(title="SignalHire", version=engine_version)
+
+
+@app.middleware("http")
+async def security_headers(request, call_next):
+    response = await call_next(request)
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("X-Frame-Options", "DENY")
+    response.headers.setdefault("Referrer-Policy", "no-referrer")
+    return response
 
 
 @app.on_event("startup")
@@ -141,7 +152,7 @@ async def upgrade(payload: dict,
     link = os.environ.get(f"STRIPE_LINK_{tier.upper()}")
     if link:
         return JSONResponse({"checkout_url": link, "dev_mode": False})
-    user = _store().set_tier(user["api_key"], tier)
+    user = _store().set_tier(x_api_key or "", tier)
     return JSONResponse({
         "upgraded": True, "tier": tier, "dev_mode": True,
         "note": "no Stripe payment link configured — tier switched directly",
@@ -218,7 +229,7 @@ async def billing_webhook(
     if not secret:
         return JSONResponse({"error": "billing webhook not configured"},
                             status_code=503)
-    if x_webhook_secret != secret:
+    if not hmac.compare_digest(x_webhook_secret or "", secret):
         return JSONResponse({"error": "bad webhook secret"}, status_code=401)
     if payload.get("type") != "checkout.session.completed":
         return JSONResponse({"ignored": payload.get("type", "unknown")})
@@ -256,10 +267,17 @@ async def scan_batch(
     docs = []
     skipped: list[dict] = []
     submitted_at = datetime.now(timezone.utc)  # upload time IS submission time
+    batch_bytes = 0
 
     for f in files:
         name = Path(f.filename or "upload").name
         data = await f.read()
+        batch_bytes += len(data)
+        if batch_bytes > MAX_BATCH_BYTES:
+            return JSONResponse(
+                {"error": f"batch exceeds "
+                          f"{MAX_BATCH_BYTES // (1024 * 1024)} MB total"},
+                status_code=413)
         if len(data) > MAX_FILE_BYTES:
             skipped.append({"file": name, "reason": "over 15 MB"})
             continue

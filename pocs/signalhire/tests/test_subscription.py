@@ -250,6 +250,54 @@ def test_key_rotation_invalidates_the_old_key(client):
     assert client.get("/api/me", headers={"X-API-Key": new_key}).status_code == 200
 
 
+def test_api_keys_are_hashed_at_rest(client):
+    key = _signup(client)
+    store = client.app.state.store
+    rows = store._conn.execute("SELECT key_hash FROM users").fetchall()
+    assert rows and all(r["key_hash"] and key not in r["key_hash"] for r in rows)
+    cols = [c[1] for c in store._conn.execute(
+        "PRAGMA table_info(users)").fetchall()]
+    assert "api_key" not in cols               # fresh schema has no clear column
+    assert client.get("/api/me", headers={"X-API-Key": key}).status_code == 200
+
+
+def test_legacy_clear_keys_migrate_to_hashes(tmp_path):
+    import sqlite3 as sq
+    from webapp.store import Store, _key_hash
+    db = tmp_path / "legacy.db"
+    conn = sq.connect(db)
+    conn.execute("CREATE TABLE users (id INTEGER PRIMARY KEY, email TEXT NOT "
+                 "NULL UNIQUE, org TEXT NOT NULL DEFAULT '', api_key TEXT NOT "
+                 "NULL UNIQUE, tier TEXT NOT NULL DEFAULT 'scout', "
+                 "owner_id INTEGER, created_at TEXT NOT NULL)")
+    # Two rows: the cleared column is UNIQUE, so the migration must not
+    # collapse them onto one another.
+    for i in range(2):
+        conn.execute("INSERT INTO users (email, api_key, created_at) "
+                     f"VALUES ('old{i}@example.com', 'sh_legacy_key_{i}', 'x')")
+    conn.commit()
+    conn.close()
+
+    store = Store(db)
+    for i in range(2):
+        user = store.by_key(f"sh_legacy_key_{i}")
+        assert user is not None and user["email"] == f"old{i}@example.com"
+    rows = store._conn.execute("SELECT api_key, key_hash FROM users").fetchall()
+    # No clear key survives the migration, and the rows stay distinct.
+    assert all(r["api_key"].startswith("migrated:") for r in rows)
+    assert {r["key_hash"] for r in rows} == {
+        _key_hash(f"sh_legacy_key_{i}") for i in range(2)}
+
+
+def test_total_batch_size_is_capped(client, monkeypatch):
+    monkeypatch.setenv("SIGNALHIRE_MAX_BATCH_MB", "1")
+    import webapp.app as webapp_app
+    monkeypatch.setattr(webapp_app, "MAX_BATCH_BYTES", 1024 * 1024)
+    big = ("files", ("big.txt", b"word " * 250_000, "text/plain"))
+    r = client.post("/api/scan", files=[big, _resume()])
+    assert r.status_code == 413
+
+
 def test_signup_rate_limit(client, monkeypatch):
     from webapp.app import _signup_hits
     _signup_hits.clear()
