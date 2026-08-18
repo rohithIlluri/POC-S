@@ -17,6 +17,7 @@ under 2% before any pilot sees a score.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from decimal import ROUND_HALF_UP, Decimal
 
 from .types import ScoredApplication, Severity, Signal
 
@@ -51,7 +52,18 @@ class Thresholds:
 
 
 def _clamp(value: float) -> int:
-    return max(0, min(100, round(value)))
+    """Round half *up*, deterministically, then clamp to 0-100.
+
+    Plain `round()` is round-half-to-even on a float that binary arithmetic
+    has already nudged: summing the same weights can land on 39.5 under one
+    interpreter and 39.50000000000001 under another, which then round to 39
+    and 40. That is a score — and near a threshold, a label — that depends on
+    the Python version a deployment happens to run. Quantizing through Decimal
+    with ROUND_HALF_UP makes the boundary a property of the weights alone, so
+    a reason code stays reproducible for an audit.
+    """
+    quantized = Decimal(value).quantize(Decimal("1"), rounding=ROUND_HALF_UP)
+    return max(0, min(100, int(quantized)))
 
 
 def score(signals: list[Signal], thresholds: Thresholds | None = None) -> dict:

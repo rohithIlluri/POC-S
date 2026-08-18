@@ -65,14 +65,28 @@ def test_sensitivity_slider_moves_the_boundary():
     signals = [sig("GEN_TOOL_MATCH", Severity.STRONG, 0.7),
                sig("FRESH_GENERATION", Severity.WEAK, 0.3),
                sig("DEFAULT_TITLE", Severity.WEAK, 0.1)]
-    # 0.7 + 0.3 + 0.1 sums to 1.0999…, so the raw score is 39.5000…1 and
-    # rounds up — asserting 39 made the test hostage to float summation order.
+    # These weights put the raw score exactly on .5, where binary summation
+    # differs between interpreters (39.5 vs 39.50000000000001). _clamp rounds
+    # half up through Decimal so the answer is 40 on every Python version.
     assert score(signals)["effort_score"] == 40
 
     assert score(signals, Thresholds.for_sensitivity("conservative"))["label"] \
         == "needs_review"
     assert score(signals, Thresholds.for_sensitivity("aggressive"))["label"] \
         == "mass_generated"
+
+
+def test_scores_are_not_interpreter_dependent():
+    """A half-way score must not depend on float summation order or on
+    round()'s banker's rounding — the same resume has to score the same on
+    every deployment, or a reason code is not reproducible for an audit."""
+    from signalhire.scoring import _clamp
+
+    assert _clamp(39.5) == 40
+    assert _clamp(39.50000000000001) == 40
+    assert _clamp(40.5) == 41          # plain round() gives 40 here
+    assert _clamp(-3.2) == 0
+    assert _clamp(140.0) == 100
 
 
 def test_conservative_sensitivity_clears_a_borderline_application():
