@@ -92,13 +92,37 @@ def test_reports_render(tiny_corpus):
     html = render_html(result)
     assert "Assistive output" in html
     assert "<script" not in html.lower()
+    # Findings read as prose; the raw code stays available underneath.
+    assert "Contains text a human reader cannot see" in html
     assert "HIDDEN_TEXT" in html
+    assert "Bear in mind" in html
 
     payload = json.loads(render_json(result))
     assert payload["stats"]["documents"] == len(result.applications)
     assert payload["applications"][0]["reason_codes"] is not None
 
-    assert "Assistive output" in render_text(result)
+    text = render_text(result)
+    # Every surface must carry the "documents, not people" framing.
+    assert "not judgements about people" in text
+    assert "worth opening first" in text or "Nothing stood out" in text
+
+
+def test_every_signal_reads_as_plain_language(tiny_corpus):
+    """No finding may reach a reader as a bare code or a JSON blob."""
+    result = scan(tiny_corpus, exclude={tiny_corpus / "jd.txt"})
+    seen = set()
+    for app in result.applications:
+        for signal in app.signals:
+            d = signal.as_dict()
+            seen.add(d["code"])
+            assert d["headline"] and d["headline"] != "Finding recorded", d["code"]
+            assert d["detail"], d["code"]
+            assert d["caveat"], d["code"]
+            # The wording describes the document, never the applicant.
+            lowered = (d["headline"] + d["detail"]).lower()
+            for word in ("fraud", "fake", "liar", "cheat", "dishonest"):
+                assert word not in lowered, f"{d['code']} accuses the person"
+    assert len(seen) >= 8, "corpus should exercise most signals"
 
 
 def test_eval_gates_pass_on_the_synthetic_corpus(tiny_corpus):

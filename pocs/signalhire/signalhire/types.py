@@ -36,10 +36,22 @@ class Signal:
     analyzer: str
 
     def as_dict(self) -> dict[str, Any]:
+        # The plain-language reading travels with the signal, so every surface
+        # (report, terminal, dashboard, API) words a finding identically — and
+        # a recruiter repeating it to a candidate says the same thing the
+        # candidate would read about themselves.
+        from .phrasing import SEVERITY_WORDS, explain
+
+        words = explain(self.code, self.evidence)
         return {
             "code": self.code,
             "severity": self.severity.value,
+            "severity_label": SEVERITY_WORDS.get(self.severity, "Finding"),
             "score_impact": round(self.score_impact, 3),
+            "headline": words.headline,
+            "detail": words.detail,
+            "caveat": words.caveat,
+            "advice": words.advice,
             "evidence": self.evidence,
             "analyzer": self.analyzer,
         }
