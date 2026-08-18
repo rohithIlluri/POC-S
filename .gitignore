@@ -11,6 +11,19 @@ pocs/sparkroom/tests/bundle.cjs
 # Local companion state (never commit a user's usage data)
 .aipet/
 
+# Python (pocs/signalhire)
+__pycache__/
+*.egg-info/
+.venv/
+.pytest_cache/
+
+# Generated evaluation artifacts (pocs/signalhire): the synthetic corpus is
+# rebuilt by `eval/run.py`, and corpus.local/ holds real candidate documents
+# that must never be committed.
+pocs/signalhire/eval/corpus/
+pocs/signalhire/eval/corpus.local/
+pocs/signalhire/eval/metrics.json
+
 # OS / editor
 .DS_Store
 *.swp

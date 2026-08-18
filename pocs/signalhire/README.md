@@ -1,0 +1,166 @@
+# signalhire
+
+**Application authenticity engine.** Point it at a folder of applications and it
+labels each one **genuine effort / needs review / mass-generated / high risk**,
+with machine-readable reason codes and the evidence behind every flag.
+
+This is the Phase-0 slice of [the build plan](docs/BUILD_PLAN.md): the detection
+engine, a CLI that turns an inbox folder into a triage report, the signature
+collector, and the evaluation harness with its release gates. No service, no
+database, no dashboard — those are Phase 1, and none of them can be designed
+honestly before the engine's numbers are real.
+
+## What it is not
+
+Not an AI-text detector. Nothing in this package scores writing style, fluency,
+perplexity or "AI-ness". Single-document AI-text classification has
+unacceptable false-positive rates on human writing — worst on non-native
+English writers — and is defeated by light editing. Using it as a rejection
+basis is indefensible, so the engine does not have the capability at all.
+
+Not an auto-reject tool. Every output is assistive: a score, a label and the
+evidence, routed to a human. Nothing here decides anything.
+
+## What it detects instead
+
+| Analyzer | Reason codes | What it catches |
+|---|---|---|
+| `forensics` | `GEN_TOOL_MATCH`, `HUMAN_TOOL_MATCH`, `NO_PRODUCER`, `FRESH_GENERATION`, `SINGLE_SHOT_PDF`, `DEFAULT_TITLE` | Wrapper/auto-apply toolchains in PDF metadata; PDFs generated seconds before submission |
+| `layout` | `KNOWN_TEMPLATE`, `TEMPLATE_SWARM`, `ALLOWLISTED_TEMPLATE` | Structurally identical documents — same fonts, sizes, column geometry — regardless of text |
+| `hidden` | `HIDDEN_TEXT`, `PROMPT_INJECTION` | White-on-white keyword stuffing, sub-3pt text, off-page text, instructions aimed at an LLM reader |
+| `jd_mirror` | `JD_MIRROR_EXTREME`, `JD_MIRROR_HIGH`, `JD_PHRASE_LIFT` | Resumes over-fitted to the job description: rare-term overlap and verbatim phrase lifts |
+| `dedupe` | `RECYCLED_IDENTITY`, `SPRAY_APPLY`, `DUP_CLUSTER` | The same resume body across the population — including under a swapped identity |
+
+Each analyzer is a pure function `(ParsedDoc, Context) -> list[Signal]`, so
+every one of them is unit-testable without touching a filesystem.
+
+## Install
+
+```bash
+cd pocs/signalhire
+python -m venv .venv && source .venv/bin/activate
+pip install -e ".[dev]"
+```
+
+Python 3.11+. Dependencies: PyMuPDF, pikepdf, datasketch.
+
+## Use
+
+```bash
+# Triage a folder of applications; open report.html in a browser.
+signalhire scan ./inbox --jd req-4471.txt --html report.html
+
+# Machine-readable output for a pipeline.
+signalhire scan ./inbox --json results.json --quiet
+
+# Widen or narrow the queue.
+signalhire scan ./inbox --sensitivity conservative
+```
+
+Accepts `.pdf`, `.txt` and `.md`. Passing `--jd` enables the JD-mirroring
+analyzer; everything else works without it.
+
+The population analyzers score the batch against itself, so results depend on
+what you scan together. Scan a whole requisition's inbox at once — that is
+where cross-applicant duplication becomes visible.
+
+### Growing the signature DB
+
+```bash
+# 5–10 resumes generated from one wrapper tool, in one folder:
+signalhire collect samples/teal --tool teal_v3 \
+    --human-corpus eval/corpus/human_verified --out signatures.json
+
+signalhire scan ./inbox --signatures signatures.json
+```
+
+A proposal only activates when it matches **every** sample from its tool and
+**zero** documents in the verified-human corpus. Anything else is written with
+`active: false` for a human to review, and the engine never loads it. Re-running
+a collection never flips an activation decision a human already made.
+
+### Evaluation
+
+```bash
+signalhire corpus eval/corpus     # build the synthetic corpus
+python eval/run.py                # run the gates; non-zero exit on failure
+python eval/run.py --update-baseline
+```
+
+Gates, all of which must pass:
+
+| Gate | Threshold |
+|---|---|
+| False-flag rate on `human_verified` | < 2% |
+| Recall on `wrapper_generated` | > 70% |
+| Recall on `attack` | = 100% |
+| Fairness slice (native vs non-native writers) | \|z\| < 1.96 |
+
+`eval/run.py` also fails on a >2pt regression against `eval/baseline.json`, so
+a change that buys recall with human false-flags cannot land quietly.
+
+**The synthetic corpus proves the pipeline, not the accuracy.** It is generated
+by `signalhire/corpus.py` and is the only thing that can live in a public repo.
+Real numbers require a collected corpus in `eval/corpus.local/` (git-ignored):
+consented human resumes including non-native English writers, output from real
+wrapper-tool collection runs, and hand-built attack cases. `eval/run.py` picks
+that directory up automatically when it exists.
+
+## Design rules the code enforces
+
+1. **Assist, never auto-reject.** No label means "reject". The HTML report says
+   so on its face.
+2. **Explainable or it doesn't ship.** Every signal carries `evidence` a
+   recruiter can read aloud. A test asserts no flag is ever raised without one.
+3. **Population beats document.** The edge is seeing patterns across thousands
+   of applications, not judging one PDF.
+4. **No protected attributes, and no proxies for them.** Nothing reads or
+   infers race, gender, age, national origin or disability, and no signal is
+   derived from writing style. The fairness gate is the enforcement mechanism:
+   if a signal splits the slices, remove it — do not reweight it.
+5. **Weak signals can never flag alone.** `mass_generated` requires at least one
+   STRONG signal by construction; weak signals can only reach `needs_review`.
+6. **PII is hashed at the parse boundary.** Identity becomes salted hashes in
+   `parse.py`; nothing downstream sees a clear-text email or phone. Set
+   `SIGNALHIRE_HASH_SALT` per deployment.
+
+## Layout
+
+```
+signalhire/
+├── types.py         Signal, ParsedDoc, Context, Identity, ScoredApplication
+├── parse.py         PDF/text extraction; identity extraction + hashing
+├── signatures.py    generator signature DB (seeds + collector merge)
+├── analyzers/       forensics · layout · hidden · jd_mirror · dedupe
+├── scoring.py       effort/risk scores, labels, sensitivity thresholds
+├── pipeline.py      stage orchestration + population context
+├── report.py        HTML triage report, JSON, terminal summary
+├── collector.py     signature proposals + validation gate
+├── corpus.py        synthetic evaluation corpus generator
+├── evaluate.py      metrics and release gates
+└── cli.py           scan · collect · corpus · eval
+eval/run.py          CI entry point with regression tracking
+tests/               45 tests, no network, ~2s
+```
+
+## Findings from building it
+
+Three things the plan's seed design got wrong, corrected here:
+
+- **`RECYCLED_IDENTITY` alone scored `genuine`.** At the plan's weights the
+  strongest fraud signal produces risk 56, under the 60 threshold, while the
+  effort score stays at 100 because risk codes are excluded from it. The label
+  rule now routes any STRONG risk-code signal to `high_risk` directly.
+- **Near-white detection compared packed RGB integers.** `color >= 0xF5F5F5`
+  treats pure red (`0xFF0000`) as near-white. Channels are now decomposed.
+- **LSH at threshold 0.8 misses identity swaps.** A recycled resume with a
+  swapped name and contact block lands around Jaccard 0.7–0.85 — the banding
+  misses it roughly a third of the time, and short resumes fall below the
+  threshold outright. The index is now queried wide (0.6) and verified exactly,
+  and comparison runs on identity-masked body text.
+
+## Not built yet (Phase 1+)
+
+Email ingestion, async pipeline, Postgres/BigQuery, the review dashboard, ATS
+writeback, semantic (embedding) clustering, behavioural signals. See
+[docs/BUILD_PLAN.md](docs/BUILD_PLAN.md).
