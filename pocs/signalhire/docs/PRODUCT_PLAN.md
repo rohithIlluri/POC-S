@@ -129,3 +129,12 @@ Demo mode: no account → 1 scan of ≤5 files, results watermarked "demo".
 - Engine stays pure: subscription code lives in webapp/, never in signalhire/.
 - Every milestone lands with tests green (`pytest -q`) and gates passing
   (`python eval/run.py`).
+- post-loop: split into two PRs — #28 (Phase-0 engine + review fixes) and
+  #29 (the product build, stacked on #28). CI on 3.11 then exposed a real
+  engine bug the local 3.13-only runs could not see: scores were computed
+  in binary floating point, so weights summing to exactly 1.1 put the raw
+  score on 39.5 and landed on either side of it depending on interpreter —
+  the same resume scoring 39 on 3.11 and 40 on 3.12. Now accumulated in
+  Decimal, which is what the versioned-signature audit promise requires.
+  Lesson for future weight tuning: never assert a hard-coded score at a
+  .5 boundary; assert the property.
