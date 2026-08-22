@@ -29,8 +29,8 @@
     "test": "node tests/harness.cjs"
   },
   "devDependencies": {
-    "esbuild": "^0.25.0",
-    "jsdom": "^26.0.0",
+    "esbuild": "^0.28.2",
+    "jsdom": "^30.0.1",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
   }
