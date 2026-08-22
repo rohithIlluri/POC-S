@@ -117,6 +117,14 @@ class Context:
     jd_ngrams: Any = None                                          # set, built once per scan
     contact_email: dict[str, list] = field(default_factory=dict)   # email_hash -> [(doc_id, name_hash)]
     contact_phone: dict[str, list] = field(default_factory=dict)   # phone_hash -> [(doc_id, name_hash)]
+    # Cross-scan population memory (memory.PopulationMemory). Optional by
+    # design: with no memory bound the engine behaves exactly as it did when
+    # the batch was the whole population. Typed as Any so the core types stay
+    # free of engine imports.
+    memory: Any = None
+    scan_id: str = ""
+    memory_hits: dict[str, Any] = field(default_factory=dict)      # doc_id -> MemoryHits
+    memory_records: dict[str, Any] = field(default_factory=dict)   # doc_id -> MemoryRecord
 
 
 Analyzer = Callable[[ParsedDoc, Context], "list[Signal]"]

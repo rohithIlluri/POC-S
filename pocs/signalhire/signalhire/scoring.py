@@ -28,7 +28,10 @@ LABELS = ("genuine", "needs_review", "mass_generated", "high_risk")
 # score and are excluded from the effort score so a fraud signal can never be
 # explained away by a strong effort showing.
 RISK_CODES = {"RECYCLED_IDENTITY", "HIDDEN_TEXT", "PROMPT_INJECTION",
-              "CONTACT_COLLISION"}
+              "CONTACT_COLLISION",
+              # Their cross-scan counterparts: the same fraud fact, observed
+              # against the account's history instead of the current batch.
+              "RECURRING_IDENTITY", "RECURRING_CONTACT"}
 
 # Weak signals from this many distinct analyzers escalate a below-review-line
 # effort score to mass_generated (see the convergence comment in score()).

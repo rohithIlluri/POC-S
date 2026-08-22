@@ -97,6 +97,9 @@ class CorpusEntry:
     slice: str
     expect: str          # "clean" | "flagged" | "unscored"
     note: str = ""
+    # Trickle documents are delivered in numbered batches instead of being
+    # scanned as one population — see `build_corpus(trickle_batches=...)`.
+    batch: int = -1
 
 
 def _pdf_date(dt: datetime) -> str:
@@ -296,11 +299,15 @@ WRAPPER_STYLE = {"body_font": "helv", "bold_font": "hebo", "base_size": 10.0,
 def build_corpus(out_dir: str | Path, seed: int = 7, humans: int = 60,
                  wrappers: int = 40, hybrids: int = 10,
                  attack_pairs: int = 3,
-                 evasions: int | None = None) -> list[CorpusEntry]:
+                 evasions: int | None = None,
+                 trickle_batches: int = 15,
+                 trickle_per_batch: int = 2) -> list[CorpusEntry]:
     """`evasions=None` scales with the wrapper count. Pass 0 for small
     plumbing corpora: evasion detection is population-scale by design (idf,
     template swarms and phrase swarms all need a real batch), so a handful of
-    documents cannot exercise it meaningfully."""
+    documents cannot exercise it meaningfully. `trickle_batches=0` likewise
+    skips the delivered-thin set, which only means something once enough
+    batches have gone by for a population to accumulate."""
     rng = random.Random(seed)
     out = Path(out_dir)
     entries: list[CorpusEntry] = []
@@ -473,6 +480,58 @@ def build_corpus(out_dir: str | Path, seed: int = 7, humans: int = 60,
         entries.append(CorpusEntry(
             str(path.relative_to(out)), "attack", "native", "flagged",
             "contact collision: one mailbox, two candidate names"))
+
+    # --- trickle: the same farm, delivered thin ----------------------------
+    # Every population analyzer in the engine needs a crowd inside one scan.
+    # A farm defeats all of them at once by submitting two applications per
+    # requisition instead of fifty — the documents are unchanged, the crowd
+    # just moved outside the window. These documents are *not* part of the
+    # single-population scan above; the harness feeds them batch by batch
+    # through a population memory, which is the only way to see whether the
+    # engine can accumulate a population it is never shown all at once.
+    #
+    # Each batch is two manufactured applications and two genuine ones, which
+    # is what a small requisition's inbox actually looks like.
+    for b in range(trickle_batches):
+        for j in range(trickle_per_batch):
+            idx = b * trickle_per_batch + j
+            p = _persona(rng, 4000 + idx)
+            created = now - timedelta(days=trickle_batches - b,
+                                      minutes=rng.randint(0, 1400))
+            if idx % 2 == 0:
+                # metadata-stripped PDF off the wrapper rig
+                path = out / "trickle" / f"trickle_farm_{idx:03d}.pdf"
+                _write_pdf(
+                    path, _place(_wrapper_body(rng, p), **WRAPPER_STYLE),
+                    {"producer": "", "creator": "", "title": "", "author": ""},
+                    created, created + timedelta(minutes=rng.randint(2, 300)))
+            else:
+                # the same rig laundered through an HTML export
+                lines = [t for t, _ in _wrapper_body(rng, p) if t]
+                path = out / "trickle" / f"trickle_farm_{idx:03d}.html"
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text("<html><body>"
+                                + "".join(f"<p>{ln}</p>" for ln in lines)
+                                + "</body></html>")
+            entries.append(CorpusEntry(
+                str(path.relative_to(out)), "trickle_farm", "native", "flagged",
+                "farm output delivered two per scan", batch=b))
+
+            hp = _persona(rng, 4500 + idx)
+            non_native = idx % 2 == 1
+            hcreated = now - timedelta(days=rng.randint(3, 400),
+                                       minutes=rng.randint(0, 900))
+            hpath = out / "trickle" / f"trickle_human_{idx:03d}.pdf"
+            producer, creator = rng.choice(HUMAN_PRODUCERS)
+            _write_pdf(
+                hpath, _place(_human_body(rng, hp, non_native), **_human_style(rng)),
+                {"producer": producer, "creator": creator,
+                 "title": f"{hp['name']} Resume", "author": hp["name"]},
+                hcreated, hcreated + timedelta(minutes=rng.randint(1, 5000)))
+            entries.append(CorpusEntry(
+                str(hpath.relative_to(out)), "trickle_human",
+                "non_native" if non_native else "native", "clean",
+                "genuine applicant in the same thin batches", batch=b))
 
     manifest = {
         "generated_at": datetime.now(timezone.utc).isoformat(),

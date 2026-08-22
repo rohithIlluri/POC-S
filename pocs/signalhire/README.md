@@ -30,9 +30,39 @@ evidence, routed to a human. Nothing here decides anything.
 | `hidden` | `HIDDEN_TEXT`, `PROMPT_INJECTION` | White-on-white keyword stuffing, sub-3pt text, off-page text, instructions aimed at an LLM reader |
 | `jd_mirror` | `JD_MIRROR_EXTREME`, `JD_MIRROR_HIGH`, `JD_PHRASE_LIFT` | Resumes over-fitted to the job description: rare-term overlap and verbatim phrase lifts |
 | `dedupe` | `RECYCLED_IDENTITY`, `SPRAY_APPLY`, `DUP_CLUSTER` | The same resume body across the population — including under a swapped identity |
+| `contact` | `CONTACT_COLLISION`, `DISPOSABLE_CONTACT` | One mailbox or phone behind several candidate names; throwaway-mail providers |
+| `boilerplate` | `SHARED_BOILERPLATE` | Paraphrase farms: 8-word runs shared verbatim by many distinct applicants, below the near-duplicate threshold |
+| `recurrence` | `RECURRING_IDENTITY`, `RECURRING_BODY`, `RECURRING_CONTACT`, `RECURRING_TEMPLATE`, `RECURRING_PHRASES` | The same rig across *earlier scans* — the farm that submits two applications per requisition instead of fifty |
 
 Each analyzer is a pure function `(ParsedDoc, Context) -> list[Signal]`, so
 every one of them is unit-testable without touching a filesystem.
+
+### The population outlives the batch
+
+Every population analyzer above `recurrence` needs a crowd inside one scan,
+which is a weakness a farm can simply choose to exploit: deliver thin and the
+duplicate cluster, the phrase swarm and the template swarm all have nothing to
+compare against. Measured on the trickle set of the synthetic corpus — the same
+manufactured documents, two per scan — batch-only detection catches **0 of 30**.
+
+`signalhire/memory.py` makes the population cumulative. Every scanned document
+leaves behind one-way keys (MinHash bands of the identity-masked body, the
+layout fingerprint, hashed contact handles, a hashed phrase sample) and the
+next scan asks what it has seen before. Once the memory holds a population,
+recall on that same trickle is **100%**, with no cost in false flags.
+
+The engine defines the port, never the storage: `PopulationMemory` is a
+two-method protocol, `InMemoryPopulationMemory` is the reference
+implementation, and the webapp binds a SQLite-backed one scoped to a billing
+account. Three rules keep an account from flagging itself over time — a scan is
+never part of the population it is judged against, a re-uploaded batch dedupes
+to the records it already wrote, and one candidate applying to five
+requisitions is one applicant, not five.
+
+Nothing reconstructible is stored: no text, no names, no addresses. That is
+what makes the cross-tenant version (§2.3 of the build plan) possible later —
+"this body hit fourteen other agencies this week" without a syllable of anyone's
+resume moving between tenants.
 
 ## Install
 
@@ -128,8 +158,17 @@ Gates, all of which must pass:
 |---|---|
 | False-flag rate on `human_verified` | < 2% |
 | Recall on `wrapper_generated` | > 70% |
+| Recall on `wrapper_evasion` (track-covering) | ≥ 90% |
 | Recall on `attack` | = 100% |
 | Fairness slice (native vs non-native writers) | \|z\| < 1.96 |
+| Recall on the trickle set once the memory is warm | ≥ 90% |
+| False-flag rate on genuine applicants inside the trickle | < 2% |
+
+The trickle gates are run separately from the rest: those documents are
+delivered batch by batch through a population memory rather than scanned as one
+population, and the harness runs the same sequence twice — once with a memory
+and once without — so the recall number is always reported against its own
+control.
 
 `eval/run.py` also fails on a >2pt regression against `eval/baseline.json`, so
 a change that buys recall with human false-flags cannot land quietly.
@@ -167,6 +206,9 @@ signalhire/
 ├── parse.py         PDF/text extraction; identity extraction + hashing
 ├── signatures.py    generator signature DB (seeds + collector merge)
 ├── analyzers/       forensics · layout · hidden · jd_mirror · dedupe
+│                    contact · boilerplate · recurrence
+├── memory.py        cross-scan population memory (port + reference impl)
+├── evidence.py      log-odds combination with per-family correlation discount
 ├── scoring.py       effort/risk scores, labels, sensitivity thresholds
 ├── pipeline.py      stage orchestration + population context
 ├── report.py        HTML triage report, JSON, terminal summary
@@ -175,7 +217,7 @@ signalhire/
 ├── evaluate.py      metrics and release gates
 └── cli.py           scan · collect · corpus · eval
 eval/run.py          CI entry point with regression tracking
-tests/               45 tests, no network, ~2s
+tests/               128 tests, no network, ~6s
 ```
 
 ## Findings from building it
@@ -193,6 +235,17 @@ Three things the plan's seed design got wrong, corrected here:
   misses it roughly a third of the time, and short resumes fall below the
   threshold outright. The index is now queried wide (0.6) and verified exactly,
   and comparison runs on identity-masked body text.
+
+### Trickle scale was a real hole
+
+Every population analyzer is a batch analyzer, and a farm gets to choose the
+batch size. Delivered two per scan, the corpus's own wrapper-evasion documents
+scored `genuine` — not marginally, but with nothing to say about them at all.
+The fix was not a better per-document detector; it was remembering. What that
+buys is bounded and worth stating plainly: the engine still cannot call a farm
+on its second sighting, and neither could a recruiter. What it can do is stop
+being fooled by the twentieth, and put the earlier ones in the scan history
+where they can be found once the pattern has a name.
 
 ## Not built yet (Phase 1+)
 

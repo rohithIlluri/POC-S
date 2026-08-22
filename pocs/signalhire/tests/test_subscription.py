@@ -317,3 +317,126 @@ def test_scan_response_carries_plan_state(client):
     plan = r.json()["stats"]["plan"]
     assert plan == {"tier": "scout", "label": "Scout", "scans_left": 4,
                     "json_export": False, "demo": False}
+
+
+# --- population memory ------------------------------------------------------
+# The memory is account-scoped state that outlives a scan, so the tests here
+# are about the boundaries: whose population is it, who writes to it, and how
+# long does it last.
+
+def _farm_resume(i: int) -> tuple:
+    """Farm output: one manufactured body, a little padding, a new persona."""
+    body = (f"Persona {i}\npersona{i}@example.com\n"
+            "Senior platform engineer with nine years owning the kubernetes "
+            "footprint and the terraform modules behind it, designing grpc "
+            "service contracts and running an istio service mesh for a "
+            "regional logistics operator. Tuned prometheus and thanos for "
+            "long horizon retention across multi tenant control plane "
+            "workloads and took the argo rollouts canary strategy from manual "
+            "to automated with opentelemetry collectors and vault rotation. "
+            + " ".join(f"pad{i}word{j}" for j in range(25)))
+    return ("files", (f"farm_{i}.txt", body.encode(), "text/plain"))
+
+
+def test_scans_accumulate_a_population_across_requests(client):
+    key = _signup(client)
+    h = {"X-API-Key": key}
+    client.post("/api/upgrade", json={"tier": "agency"}, headers=h)
+
+    first = client.post("/api/scan", files=[_farm_resume(0)], headers=h).json()
+    assert first["stats"]["memory"]["enabled"] is True
+    assert first["stats"]["memory"]["documents_remembered"] == 0
+
+    second = client.post("/api/scan", files=[_farm_resume(1)], headers=h).json()
+    assert second["stats"]["memory"]["documents_remembered"] == 1
+
+
+def test_one_account_never_sees_another_accounts_population(client):
+    """Cross-tenant clustering is on the roadmap and needs a consent story
+    first. Until then an account's memory is its own."""
+    a = _signup(client, "a@example.com")
+    b = _signup(client, "b@example.com")
+    for i in range(6):
+        client.post("/api/scan", files=[_farm_resume(i)],
+                    headers={"X-API-Key": a})
+    stats = client.post("/api/scan", files=[_farm_resume(99)],
+                        headers={"X-API-Key": b}).json()["stats"]
+    assert stats["memory"]["documents_remembered"] == 0
+
+
+def test_seats_share_the_owners_population(client):
+    """One agency is hit by one farm, whichever recruiter opens the email."""
+    owner = _signup(client, "owner@example.com")
+    h = {"X-API-Key": owner}
+    client.post("/api/upgrade", json={"tier": "agency"}, headers=h)
+    member = client.post("/api/team/invite", json={"email": "seat@example.com"},
+                         headers=h).json()["api_key"]
+
+    client.post("/api/scan", files=[_farm_resume(0)], headers=h)
+    stats = client.post("/api/scan", files=[_farm_resume(1)],
+                        headers={"X-API-Key": member}).json()["stats"]
+    assert stats["memory"]["documents_remembered"] == 1
+
+
+def test_demo_scans_are_not_remembered(client):
+    """No account, no population: an anonymous upload leaves nothing behind
+    and is compared against nothing."""
+    stats = client.post("/api/scan", files=[_farm_resume(0)]).json()["stats"]
+    assert stats["memory"]["enabled"] is False
+    assert stats["memory"]["documents_added"] == 0
+
+
+def test_memory_is_not_gated_by_tier(client):
+    """Volume and workflow are sold; detection is not. A free account's
+    population memory works exactly like a paying one's."""
+    key = _signup(client)
+    h = {"X-API-Key": key}
+    client.post("/api/scan", files=[_farm_resume(0)], headers=h)
+    stats = client.post("/api/scan", files=[_farm_resume(1)],
+                        headers=h).json()["stats"]
+    assert stats["memory"]["documents_remembered"] == 1
+
+
+def test_memory_forgets_documents_past_the_retention_window():
+    """The memory is a detection index, not a permanent record of everyone
+    who ever applied: past the window a document and all of its keys go."""
+    from datetime import datetime, timedelta, timezone
+
+    from signalhire.memory import MemoryRecord
+
+    from webapp import store as store_module
+
+    store = Store(":memory:")
+    memory = store.memory_for(1)
+    stale = datetime.now(timezone.utc) - timedelta(
+        days=store_module.MEMORY_RETENTION_DAYS + 1)
+    memory.remember([
+        MemoryRecord(scan_id="old", owner="o1", seen_at=stale,
+                     keys={"body": ("k1",)}, signature=(1, 2, 3)),
+        MemoryRecord(scan_id="new", owner="o2",
+                     seen_at=datetime.now(timezone.utc),
+                     keys={"body": ("k2",)}, signature=(4, 5, 6)),
+    ])
+    assert memory.size() == 1
+    assert memory.lookup("body", ["k1"]) == {}
+    assert memory.lookup("body", ["k2"])["k2"][0].owner == "o2"
+
+
+def test_memory_round_trips_signatures_and_dedupes_on_reinsert():
+    from datetime import datetime, timezone
+
+    from signalhire.memory import MemoryRecord
+
+    store = Store(":memory:")
+    memory = store.memory_for(1)
+    record = MemoryRecord(scan_id="s1", owner="o1", name_hash="n1",
+                          identified=True, seen_at=datetime.now(timezone.utc),
+                          keys={"body": ("k1", "k2")},
+                          signature=(1, 2, 2 ** 63))
+    memory.remember([record])
+    memory.remember([record])
+    assert memory.size() == 1
+
+    found = memory.lookup("body", ["k1"])["k1"][0]
+    assert found.signature == (1, 2, 2 ** 63)
+    assert found.owner == "o1" and found.identified is True

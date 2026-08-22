@@ -12,12 +12,14 @@ from .forensics import analyze_forensics
 from .hidden import analyze_hidden
 from .jd_mirror import analyze_jd_mirror
 from .layout import analyze_layout
+from .recurrence import analyze_recurrence
 
 PER_DOCUMENT = [analyze_forensics, analyze_hidden, analyze_layout, analyze_jd_mirror]
-POPULATION = [analyze_dedupe, analyze_contact, analyze_boilerplate]
+POPULATION = [analyze_dedupe, analyze_contact, analyze_boilerplate,
+              analyze_recurrence]
 
 __all__ = [
     "analyze_boilerplate", "analyze_contact", "analyze_dedupe",
     "analyze_forensics", "analyze_hidden", "analyze_jd_mirror",
-    "analyze_layout", "PER_DOCUMENT", "POPULATION",
+    "analyze_layout", "analyze_recurrence", "PER_DOCUMENT", "POPULATION",
 ]

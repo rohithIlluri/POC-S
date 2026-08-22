@@ -36,16 +36,28 @@ TRACKED = {
     "human_verified_flag_rate": "lower_is_better",
     "wrapper_generated_flag_rate": "higher_is_better",
     "attack_flag_rate": "higher_is_better",
+    # Thin-delivered farm output, once the population memory has a population.
+    # Tracked separately from the single-batch numbers because it is the one
+    # metric that measures what the engine *remembers* rather than what it was
+    # handed in one go.
+    "trickle_warm_flag_rate": "higher_is_better",
+    "trickle_human_flag_rate": "lower_is_better",
 }
 TOLERANCE = 0.02
 
 
 def headline(metrics: dict) -> dict[str, float]:
     sets = metrics["sets"]
-    return {
+    out = {
         f"{name}_flag_rate": round(sets.get(name, {}).get("flag_rate", 0.0), 4)
         for name in ("human_verified", "wrapper_generated", "attack")
     }
+    trickle = metrics.get("trickle") or {}
+    if trickle:
+        with_memory = trickle["with_memory"]
+        out["trickle_warm_flag_rate"] = round(with_memory["warm"]["flag_rate"], 4)
+        out["trickle_human_flag_rate"] = round(with_memory["human"]["flag_rate"], 4)
+    return out
 
 
 def regressions(current: dict[str, float], baseline: dict[str, float]) -> list[str]:

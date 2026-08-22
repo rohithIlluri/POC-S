@@ -14,6 +14,7 @@ population-level forensics that get stronger with every batch scanned.
 | Scans / month | 5 | 200 | unlimited |
 | Files / scan | 25 | 200 | 500 |
 | Detection | full engine | full engine | full engine |
+| Cross-scan population memory | 90 days | 90 days | 90 days |
 | JD mirroring | yes | yes | yes |
 | Sensitivity slider | yes | yes | yes |
 | JSON export / API access | — | yes | yes |
@@ -38,6 +39,8 @@ Demo mode: no account → 1 scan of ≤5 files, results watermarked "demo".
 - [x] M7 API section on the site (curl example, /docs schema link) (it3)
 - [x] M8 Deploy story: Dockerfile + volume-backed SQLite + env-armed
       billing; signup rate limiting; API key rotation (it4)
+- [x] M9 Population memory: an account's scans accumulate into one
+      cross-scan population, so a farm that trickles is still a farm (it10)
 
 ## Iteration log
 
@@ -119,6 +122,48 @@ Demo mode: no account → 1 scan of ≤5 files, results watermarked "demo".
   413); nosniff / DENY / no-referrer headers. The live dev DB caught a
   migration bug the single-row test missed (UNIQUE + NOT NULL on the old
   column) — fixed and covered with a two-row test. 95 tests, gates green.
+- it9 (done): ALGORITHM — correlation-aware evidence combination
+  (evidence.py). The seed scoring summed score_impact, which double-counts
+  measurably correlated signals: JD_MIRROR_HIGH and JD_PHRASE_LIFT co-occur
+  at Jaccard 1.00 on the corpus, as do BATCH_TIMESTAMP_CLUSTER and
+  FRESH_GENERATION. Signals now combine in log-odds — each carries a
+  likelihood ratio from its severity tier, the strongest in a family counts
+  fully and each additional one is discounted 0.45^rank, and families combine
+  undiscounted because four families agreeing is four observations. Output is
+  a posterior, which is what makes effort_score comparable across reqs and
+  signature-DB versions. Two invariants had to be taught explicitly: no
+  evidence scores exactly 100 (the prior is a starting point, never a penalty
+  for existing), and exculpatory evidence can cancel suspicion but never beat
+  clean. Evasion recall 50% -> 100%; humans still 0%. Thresholds re-derived
+  from the corpus distribution rather than guessed against the old additive
+  scale. 101 tests, 5 gates.
+- it10 (done): ALGORITHM — analyzer H (recurrence) + memory.py, the
+  cross-scan population memory. Every population analyzer we have is a
+  *batch* analyzer, and the batch size is the farm's choice: delivered two
+  per scan, the corpus's own evasion documents scored genuine with nothing
+  said about them at all (measured: 0 of 30 caught). Documents now leave
+  behind one-way keys — MinHash bands of the masked body, layout hash,
+  hashed contact handles, a bottom-k phrase sketch — and the next scan asks
+  what it has seen. RECURRING_IDENTITY / RECURRING_CONTACT are the
+  cross-scan counterparts of the in-batch risk codes; RECURRING_BODY,
+  RECURRING_TEMPLATE (WEAK always, like TEMPLATE_SWARM) and RECURRING_PHRASES
+  carry effort. The phrase escalation *imports* the in-batch industrial rule
+  rather than restating it, so the two cannot drift: a third of a document
+  shared with fifteen strangers is the same fact whether they arrived in one
+  batch or over three months. Trickle recall 0% -> 100% once the memory holds
+  a population (14/30 overall across a cold start), human false flags 0%.
+  New corpus set + two gates, run as a delivered-batch-by-batch sequence with
+  a no-memory control alongside. Counting is an aggregate query, not a fetch:
+  the hot phrase of a 5,000-document farm must not make the engine slowest
+  against the adversary it exists for (192 docs against a 5,000-doc history:
+  0.44s vs 0.38s with no memory at all). PRODUCT — org-scoped SQLite memory
+  (every seat shares one, since one farm hits the whole agency), 90-day
+  retention, never gated by tier, never written by demo scans; the dashboard
+  and the exported report both state how much history a scan was compared
+  against, because "genuine" and "we have not seen this rig yet" must not
+  look the same. 128 tests, 7 gates green.
+  Next: cross-tenant memory needs a consent and contract story before the
+  keys can be shared; invite email; Stripe keys; hosted deploy.
 
 ## Rules for future iterations
 
@@ -129,6 +174,15 @@ Demo mode: no account → 1 scan of ≤5 files, results watermarked "demo".
 - Engine stays pure: subscription code lives in webapp/, never in signalhire/.
 - Every milestone lands with tests green (`pytest -q`) and gates passing
   (`python eval/run.py`).
+- Detection that accumulates state about applicants earns its false-positive
+  tests first: a re-scanned batch, one candidate applying to many reqs, and a
+  scan never being part of the population it is judged against are all pinned
+  in tests/test_memory.py. Add the equivalent before adding memory of
+  anything else.
+- Never lower a threshold to make an eval pass. it10's phrase escalation is
+  the in-batch rule imported, not a new number chosen to clear a gate; where
+  the honest answer was "the engine cannot catch this yet" (the cold start),
+  the gate scopes to the warm slice and the report prints both.
 - post-loop: split into two PRs — #28 (Phase-0 engine + review fixes) and
   #29 (the product build, stacked on #28). CI on 3.11 then exposed a real
   engine bug the local 3.13-only runs could not see: scores were computed

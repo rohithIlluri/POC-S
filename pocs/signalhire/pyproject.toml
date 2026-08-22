@@ -27,3 +27,7 @@ include = ["signalhire*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# The engine is installed; the webapp is not a package, so its tests need the
+# project root importable. CI installs only [dev] and skips those tests, but
+# a developer with fastapi present would otherwise hit a collection error.
+pythonpath = ["."]

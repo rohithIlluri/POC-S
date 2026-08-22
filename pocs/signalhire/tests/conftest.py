@@ -11,7 +11,7 @@ def tiny_corpus(tmp_path_factory):
     """A small synthetic corpus, built once for the whole test session."""
     out = tmp_path_factory.mktemp("corpus")
     build_corpus(out, seed=11, humans=8, wrappers=6, hybrids=2, attack_pairs=1,
-                 evasions=0)
+                 evasions=0, trickle_batches=0)
     return out
 
 

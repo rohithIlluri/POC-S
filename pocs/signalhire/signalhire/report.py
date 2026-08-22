@@ -45,6 +45,11 @@ CODE_TEXT = {
     "SPRAY_APPLY": "The same document was submitted across many requisitions",
     "DUP_CLUSTER": "Near-identical to other applications in this batch",
     "SHARED_BOILERPLATE": "Built largely from phrases shared verbatim across many applicants",
+    "RECURRING_BODY": "This resume body was submitted by other applicants in earlier scans",
+    "RECURRING_IDENTITY": "This body was submitted before under a different candidate name",
+    "RECURRING_TEMPLATE": "This exact layout keeps arriving under different applicants",
+    "RECURRING_PHRASES": "Built from phrases already seen from other applicants in earlier scans",
+    "RECURRING_CONTACT": "This contact email/phone arrived before under a different name",
     "PARSE_FAILED": "Document could not be parsed",
 }
 
@@ -172,6 +177,22 @@ def render_html(result: ScanResult, title: str = "Application triage report") ->
         '<div class="empty">No documents found.</div>'
     generated = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
 
+    # A cross-scan reason code is only auditable next to the population it was
+    # measured against, so the report states it: how much history this scan
+    # could see, and how much of it it recognised.
+    memory = stats.get("memory") or {}
+    memory_note = ""
+    if memory.get("enabled"):
+        held = memory.get("documents_remembered", 0)
+        memory_note = (
+            f" Cross-scan signals were measured against {held} document"
+            f"{'' if held == 1 else 's'} remembered from earlier scans; "
+            f"{memory.get('documents_recognised', 0)} of the documents in "
+            "this batch matched something already seen."
+            if held else
+            " No earlier scans were remembered for this account, so no "
+            "cross-scan signal could fire.")
+
     return f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -192,7 +213,7 @@ used as a sole or automatic basis for rejecting a candidate.</div>
 {apps}
 <footer>Reason codes are reproducible against signature DB
 {html.escape(stats['signature_db_version'])}. Rare-term idf source:
-{html.escape(stats['idf_source'])}.</footer>
+{html.escape(stats['idf_source'])}.{memory_note}</footer>
 </div></body></html>"""
 
 

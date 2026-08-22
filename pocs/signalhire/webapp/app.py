@@ -299,7 +299,15 @@ async def scan_batch(
              "skipped": skipped},
             status_code=422)
 
-    result = score_documents(docs, jd_text=jd, sensitivity=sensitivity)
+    # Cross-scan population memory, scoped to the billing account. An account
+    # is the right boundary: every seat in an agency is being hit by the same
+    # farms, and a farm that submits two applications per requisition is
+    # invisible to any single batch. Demo callers have no account, so they get
+    # no memory and nothing they upload is remembered.
+    memory = store.memory_for(store.root_of(user)["id"]) if user else None
+
+    result = score_documents(docs, jd_text=jd, sensitivity=sensitivity,
+                             memory=memory)
     flagged = sum(1 for a in result.applications if a.label in FLAGGED)
     if user is not None:
         store.record_scan(user["id"], files=len(docs), flagged=flagged,

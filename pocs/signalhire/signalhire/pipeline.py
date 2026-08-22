@@ -12,6 +12,7 @@ inbox folder, it sees exactly the cross-applicant patterns the product sells.
 from __future__ import annotations
 
 import math
+import uuid
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -23,6 +24,7 @@ from .analyzers.forensics import creation_window
 from .analyzers.jd_mirror import ngrams as jd_ngrams
 from .analyzers.jd_mirror import terms, word_sequence
 from .analyzers.layout import has_authored_layout, layout_fingerprint
+from .memory import probe, record_for
 from .parse import discover, parse_file, parse_pdf_date
 from .scoring import Thresholds, score_document
 from .signatures import SIGNATURE_DB_VERSION, load_signatures, template_indexes
@@ -53,7 +55,8 @@ class ScanResult:
 
 
 def build_context(docs: list[ParsedDoc], jd_text: str = "",
-                  signatures_path: str | Path | None = None) -> Context:
+                  signatures_path: str | Path | None = None,
+                  memory=None, scan_id: str = "") -> Context:
     signatures = load_signatures(signatures_path)
     known_templates, allowlist, known_loose = template_indexes(signatures)
 
@@ -64,6 +67,8 @@ def build_context(docs: list[ParsedDoc], jd_text: str = "",
         template_allowlist=allowlist,
         jd_text=jd_text,
         identity={d.doc_id: d.identity for d in docs},
+        memory=memory,
+        scan_id=scan_id or uuid.uuid4().hex[:12],
     )
 
     # Layout population counts: distinct applicants per structural
@@ -166,13 +171,42 @@ def build_context(docs: list[ParsedDoc], jd_text: str = "",
             windows[creation_window(created)].add(d.identity.key() or d.doc_id)
     ctx.creation_windows = {w: len(who) for w, who in windows.items()}
 
+    # Cross-scan population memory: what earlier scans in this account have
+    # already seen. Derived last, because a record is built from the same
+    # caches (masked body, MinHash, layout hash) the batch analyzers use, and
+    # probed for every document before any of them is scored — the memory is
+    # never allowed to see this batch while judging it.
+    if memory is not None:
+        for d in docs:
+            if d.parse_error:
+                continue
+            record = record_for(d, ctx, scan_id=ctx.scan_id)
+            ctx.memory_records[d.doc_id] = record
+            ctx.memory_hits[d.doc_id] = probe(memory, record)
+
     return ctx
+
+
+def commit_memory(ctx: Context) -> int:
+    """Hand this scan's documents to the memory for the next scan to find.
+
+    Called after scoring, never before: a batch must not be part of the
+    population it is being judged against.
+    """
+    if ctx.memory is None or not ctx.memory_records:
+        return 0
+    records = list(ctx.memory_records.values())
+    ctx.memory.remember(records)
+    return len(records)
 
 
 def score_documents(docs: list[ParsedDoc], jd_text: str = "",
                     signatures_path: str | Path | None = None,
-                    sensitivity: str = "balanced") -> ScanResult:
-    ctx = build_context(docs, jd_text=jd_text, signatures_path=signatures_path)
+                    sensitivity: str = "balanced",
+                    memory=None, scan_id: str = "",
+                    remember: bool = True) -> ScanResult:
+    ctx = build_context(docs, jd_text=jd_text, signatures_path=signatures_path,
+                        memory=memory, scan_id=scan_id)
     thresholds = Thresholds.for_sensitivity(sensitivity)
 
     applications: list[ScoredApplication] = []
@@ -186,6 +220,12 @@ def score_documents(docs: list[ParsedDoc], jd_text: str = "",
 
     applications.sort(key=lambda a: (-a.risk_score, a.effort_score))
 
+    # Scoring is finished, so this batch can safely join the population.
+    known_before = memory.size() if memory is not None else 0
+    if remember:
+        commit_memory(ctx)
+    known_after = memory.size() if memory is not None else 0
+
     label_counts = Counter(a.label for a in applications)
     stats = {
         "documents": len(applications),
@@ -198,6 +238,21 @@ def score_documents(docs: list[ParsedDoc], jd_text: str = "",
         "signatures_active": len(ctx.signatures),
         "jd_provided": bool(jd_text.strip()),
         "idf_source": "batch" if ctx.global_idf else "static_fallback",
+        "scan_id": ctx.scan_id,
+        # The audit line the dashboard shows: how much prior population this
+        # batch was compared against, and how many documents it actually
+        # recognised. "Recognised" counts documents the recurrence analyzer
+        # had something to say about — not documents that merely shared a
+        # phrase with something, which is nearly all of them and would make
+        # the number meaningless.
+        "memory": {
+            "enabled": memory is not None,
+            "documents_remembered": known_before,
+            "documents_recognised": sum(
+                1 for a in applications
+                if any(s.analyzer == "recurrence" for s in a.signals)),
+            "documents_added": known_after - known_before,
+        },
     }
     return ScanResult(applications=applications, context=ctx, stats=stats)
 
@@ -205,12 +260,16 @@ def score_documents(docs: list[ParsedDoc], jd_text: str = "",
 def scan(target: str | Path, jd_text: str = "",
          signatures_path: str | Path | None = None,
          sensitivity: str = "balanced",
-         exclude: set[Path] | None = None) -> ScanResult:
+         exclude: set[Path] | None = None,
+         memory=None, scan_id: str = "",
+         remember: bool = True) -> ScanResult:
     """Parse every supported document under `target` and score the batch."""
     paths = discover(target, exclude=exclude)
     docs = [parse_file(p) for p in paths]
     result = score_documents(docs, jd_text=jd_text,
                              signatures_path=signatures_path,
-                             sensitivity=sensitivity)
+                             sensitivity=sensitivity,
+                             memory=memory, scan_id=scan_id,
+                             remember=remember)
     result.stats["source"] = str(target)
     return result

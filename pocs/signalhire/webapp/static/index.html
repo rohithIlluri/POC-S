@@ -169,6 +169,8 @@ header.top{
 .combine{font-size:.78rem;color:var(--muted);border-left:2px solid var(--line);
   padding:.15rem 0 .15rem .6rem;margin:0 0 .7rem}
 .skipped{font-family:var(--mono);font-size:.72rem;color:var(--burnt);margin-bottom:1rem}
+.memnote{font-family:var(--mono);font-size:.72rem;color:var(--muted);margin-bottom:1rem}
+.memnote b{color:var(--ink)}
 .assist{
   border-left:3px solid var(--amber); background:var(--card); padding:.75rem .95rem;
   font-size:.85rem; color:var(--muted); margin:0 0 1.4rem;
@@ -287,6 +289,13 @@ footer{border-top:1.5px solid var(--ink);padding:1.4rem 0 2.2rem;
         <p>One resume looks fine; the population doesn't lie. MinHash clustering
         over identity-masked bodies exposes the same document under different
         names — the strongest fraud signal the engine produces.</p></div>
+      <div class="cap"><div class="num mono">06 / MEMORY</div>
+        <h3>The population outlasts the batch</h3>
+        <p>Submit two applications per requisition and every batch-level signal
+        goes quiet. Your account remembers what it has scanned — one-way hashes
+        of the body, layout, contact handles and phrasing, never text — so a rig
+        that trickles is still a rig, and every scan you run makes the next one
+        sharper.</p></div>
     </div>
   </div>
 </section>
@@ -339,6 +348,7 @@ footer{border-top:1.5px solid var(--ink);padding:1.4rem 0 2.2rem;
     <a class="dl" id="dljson" hidden>Download JSON</a>
     <a class="dl" id="dlreport" hidden>Download report</a>
     <div class="skipped" id="skipped" hidden></div>
+    <div class="memnote" id="memnote" hidden></div>
     <div class="tiles" id="tiles"></div>
     <div id="apps"></div>
   </div>
@@ -521,6 +531,11 @@ const CODE_TEXT = {
   SPRAY_APPLY: "The same document was submitted across many requisitions",
   DUP_CLUSTER: "Near-identical to other applications in this batch",
   SHARED_BOILERPLATE: "Built largely from phrases shared verbatim across many applicants",
+  RECURRING_BODY: "This resume body was submitted by other applicants in earlier scans",
+  RECURRING_IDENTITY: "This body was submitted before under a different candidate name",
+  RECURRING_TEMPLATE: "This exact layout keeps arriving under different applicants",
+  RECURRING_PHRASES: "Built from phrases already seen from other applicants in earlier scans",
+  RECURRING_CONTACT: "This contact email/phone arrived before under a different name",
   PARSE_FAILED: "Document could not be parsed",
 };
 const LABEL_TEXT = { genuine: "Genuine effort", needs_review: "Needs review",
@@ -796,6 +811,24 @@ function renderResults(data) {
   $("#tiles").innerHTML = LABEL_ORDER.map(k =>
     `<div class="tile ${TILE_CLASS[k]}"><div class="n">${labels[k] ?? 0}</div>
      <div class="l">${LABEL_TEXT[k]}</div></div>`).join("");
+
+  // Population memory: what this batch was compared against beyond itself.
+  // A recruiter needs to know when a "genuine" label simply means "we have
+  // not seen this rig before yet", which is what a cold memory means.
+  const mem = data.stats.memory || {};
+  const memnote = $("#memnote");
+  memnote.hidden = !mem.enabled;
+  if (mem.enabled) {
+    const held = mem.documents_remembered || 0;
+    const hit = mem.documents_recognised || 0;
+    memnote.innerHTML = held
+      ? `Compared against <b>${held}</b> document${held === 1 ? "" : "s"}
+         remembered from earlier scans in your account —
+         <b>${hit}</b> matched something seen before.`
+      : `First scan on this account: nothing remembered yet. Cross-scan
+         signals need a history, so a farm that submits a couple of
+         applications per requisition only becomes visible over several scans.`;
+  }
 
   const skipped = data.stats.skipped || [];
   $("#skipped").hidden = skipped.length === 0;

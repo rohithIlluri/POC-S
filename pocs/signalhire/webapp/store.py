@@ -13,7 +13,8 @@ import re
 import secrets
 import sqlite3
 import threading
-from datetime import datetime, timezone
+import struct
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -40,6 +41,15 @@ TIERS: dict[str, dict[str, Any]] = {
 
 DEMO_MAX_FILES = 5
 
+# How long an account's population memory keeps a document. Long enough for a
+# farm's cadence to become visible, short enough that the index is not a
+# permanent record of everyone who ever applied.
+MEMORY_RETENTION_DAYS = int(os.environ.get("SIGNALHIRE_MEMORY_DAYS", "90"))
+
+# SQLite's default limit is 999 bound variables per statement; a document
+# contributes ~80 keys, so lookups are chunked well under it.
+_KEY_CHUNK = 400
+
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS users (
     id INTEGER PRIMARY KEY,
@@ -60,6 +70,32 @@ CREATE TABLE IF NOT EXISTS scans (
     created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS scans_user_month ON scans(user_id, created_at);
+-- Cross-scan population memory. One row per remembered document, holding
+-- one-way keys only: MinHash bands of the identity-masked body, the layout
+-- fingerprint, hashed contact handles and a hashed phrase sample. No text, no
+-- names, nothing a document could be reconstructed from — which is what makes
+-- remembering an applicant pool defensible in the first place.
+CREATE TABLE IF NOT EXISTS memory_docs (
+    id INTEGER PRIMARY KEY,
+    root_id INTEGER NOT NULL,
+    fingerprint TEXT NOT NULL,
+    scan_id TEXT NOT NULL DEFAULT '',
+    owner TEXT NOT NULL,
+    name_hash TEXT NOT NULL DEFAULT '',
+    identified INTEGER NOT NULL DEFAULT 0,
+    signature BLOB,
+    seen_at TEXT NOT NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS memory_docs_unique
+    ON memory_docs(root_id, fingerprint);
+CREATE TABLE IF NOT EXISTS memory_keys (
+    root_id INTEGER NOT NULL,
+    kind TEXT NOT NULL,
+    key TEXT NOT NULL,
+    doc_id INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS memory_keys_lookup
+    ON memory_keys(root_id, kind, key);
 CREATE TABLE IF NOT EXISTS requisitions (
     root_id INTEGER NOT NULL,
     req TEXT NOT NULL,
@@ -334,6 +370,24 @@ class Store:
             "custom_signatures": tier["custom_signatures"],
         }
 
+    # -- population memory -------------------------------------------------
+
+    def memory_for(self, root_id: int) -> "OrgMemory":
+        """The account's cross-scan population memory.
+
+        Scoped to the billing account, exactly like the monthly quota and the
+        requisition rollups: every seat in an agency contributes to and reads
+        from one memory, because the farm they are all being hit by is one
+        farm. It is *not* shared across accounts here — the cross-tenant
+        version described in §2.3 of the build plan needs a consent and
+        contract story this MVP does not have yet, and the keys were designed
+        to make it possible later without changing what is stored.
+
+        Never gated by tier. Memory is detection quality, and detection
+        quality is identical on every plan, including the free one.
+        """
+        return OrgMemory(self, root_id)
+
     def check_scan_allowed(self, user: dict | None, n_files: int) -> str | None:
         """None when allowed, otherwise a human-readable refusal."""
         ent = self.entitlements(user)
@@ -346,3 +400,152 @@ class Store:
                     "per month and this month's are used. Upgrade to keep "
                     "scanning.")
         return None
+
+
+class OrgMemory:
+    """`signalhire.memory.PopulationMemory` backed by the account's SQLite rows.
+
+    The engine never imports this class and this class never imports scoring:
+    the whole contract is two methods and a record of one-way keys.
+    """
+
+    def __init__(self, store: "Store", root_id: int) -> None:
+        self._store = store
+        self.root_id = root_id
+
+    # The engine's MemoryRecord is imported lazily so the store stays usable
+    # (and testable) without the engine loaded.
+    @staticmethod
+    def _record_cls():
+        from signalhire.memory import MemoryRecord
+        return MemoryRecord
+
+    @staticmethod
+    def _pack(signature) -> bytes:
+        values = [int(v) & 0xFFFFFFFFFFFFFFFF for v in signature]
+        return struct.pack(f"<{len(values)}Q", *values) if values else b""
+
+    @staticmethod
+    def _unpack(blob: bytes | None) -> tuple[int, ...]:
+        if not blob:
+            return ()
+        return struct.unpack(f"<{len(blob) // 8}Q", blob)
+
+    def _row_to_record(self, row):
+        return self._record_cls()(
+            scan_id=row["scan_id"],
+            owner=row["owner"],
+            seen_at=datetime.fromisoformat(row["seen_at"]),
+            name_hash=row["name_hash"] or "",
+            identified=bool(row["identified"]),
+            keys={},
+            signature=self._unpack(row["signature"]),
+        )
+
+    def lookup(self, kind: str, keys) -> dict:
+        keys = list(dict.fromkeys(keys))
+        if not keys:
+            return {}
+        out: dict[str, list] = {}
+        conn, lock = self._store._conn, self._store._lock
+        for start in range(0, len(keys), _KEY_CHUNK):
+            chunk = keys[start:start + _KEY_CHUNK]
+            marks = ",".join("?" * len(chunk))
+            with lock:
+                rows = conn.execute(
+                    f"SELECT k.key AS lookup_key, d.* FROM memory_keys k "
+                    f"JOIN memory_docs d ON d.id = k.doc_id "
+                    f"WHERE k.root_id = ? AND k.kind = ? "
+                    f"AND k.key IN ({marks})",
+                    (self.root_id, kind, *chunk)).fetchall()
+            for row in rows:
+                out.setdefault(row["lookup_key"], []).append(
+                    self._row_to_record(row))
+        return out
+
+    def counts(self, kind: str, keys, *, exclude_scan: str = "",
+               exclude_owner: str = "") -> dict:
+        """Distinct prior owners and scans per key, as one aggregate query.
+
+        This is the query that has to stay cheap as an account's history
+        grows. A phrase used by a farm that has sent five thousand
+        applications is held by five thousand rows; counting them in SQL costs
+        an index scan, fetching them costs five thousand objects — and the
+        bigger the farm, the worse the second one gets, which is precisely
+        backwards.
+        """
+        from signalhire.memory import KeyCounts
+
+        keys = list(dict.fromkeys(keys))
+        if not keys:
+            return {}
+        out: dict[str, KeyCounts] = {}
+        conn, lock = self._store._conn, self._store._lock
+        for start in range(0, len(keys), _KEY_CHUNK):
+            chunk = keys[start:start + _KEY_CHUNK]
+            marks = ",".join("?" * len(chunk))
+            with lock:
+                rows = conn.execute(
+                    f"SELECT k.key AS lookup_key, "
+                    f"       COUNT(DISTINCT d.owner) AS owners, "
+                    f"       COUNT(DISTINCT d.scan_id) AS scans "
+                    f"FROM memory_keys k JOIN memory_docs d ON d.id = k.doc_id "
+                    f"WHERE k.root_id = ? AND k.kind = ? "
+                    f"AND k.key IN ({marks}) "
+                    f"AND d.scan_id IS NOT ? AND d.owner IS NOT ? "
+                    f"GROUP BY k.key",
+                    (self.root_id, kind, *chunk,
+                     exclude_scan, exclude_owner)).fetchall()
+            for row in rows:
+                if row["owners"]:
+                    out[row["lookup_key"]] = KeyCounts(owners=row["owners"],
+                                                       scans=row["scans"])
+        return out
+
+    def remember(self, records) -> None:
+        if not records:
+            return
+        conn, lock = self._store._conn, self._store._lock
+        with lock:
+            for record in records:
+                cur = conn.execute(
+                    "INSERT OR IGNORE INTO memory_docs "
+                    "(root_id, fingerprint, scan_id, owner, name_hash, "
+                    " identified, signature, seen_at) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                    (self.root_id, record.dedupe_key(), record.scan_id,
+                     record.owner, record.name_hash, int(record.identified),
+                     self._pack(record.signature), record.seen_at.isoformat()))
+                if not cur.rowcount:
+                    # Already remembered under this owner: a re-uploaded batch
+                    # must not inflate the population it is judged against.
+                    continue
+                doc_id = cur.lastrowid
+                conn.executemany(
+                    "INSERT INTO memory_keys (root_id, kind, key, doc_id) "
+                    "VALUES (?, ?, ?, ?)",
+                    [(self.root_id, kind, key, doc_id)
+                     for kind, keys in record.keys.items() for key in keys])
+            self._prune(conn)
+            conn.commit()
+
+    def _prune(self, conn) -> None:
+        cutoff = (datetime.now(timezone.utc)
+                  - timedelta(days=MEMORY_RETENTION_DAYS)).isoformat()
+        stale = [r["id"] for r in conn.execute(
+            "SELECT id FROM memory_docs WHERE root_id = ? AND seen_at < ?",
+            (self.root_id, cutoff)).fetchall()]
+        for start in range(0, len(stale), _KEY_CHUNK):
+            chunk = stale[start:start + _KEY_CHUNK]
+            marks = ",".join("?" * len(chunk))
+            conn.execute(
+                f"DELETE FROM memory_keys WHERE doc_id IN ({marks})", chunk)
+            conn.execute(
+                f"DELETE FROM memory_docs WHERE id IN ({marks})", chunk)
+
+    def size(self) -> int:
+        with self._store._lock:
+            row = self._store._conn.execute(
+                "SELECT COUNT(*) AS n FROM memory_docs WHERE root_id = ?",
+                (self.root_id,)).fetchone()
+        return int(row["n"])
