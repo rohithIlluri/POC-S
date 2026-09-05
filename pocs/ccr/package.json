@@ -41,7 +41,7 @@
     "commander": "^15.0.0",
     "cross-spawn": "^7.0.6",
     "yaml": "^2.9.0",
-    "zod": "^4.4.3"
+    "zod": "^4.5.4"
   },
   "devDependencies": {
     "@types/cross-spawn": "^6.0.6",
