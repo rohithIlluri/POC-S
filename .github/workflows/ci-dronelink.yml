@@ -1,0 +1,27 @@
+name: dronelink CI
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - "pocs/dronelink/**"
+      - ".github/workflows/ci-dronelink.yml"
+  pull_request:
+    paths:
+      - "pocs/dronelink/**"
+      - ".github/workflows/ci-dronelink.yml"
+
+defaults:
+  run:
+    working-directory: pocs/dronelink
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - run: sudo apt-get update && sudo apt-get install -y ffmpeg
+      - run: python -m unittest discover -s tests -v

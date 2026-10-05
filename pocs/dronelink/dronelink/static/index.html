@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>dronelink</title>
+<style>
+  :root { --bg:#f4f5f7; --panel:#fff; --ink:#15181e; --mute:#6a7280; --line:#dfe2e8; --ok:#1f9d55; --warn:#c77d0a; --bad:#d23b3b; --acc:#2563eb; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#0f1115; --panel:#181b22; --ink:#e8eaee; --mute:#8b93a1; --line:#2a2f3a; --ok:#3ecf7a; --warn:#e8a33d; --bad:#ef6b6b; --acc:#6c9cff; } }
+  * { box-sizing:border-box; } [hidden] { display:none !important; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:15px/1.45 system-ui,sans-serif; }
+  header { display:flex; align-items:center; gap:12px; padding:14px 20px; border-bottom:1px solid var(--line); }
+  header h1 { font-size:16px; margin:0; letter-spacing:.02em; }
+  .pill { font-size:12px; padding:2px 10px; border-radius:99px; border:1px solid var(--line); color:var(--mute); }
+  .pill.ok { color:var(--ok); border-color:var(--ok); } .pill.bad { color:var(--bad); border-color:var(--bad); }
+  main { display:grid; grid-template-columns:minmax(0,2fr) minmax(280px,1fr); gap:16px; padding:16px 20px; max-width:1300px; margin:0 auto; }
+  @media (max-width:820px) { main { grid-template-columns:1fr; padding:12px 16px; } }
+  .card { background:var(--panel); border:1px solid var(--line); border-radius:12px; overflow:hidden; }
+  .card h2 { font-size:12px; text-transform:uppercase; letter-spacing:.08em; color:var(--mute); margin:0; padding:12px 16px 0; }
+  .cam { position:relative; aspect-ratio:16/9; background:#000; }
+  .cam img { width:100%; height:100%; object-fit:contain; display:block; }
+  .cam .off { position:absolute; inset:0; display:grid; place-items:center; color:#9aa3b2; font-size:14px; }
+  .hud { position:absolute; left:12px; bottom:10px; right:12px; display:flex; justify-content:space-between; color:#fff; font:12px ui-monospace,monospace; text-shadow:0 1px 3px #000; pointer-events:none; }
+  .body { padding:14px 16px 16px; }
+  .btns { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+  button { font:inherit; font-weight:600; padding:12px; border-radius:10px; border:1px solid var(--line); background:var(--panel); color:var(--ink); cursor:pointer; }
+  button.on { background:var(--ok); border-color:var(--ok); color:#fff; } button.off { background:var(--bad); border-color:var(--bad); color:#fff; }
+  button:disabled { opacity:.4; cursor:not-allowed; } button:focus-visible { outline:2px solid var(--acc); outline-offset:2px; }
+  dl { display:grid; grid-template-columns:auto 1fr; gap:6px 14px; margin:14px 0 0; } dt { color:var(--mute); } dd { margin:0; text-align:right; font-variant-numeric:tabular-nums; }
+  svg { width:100%; height:200px; display:block; } .sky { fill:var(--bg); } .ground { stroke:var(--line); }
+  #log { white-space:pre-wrap; height:110px; overflow:auto; font:12px ui-monospace,monospace; color:var(--mute); padding:0 16px 12px; margin-top:8px; }
+  .side { display:flex; flex-direction:column; gap:16px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>dronelink</h1><span id="kind" class="pill">…</span><span id="link" class="pill">connecting</span>
+</header>
+<main>
+  <section class="card" style="align-self:start">
+    <h2>Camera</h2>
+    <div class="cam" style="margin-top:10px">
+      <img id="video" alt="Live camera feed" hidden>
+      <div class="off" id="novideo">no video signal</div>
+      <div class="hud"><span id="hudL"></span><span id="hudR"></span></div>
+    </div>
+  </section>
+  <div class="side">
+    <section class="card">
+      <h2>Power</h2>
+      <div class="body">
+        <div class="btns"><button id="bOn" class="on">ON · take off</button><button id="bOff" class="off">OFF · land</button></div>
+        <dl>
+          <dt>Phase</dt><dd id="phase">–</dd>
+          <dt>Altitude</dt><dd id="alt">–</dd>
+          <dt>Battery</dt><dd id="bat">–</dd>
+          <dt>Video</dt><dd id="vid">–</dd>
+        </dl>
+        <div id="msg" style="color:var(--bad);min-height:1.4em;margin-top:8px;font-size:13px"></div>
+      </div>
+    </section>
+    <section class="card">
+      <h2>Side view</h2>
+      <svg viewBox="0 0 300 200" aria-label="Drone altitude">
+        <rect class="sky" width="300" height="200"/><line class="ground" x1="0" y1="180" x2="300" y2="180"/>
+        <g id="drone" transform="translate(150,160)">
+          <ellipse id="shadow" cx="0" cy="20" rx="22" ry="3" fill="var(--mute)" opacity=".35"/>
+          <rect x="-16" y="-4" width="32" height="8" rx="3" fill="var(--ink)"/>
+          <line x1="-26" y1="-8" x2="-8" y2="-4" stroke="var(--ink)" stroke-width="2"/><line x1="26" y1="-8" x2="8" y2="-4" stroke="var(--ink)" stroke-width="2"/>
+          <line id="r1" x1="-34" y1="-9" x2="-18" y2="-9" stroke="var(--acc)" stroke-width="2"/><line id="r2" x1="18" y1="-9" x2="34" y2="-9" stroke="var(--acc)" stroke-width="2"/>
+        </g>
+      </svg>
+      <div id="log"></div>
+    </section>
+  </div>
+</main>
+<script>
+const $ = id => document.getElementById(id);
+let last = null, spin = 0;
+function log(t) { const l = $('log'); l.textContent += new Date().toLocaleTimeString() + '  ' + t + '\n'; l.scrollTop = l.scrollHeight; }
+function render(s) {
+  $('kind').textContent = s.kind === 'sim' ? 'simulated drone' : 'real drone (bridge)';
+  const ok = s.link === 'ok'; $('link').textContent = ok ? 'link ok' : s.link; $('link').className = 'pill ' + (ok ? 'ok' : 'bad');
+  $('phase').textContent = s.phase; $('alt').textContent = s.altitude_m != null ? s.altitude_m.toFixed(1) + ' m' : '–';
+  $('bat').textContent = s.battery_pct != null ? s.battery_pct.toFixed(0) + ' %' : '–';
+  $('vid').textContent = s.video_live ? 'live (' + s.video_source + ')' : 'no signal';
+  $('bOn').disabled = !ok || s.powered; $('bOff').disabled = !ok || !s.powered;
+  $('hudL').textContent = s.phase + '  ALT ' + (s.altitude_m ?? 0).toFixed(1) + ' m'; $('hudR').textContent = 'BAT ' + (s.battery_pct ?? 0).toFixed(0) + '%';
+  $('video').hidden = !s.video_live; $('novideo').hidden = s.video_live;
+  if (s.video_live && !$('video').src) $('video').src = '/video';
+  const y = 160 - Math.min(s.altitude_m || 0, 10) * 12; $('drone').setAttribute('transform', `translate(150,${y})`);
+  $('shadow').setAttribute('cy', 20 + (160 - y)); $('shadow').setAttribute('opacity', .35 - (160 - y) / 500);
+  if (last && last.phase !== s.phase) log(s.phase);
+  last = s;
+}
+(function tick() { if (last && last.altitude_m > 0) { spin += 1; $('r1').setAttribute('stroke-dasharray', spin % 2 ? '4 2' : '2 4'); $('r2').setAttribute('stroke-dasharray', spin % 2 ? '2 4' : '4 2'); } setTimeout(tick, 80); })();
+async function power(state) {
+  if (last && last.kind === 'bridge' && !confirm(`REAL AIRCRAFT: send ${state === 'on' ? 'TAKEOFF' : 'LAND'}? Check the area is clear.`)) return;
+  $('msg').textContent = '';
+  const r = await fetch('/api/power', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({state}) });
+  const j = await r.json(); if (!r.ok) $('msg').textContent = j.error; else render(j);
+}
+$('bOn').onclick = () => power('on'); $('bOff').onclick = () => power('off');
+const es = new EventSource('/events'); es.onmessage = e => render(JSON.parse(e.data));
+es.onerror = () => { $('link').textContent = 'server unreachable'; $('link').className = 'pill bad'; };
+</script>
+</body>
+</html>
