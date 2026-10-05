@@ -86,5 +86,49 @@ class Sim(unittest.TestCase):
         self.assertLessEqual(b.telemetry().speed, 1.0 + 1e-6)
 
 
+class GadgetPower(unittest.TestCase):
+    def _drone(self):
+        from mindflight.power import DronePower
+        return DronePower()
+
+    def _run(self, d, n):
+        for _ in range(n):
+            d.tick()
+
+    def test_on_takes_off_and_off_lands(self):
+        from mindflight.gadget import handle
+        d = self._drone()
+        r = handle("drone.power", {"state": "on"}, drone=d)
+        self.assertTrue(r["ok"])
+        self._run(d, 200)
+        st = handle("drone.status", {}, drone=d)["payload"]
+        self.assertEqual((st["power"], st["phase"]), ("on", "FLIGHT"))
+        self.assertAlmostEqual(st["altitude_m"], 3.0, delta=0.2)
+        handle("drone.power", {"state": "off"}, drone=d)
+        self._run(d, 200)
+        st = handle("drone.status", {}, drone=d)["payload"]
+        self.assertEqual((st["power"], st["phase"], st["altitude_m"]), ("off", "LANDED", 0.0))
+
+    def test_can_power_on_again_after_landing(self):
+        from mindflight.gadget import handle
+        d = self._drone()
+        handle("drone.power", {"state": "on"}, drone=d)
+        self._run(d, 200)
+        handle("drone.power", {"state": "off"}, drone=d)
+        self._run(d, 200)
+        handle("drone.power", {"state": "on"}, drone=d)
+        self._run(d, 200)
+        self.assertEqual(handle("drone.status", {}, drone=d)["payload"]["phase"], "FLIGHT")
+
+    def test_bad_input_and_unknown_command(self):
+        from mindflight.gadget import COMMAND_SPECS, handle
+        d = self._drone()
+        self.assertFalse(handle("drone.power", {"state": "sideways"}, drone=d)["ok"])
+        self.assertFalse(handle("drone.power", {}, drone=d)["ok"])
+        self.assertIsNone(handle("system.run", {}, drone=d))
+        self.assertEqual(set(COMMAND_SPECS), {"drone.power", "drone.status"})
+        self.assertTrue(handle("drone.status", {}, drone=d)["payload"]["simulated"])
+
+
 if __name__ == "__main__":
     unittest.main()

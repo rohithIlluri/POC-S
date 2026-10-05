@@ -24,6 +24,25 @@ def _map(trace, xi, yi, w=41, h=17):
     return "\n".join("".join(r) for r in grid)
 
 
+def _gadget(a):
+    import json
+    import time
+
+    from .gadget import _drone, handle
+    params = dict(kv.split("=", 1) for kv in a.params)
+    print(json.dumps(handle(a.command, params)))
+    time.sleep(0.5)
+    if params.get("state") == "on":  # one-shot CLI: show it actually flies, then land
+        while _drone.status()["altitude_m"] < 2.9:
+            time.sleep(0.2)
+        print(json.dumps(handle("drone.status", {})))
+        print(json.dumps(handle("drone.power", {"state": "off"})))
+        while _drone.status()["phase"] != "LANDED":
+            time.sleep(0.2)
+        print(json.dumps(handle("drone.status", {})))
+    return 0
+
+
 def _backend(a):
     return MavlinkBackend(a.connect) if a.backend == "mavlink" else SimBackend()
 
@@ -41,7 +60,12 @@ def main(argv=None):
     m.add_argument("--seconds", type=float, default=300)
     g = sub.add_parser("agent", help='run a text plan, e.g. "takeoff, forward 5, turn right, land"')
     g.add_argument("plan")
+    gs = sub.add_parser("gadget", help="emulate Muse invoking a gadget command, e.g. drone.power state=on")
+    gs.add_argument("command")
+    gs.add_argument("params", nargs="*", help="key=value")
     a = p.parse_args(argv)
+    if a.cmd == "gadget":
+        return _gadget(a)
     log = lambda r: print("  ".join(str(v) for v in r))  # noqa: E731
     rt = a.backend == "mavlink" or getattr(a, "realtime", False)
     if a.cmd == "agent":
