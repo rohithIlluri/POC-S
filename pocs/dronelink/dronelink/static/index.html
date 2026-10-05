@@ -81,14 +81,15 @@ const $ = id => document.getElementById(id);
 let last = null, spin = 0;
 function log(t) { const l = $('log'); l.textContent += new Date().toLocaleTimeString() + '  ' + t + '\n'; l.scrollTop = l.scrollHeight; }
 function render(s) {
-  $('kind').textContent = s.kind === 'sim' ? 'simulated drone' : 'real drone (bridge)';
+  $('kind').textContent = {sim:'simulated drone', viewer:'camera only', bridge:'real drone (bridge)'}[s.kind] || s.kind;
   const ok = s.link === 'ok'; $('link').textContent = ok ? 'link ok' : s.link; $('link').className = 'pill ' + (ok ? 'ok' : 'bad');
   $('phase').textContent = s.phase; $('alt').textContent = s.altitude_m != null ? s.altitude_m.toFixed(1) + ' m' : '–';
   $('bat').textContent = s.battery_pct != null ? s.battery_pct.toFixed(0) + ' %' : '–';
   $('vid').textContent = s.video_live ? 'live (' + s.video_source + ')' : 'no signal';
   $('gate').textContent = s.remote_enabled == null ? 'n/a' : s.remote_enabled ? 'flight enabled' : 'DISABLED on phone';
   $('gps').textContent = s.gps_ok == null ? 'n/a' : s.gps_ok ? 'lock' : 'NO LOCK';
-  $('bOn').disabled = !ok || s.powered; $('bOff').disabled = !ok || !s.powered;
+  const ctl = s.controllable !== false;
+  $('bOn').disabled = !ok || !ctl || s.powered; $('bOff').disabled = !ok || !ctl || !s.powered;
   $('hudL').textContent = s.phase + '  ALT ' + (s.altitude_m ?? 0).toFixed(1) + ' m'; $('hudR').textContent = 'BAT ' + (s.battery_pct ?? 0).toFixed(0) + '%';
   $('video').hidden = !s.video_live; $('novideo').hidden = s.video_live;
   if (s.video_live && !$('video').src) $('video').src = '/video';

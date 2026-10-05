@@ -16,6 +16,14 @@ python3 -m unittest discover -s tests -v
 ```
 Click **ON** to take off to 3 m, **OFF** to land. `--video none` disables the camera.
 
+## iPhone + Mac only? Camera yes, flight control no
+DJI's Mobile SDK V5 (the only SDK for the Mini 3) is Android-only, so an iPhone can't run the bridge. With an iPhone you get the **live camera in the web UI** via DJI Fly's RTMP, with no status or ON/OFF. Real ON/OFF needs an Android phone (a cheap used arm64 Android is enough).
+```sh
+brew install ffmpeg                       # on the Mac
+python3 -m dronelink --viewer --video rtmp
+```
+Then point DJI Fly on the iPhone at `rtmp://<mac-ip>:1935/live/dji` (same Wi-Fi). Use the simulated drone (no flags) to try the ON/OFF UI meanwhile.
+
 ## Your aircraft: DJI Mini 3 (non-Pro)
 Findings from DJI's docs and developer reports (not yet tried on a real Mini 3):
 - **Controller:** third-party control needs the basic **RC-N1 + an Android phone**. The DJI RC with built-in screen is not on the Mini 3's supported list for the SDK. Mobile SDK V5 lists Mini 3 + RC-N1 as supported from **MSDK 5.11.0**.

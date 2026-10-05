@@ -129,6 +129,17 @@ class Bridge(unittest.TestCase):
         self.assertTrue(s["link"].startswith("down"))
 
 
+class Viewer(unittest.TestCase):
+    def test_camera_only_refuses_power(self):
+        from dronelink.drones import ViewerOnly
+        srv, port = serve(ViewerOnly())
+        self.assertEqual(req(port, "GET", "/api/status")[1]["controllable"], False)
+        s, j = req(port, "POST", "/api/power", {"state": "on"})
+        self.assertEqual((s, "camera-only" in j["error"]), (403, True))
+        srv.shutdown()
+        srv.server_close()
+
+
 class Video(unittest.TestCase):
     def test_split_jpegs_handles_partial_frames(self):
         a, b = b"\xff\xd8AAA\xff\xd9", b"\xff\xd8BB\xff\xd9"

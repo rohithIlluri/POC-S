@@ -54,6 +54,21 @@ class SimDrone:
         self._stop = True
 
 
+class ViewerOnly:
+    """Camera-only: no flight link (e.g. iPhone + DJI Fly, which has no third-party SDK)."""
+
+    kind = "viewer"
+
+    def status(self):
+        return {"kind": self.kind, "phase": "CAMERA ONLY", "powered": False, "controllable": False, "link": "ok"}
+
+    def power(self, state):
+        raise PermissionError("camera-only mode: there is no flight link to command")
+
+    def close(self):
+        pass
+
+
 class BridgeDrone:
     """Talks to a phone-side bridge app (DJI Mobile SDK V5) over HTTP/JSON:
         GET  {url}/status           -> {"phase","altitude_m","battery_pct",...}
