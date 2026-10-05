@@ -3,6 +3,7 @@
 import json
 import threading
 import time
+import urllib.error
 import urllib.request
 
 CRUISE_ALT = 3.0
@@ -57,17 +58,30 @@ class BridgeDrone:
     """Talks to a phone-side bridge app (DJI Mobile SDK V5) over HTTP/JSON:
         GET  {url}/status           -> {"phase","altitude_m","battery_pct",...}
         POST {url}/power {"state"}  -> same as status
-    The bridge app is NOT part of this repo yet. `allow_flight` must be set by the
+    Every request carries X-Bridge-Token (the PIN shown on the phone); the bridge rejects others with 401.
+    Optional status fields the UI understands: remote_enabled, gps_ok. The bridge also
+    enforces its own on-device gate (takeoff refused with 403 unless enabled on the phone;
+    landing is always allowed). Reference implementation: bridge-android/; stand-in: mockbridge.py. `allow_flight` must be set by the
     operator; without it only status is readable."""
 
     kind = "bridge"
 
-    def __init__(self, url, allow_flight=False, timeout=3.0):
-        self.url, self.allow_flight, self.timeout = url.rstrip("/"), allow_flight, timeout
+    def __init__(self, url, allow_flight=False, timeout=3.0, token=None):
+        self.url, self.allow_flight, self.timeout, self.token = url.rstrip("/"), allow_flight, timeout, token
 
     def _call(self, path, body=None):
+        try:
+            return self._raw(path, body)
+        except urllib.error.HTTPError as e:  # the phone refused: surface its reason
+            try:
+                msg = json.load(e).get("error", e.reason)
+            except ValueError:
+                msg = e.reason
+            raise PermissionError(f"bridge refused: {msg}") from None
+
+    def _raw(self, path, body=None):
         req = urllib.request.Request(self.url + path, data=None if body is None else json.dumps(body).encode(),
-                                     headers={"Content-Type": "application/json"})
+                                     headers={"Content-Type": "application/json", **({"X-Bridge-Token": self.token} if self.token else {})})
         with urllib.request.urlopen(req, timeout=self.timeout) as r:
             return json.load(r)
 
@@ -76,7 +90,7 @@ class BridgeDrone:
             s = self._call("/status")
             s.update(kind=self.kind, link="ok", powered=s.get("phase") in ("TAKING_OFF", "HOVERING"))
             return s
-        except OSError as e:
+        except (OSError, PermissionError) as e:
             return {"kind": self.kind, "phase": "UNKNOWN", "powered": False, "link": f"down: {e}"}
 
     def power(self, state):

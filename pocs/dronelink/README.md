@@ -30,15 +30,17 @@ Findings from DJI's docs and developer reports (not yet tried on a real Mini 3):
 
 **Later (with the bridge):** the bridge app pushes the same RTMP to `--video rtmp`, so nothing changes on the page.
 
-## Controlling the real aircraft (bridge app: not built yet)
-The SDK runs inside an Android app connected to the RC-N1, so real takeoff/land needs a small **bridge app** exposing:
+## Controlling the real aircraft
+The Android bridge app lives in [`bridge-android/`](bridge-android) (build, connect and safety checklist in its README). It speaks:
 ```
-GET  /status            -> {"phase": "LANDED|TAKING_OFF|HOVERING|LANDING", "altitude_m": 0, "battery_pct": 87}
+GET  /status   -> {"phase": "LANDED|TAKING_OFF|HOVERING|LANDING", "altitude_m": 0, "battery_pct": 87, "gps_ok": true, "remote_enabled": true}
 POST /power {"state":"on"|"off"}  -> same as status
 ```
-`BridgeDrone` in `dronelink/drones.py` already speaks this (tested against a fake bridge). Start with `--bridge http://<phone>:<port> --allow-flight`. Without `--allow-flight` the UI can read status but every flight command is refused, and the UI asks for confirmation before sending to a real aircraft. Building the bridge needs a DJI developer account + app key, Android Studio and MSDK ≥ 5.11; it is the next milestone, followed by movement controls.
+with an `X-Bridge-Token` PIN on every request. Start the server with `--bridge http://<phone>:8787 --bridge-token <PIN> --allow-flight`. Without `--allow-flight` the UI can read status but refuses every flight command; the UI confirms before sending to a real aircraft; the phone has its own on-device takeoff switch.
+
+**Rehearse without hardware:** `python3 -m dronelink.mockbridge --port 8790 --token 123456 --arm-remote --rtmp rtmp://127.0.0.1:1935/live/dji` plus `python3 -m dronelink --video rtmp --bridge http://127.0.0.1:8790 --bridge-token 123456 --allow-flight` runs the whole chain with a simulated aircraft and a real RTMP stream.
 
 ## Safety and limits
 - Real flight: only in an open area you control, line of sight, props-clear, and within local drone regulations. Keep the DJI controller in hand; its RTH/land buttons override anything here.
 - The server binds to `127.0.0.1` and has **no authentication**; don't expose it with `--host 0.0.0.0` on an untrusted network. State-changing calls reject cross-origin requests and non-JSON bodies.
-- Verified here: the simulator, HTTP API, MJPEG pipeline (ffmpeg test pattern), bridge protocol against a fake, and the UI in headless Chromium. **Not** verified: a real DJI Fly RTMP stream or a real aircraft.
+- Verified here: simulator, HTTP API, RTMP→MJPEG (a real ffmpeg RTMP push), bridge protocol with token and phone-side gates (Python mock *and* the Kotlin `BridgeServer` compiled on a JVM), and the full UI in headless Chromium. **Not** verified: the DJI SDK parts of the Android app (`DjiAdapter.kt`, never compiled), the phone's own RTMP push, DJI Fly's RTMP, or any real aircraft.

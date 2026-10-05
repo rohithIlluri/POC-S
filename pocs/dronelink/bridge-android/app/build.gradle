@@ -1,0 +1,36 @@
+plugins {
+    id 'com.android.application'
+    id 'org.jetbrains.kotlin.android'
+}
+
+def msdk = "5.18.0"   // Mini 3 + RC-N1 need >= 5.11.0
+
+android {
+    namespace 'dev.dronelink.bridge'
+    compileSdk 34
+    defaultConfig {
+        applicationId "dev.dronelink.bridge"   // must match the package name registered with your DJI app key
+        minSdk 24
+        targetSdk 34
+        versionCode 1
+        versionName "0.1.0"
+        manifestPlaceholders = [DJI_API_KEY: project.findProperty("DJI_API_KEY") ?: ""]
+        ndk { abiFilters 'arm64-v8a' }          // DJI ships arm64 only
+    }
+    packagingOptions {
+        jniLibs {
+            useLegacyPackaging true             // required by the DJI native libs
+            keepDebugSymbols += ["**/*.so"]     // equivalent of the sample's per-lib doNotStrip list
+        }
+    }
+    compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
+    kotlinOptions { jvmTarget = "17" }
+}
+
+dependencies {
+    implementation "com.dji:dji-sdk-v5-aircraft:$msdk"
+    implementation "com.dji:dji-sdk-v5-networkImp:$msdk"
+    compileOnly "com.dji:dji-sdk-v5-aircraft-provided:$msdk"
+    implementation "org.nanohttpd:nanohttpd:2.3.1"
+    implementation "androidx.appcompat:appcompat:1.7.0"
+}

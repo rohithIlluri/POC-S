@@ -1,0 +1,9 @@
+plugins { id 'org.jetbrains.kotlin.jvm' version '1.9.24'; id 'application' }
+repositories { mavenCentral() }
+dependencies {
+    implementation "org.nanohttpd:nanohttpd:2.3.1"
+    implementation "org.json:json:20240303"
+}
+sourceSets.main.kotlin.srcDirs = [".", "../app/src/main/java/dev/dronelink/bridge"]
+sourceSets.main.kotlin.exclude("**/DjiAdapter.kt", "**/MainActivity.kt", "**/BridgeApp.kt")
+application { mainClass = "dev.dronelink.bridge.HarnessKt" }

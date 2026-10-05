@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- UNVERIFIED values: copy this file from DJI's sample
+     (Mobile-SDK-Android-V5 > SampleCode-V5/android-sdk-v5-sample/src/main/res/xml/accessory_filter.xml)
+     if the app does not auto-launch when the RC-N1 is plugged in. -->
+<resources>
+    <usb-accessory manufacturer="DJI" model="com.dji.logic.accessory" version="1.0" />
+</resources>

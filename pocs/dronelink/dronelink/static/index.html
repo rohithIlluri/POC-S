@@ -55,6 +55,8 @@
           <dt>Altitude</dt><dd id="alt">–</dd>
           <dt>Battery</dt><dd id="bat">–</dd>
           <dt>Video</dt><dd id="vid">–</dd>
+          <dt>Phone gate</dt><dd id="gate">–</dd>
+          <dt>GPS</dt><dd id="gps">–</dd>
         </dl>
         <div id="msg" style="color:var(--bad);min-height:1.4em;margin-top:8px;font-size:13px"></div>
       </div>
@@ -84,6 +86,8 @@ function render(s) {
   $('phase').textContent = s.phase; $('alt').textContent = s.altitude_m != null ? s.altitude_m.toFixed(1) + ' m' : '–';
   $('bat').textContent = s.battery_pct != null ? s.battery_pct.toFixed(0) + ' %' : '–';
   $('vid').textContent = s.video_live ? 'live (' + s.video_source + ')' : 'no signal';
+  $('gate').textContent = s.remote_enabled == null ? 'n/a' : s.remote_enabled ? 'flight enabled' : 'DISABLED on phone';
+  $('gps').textContent = s.gps_ok == null ? 'n/a' : s.gps_ok ? 'lock' : 'NO LOCK';
   $('bOn').disabled = !ok || s.powered; $('bOff').disabled = !ok || !s.powered;
   $('hudL').textContent = s.phase + '  ALT ' + (s.altitude_m ?? 0).toFixed(1) + ' m'; $('hudR').textContent = 'BAT ' + (s.battery_pct ?? 0).toFixed(0) + '%';
   $('video').hidden = !s.video_live; $('novideo').hidden = s.video_live;
