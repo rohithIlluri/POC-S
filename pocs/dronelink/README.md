@@ -16,19 +16,27 @@ python3 -m unittest discover -s tests -v
 ```
 Click **ON** to take off to 3 m, **OFF** to land. `--video none` disables the camera.
 
-## Getting your Mini's camera into the page
-DJI Fly can push the live view to a custom RTMP server (Mini 3 / 3 Pro / 4 Pro, DJI Fly ≥ 1.4.12, phone on the controller):
-1. `python3 -m dronelink --video rtmp` (listens on `rtmp://0.0.0.0:1935/live/dji`).
-2. In DJI Fly: Settings > Transmission > Live Streaming Platforms > RTMP, enter `rtmp://<your-computer-ip>:1935/live/dji`, start the stream.
-3. The feed appears in the Camera panel. Expect a few seconds of latency (RTMP), so this is for viewing, not piloting by camera. Older Minis without RTMP can use any ffmpeg input: `--video rtsp://...` or a capture device.
+## Your aircraft: DJI Mini 3 (non-Pro)
+Findings from DJI's docs and developer reports (not yet tried on a real Mini 3):
+- **Controller:** third-party control needs the basic **RC-N1 + an Android phone**. The DJI RC with built-in screen is not on the Mini 3's supported list for the SDK. Mobile SDK V5 lists Mini 3 + RC-N1 as supported from **MSDK 5.11.0**.
+- **ON/OFF maps to SDK calls:** takeoff = `FlightControllerKey.KeyStartTakeoff`, land = `KeyStartAutoLanding`. Movement later = `VirtualStickManager` (pitch/roll/yaw/throttle). No waypoint missions on the Mini 3.
+- **One app owns the aircraft link.** Once the bridge app is connected through the SDK, DJI Fly can't be too, so the camera must come from the bridge app (MSDK has its own RTMP live-stream manager; confirm its V5 API when building) rather than from DJI Fly.
 
-## Controlling the real aircraft (not built yet)
-DJI only allows third-party control through its **Mobile SDK V5** (Mini 3, Mini 3 Pro, Mini 4 Pro; older Minis use the legacy V4 SDK). That SDK runs inside an Android app connected to the controller, so real takeoff/land needs a small **bridge app** exposing:
+## Getting the camera into the page
+**Today (view only, before the bridge exists):** use DJI Fly's built-in RTMP (Mini 3 + RC-N1, DJI Fly ≥ 1.4.12):
+1. `python3 -m dronelink --video rtmp` (listens on `rtmp://0.0.0.0:1935/live/dji`).
+2. In DJI Fly: Go Fly > ⋯ > Transmission > Live Streaming Platforms > RTMP; enter `rtmp://<your-computer-ip>:1935/live/dji` (address/stream-key with a slash between), start streaming.
+3. Expect a few seconds of latency, so it's for viewing, not piloting by camera. The phone and computer must be on the same network.
+
+**Later (with the bridge):** the bridge app pushes the same RTMP to `--video rtmp`, so nothing changes on the page.
+
+## Controlling the real aircraft (bridge app: not built yet)
+The SDK runs inside an Android app connected to the RC-N1, so real takeoff/land needs a small **bridge app** exposing:
 ```
 GET  /status            -> {"phase": "LANDED|TAKING_OFF|HOVERING|LANDING", "altitude_m": 0, "battery_pct": 87}
 POST /power {"state":"on"|"off"}  -> same as status
 ```
-`BridgeDrone` in `dronelink/drones.py` already speaks this (tested against a fake bridge). Start with `--bridge http://<phone>:<port> --allow-flight`. Without `--allow-flight` the UI can read status but every flight command is refused. The UI asks for confirmation before sending to a real aircraft. Building the bridge needs a DJI developer account/app key and an Android toolchain; that is the next milestone, along with movement controls.
+`BridgeDrone` in `dronelink/drones.py` already speaks this (tested against a fake bridge). Start with `--bridge http://<phone>:<port> --allow-flight`. Without `--allow-flight` the UI can read status but every flight command is refused, and the UI asks for confirmation before sending to a real aircraft. Building the bridge needs a DJI developer account + app key, Android Studio and MSDK ≥ 5.11; it is the next milestone, followed by movement controls.
 
 ## Safety and limits
 - Real flight: only in an open area you control, line of sight, props-clear, and within local drone regulations. Keep the DJI controller in hand; its RTH/land buttons override anything here.
