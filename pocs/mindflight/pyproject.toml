@@ -1,0 +1,10 @@
+[project]
+name = "mindflight"
+version = "0.1.0"
+description = "Muse EEG -> intent -> safety gate -> simulated drone (POC)"
+requires-python = ">=3.10"
+dependencies = []
+
+[project.optional-dependencies]
+muse = ["pylsl", "muselsl"]
+mavlink = ["pymavlink"]
