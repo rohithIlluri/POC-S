@@ -287,3 +287,23 @@ func TestPropsRoundsAndVotes(t *testing.T) {
 		}
 	})
 }
+
+// TestEdgeOrderIsByteOrder pins that edges accept ids ordered the way
+// store.Pair orders them (bytes), whatever the database's collation: under
+// en_US, "usr_U…" sorts after "usr_t…".
+func TestEdgeOrderIsByteOrder(t *testing.T) {
+	st := storetest.New(t)
+	seedUsers(t, st, "usr_Uppercase", "usr_tlower")
+	a, b := store.Pair("usr_tlower", "usr_Uppercase")
+	if a != "usr_Uppercase" {
+		t.Fatalf("Pair is not byte order: %s, %s", a, b)
+	}
+	tx(t, st, func(x store.Tx) {
+		x.PutEdge(store.Edge{UserA: a, UserB: b, CreatedAt: t0, FirstTapID: "tap_1", LastTapAt: t0, TapCount: 1, Status: store.EdgeActive})
+	})
+	tx(t, st, func(x store.Tx) {
+		if _, ok := x.Edge("usr_tlower", "usr_Uppercase"); !ok {
+			t.Error("edge not found")
+		}
+	})
+}

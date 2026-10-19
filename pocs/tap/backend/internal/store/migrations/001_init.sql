@@ -63,9 +63,12 @@ CREATE INDEX taps_near ON taps (geohash6, created_at);
 CREATE INDEX taps_device_a ON taps (device_a, created_at);
 CREATE INDEX taps_device_b ON taps (device_b, created_at);
 
+-- user_a < user_b in byte order, as Go's store.Pair compares them. COLLATE
+-- "C" keeps the check and key independent of the server's locale (under
+-- en_US, 'usr_U…' sorts after 'usr_t…' and the check would reject a pair).
 CREATE TABLE edges (
-    user_a       text NOT NULL REFERENCES users ON DELETE CASCADE,
-    user_b       text NOT NULL REFERENCES users ON DELETE CASCADE,
+    user_a       text COLLATE "C" NOT NULL REFERENCES users ON DELETE CASCADE,
+    user_b       text COLLATE "C" NOT NULL REFERENCES users ON DELETE CASCADE,
     created_at   timestamptz NOT NULL,
     first_tap_id text NOT NULL,
     last_tap_at  timestamptz NOT NULL,
