@@ -78,9 +78,13 @@ type Server struct {
 	st    store.Store
 	mux   *http.ServeMux
 	mu    sync.Mutex
-	wait  map[string]chan matchResult // pair key → the first claimant's waiter
+	wait  map[string]map[string]chan matchResult // pair key → device → waiting claim
 	otps  map[string]otpEntry
 	keyID string // receipt public key, base64url
+
+	tapCreated chan string    // committed tap ids for the event worker
+	eventsIdle sync.WaitGroup // taps queued but not yet processed
+	workerDone chan struct{}
 }
 
 func New(cfg Config, st store.Store) (*Server, error) {
@@ -94,7 +98,10 @@ func New(cfg Config, st store.Store) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
-	s := &Server{cfg: cfg, st: st, mux: http.NewServeMux(), wait: map[string]chan matchResult{}, otps: map[string]otpEntry{}, keyID: pub}
+	s := &Server{cfg: cfg, st: st, mux: http.NewServeMux(), wait: map[string]map[string]chan matchResult{}, otps: map[string]otpEntry{}, keyID: pub}
+	s.tapCreated = make(chan string, 1<<16)
+	s.workerDone = make(chan struct{})
+	go s.runEventWorker()
 	s.routes()
 	return s, nil
 }
@@ -158,6 +165,7 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 func writeErr(w http.ResponseWriter, err error) {
 	var ae *apiError
 	if !errors.As(err, &ae) {
+		log.Printf("internal error: %v", err)
 		ae = fail(500, "internal", "internal error")
 	}
 	writeJSON(w, ae.status, ae)
@@ -184,10 +192,13 @@ func (s *Server) authed(h authedHandler) http.HandlerFunc {
 			tok = r.URL.Query().Get("token")
 		}
 		var userID string
-		_ = s.st.Tx(func(tx store.Tx) error {
+		if err := s.st.Tx(func(tx store.Tx) error {
 			userID, _ = tx.SessionUser(tok, s.cfg.Now())
 			return nil
-		})
+		}); err != nil {
+			writeErr(w, err)
+			return
+		}
 		if tok == "" || userID == "" {
 			writeErr(w, fail(401, "unauthenticated", "sign in first"))
 			return

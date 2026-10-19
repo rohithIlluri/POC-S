@@ -191,7 +191,6 @@ type Match struct {
 	Status    string           `json:"status"` // matched | expired
 	Receipt   protocol.Receipt `json:"receipt"`
 	Signature string           `json:"signature"`
-	EventID   string           `json:"event_id"`
 	TapCount  int              `json:"tap_count"`
 	Peer      Peer             `json:"peer"`
 }
@@ -256,4 +255,33 @@ func checkSessionKeys(a, b *TapSession) error {
 		return errors.New("session keys differ")
 	}
 	return nil
+}
+
+type Event struct {
+	ID        string `json:"id"`
+	Name      string `json:"name"`
+	Named     bool   `json:"named"`
+	TapCount  int    `json:"tap_count"`
+	PeopleMet int    `json:"people_met"`
+}
+
+// WaitEvent polls until the phone belongs to an event. Events are assigned
+// asynchronously after a tap commits, so they appear a moment later.
+func (p *Phone) WaitEvent(timeout time.Duration) (Event, error) {
+	deadline := time.Now().Add(timeout)
+	for {
+		var out struct {
+			Events []Event `json:"events"`
+		}
+		if err := p.Do("GET", "/v1/events", nil, &out); err != nil {
+			return Event{}, err
+		}
+		if len(out.Events) > 0 {
+			return out.Events[0], nil
+		}
+		if time.Now().After(deadline) {
+			return Event{}, errors.New("no event formed")
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
 }

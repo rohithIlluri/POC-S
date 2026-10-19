@@ -124,7 +124,6 @@ func Scenarios(burstPairs int) []Scenario {
 			if err != nil {
 				return "", err
 			}
-			var evID string
 			for _, guest := range ps[1:] {
 				ra, _, err := Handshake(ps[0], guest, DefaultMeasurement(), DefaultMeasurement())
 				if err != nil {
@@ -133,14 +132,17 @@ func Scenarios(burstPairs int) []Scenario {
 				if err := matched(ra); err != nil {
 					return "", err
 				}
-				evID = ra.Match.EventID
 			}
-			if evID == "" {
-				return "", fmt.Errorf("5 taps did not form an event")
-			}
-			if err := ps[0].Do("PUT", "/v1/events/"+evID, map[string]string{"name": "STL Go Meetup"}, nil); err != nil {
+			ev, err := ps[0].WaitEvent(5 * time.Second)
+			if err != nil {
 				return "", err
 			}
+			if !ev.Named {
+				if err := ps[0].Do("PUT", "/v1/events/"+ev.ID, map[string]string{"name": "STL Go Meetup"}, nil); err != nil {
+					return "", err
+				}
+			}
+			evID := ev.ID
 			var recap struct {
 				Headline string `json:"headline"`
 			}

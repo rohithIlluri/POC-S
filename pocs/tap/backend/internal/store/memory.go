@@ -277,4 +277,11 @@ func (t *memTx) ActiveEventNear(g6 string, since time.Time) (Event, bool) {
 	return Event{}, false
 }
 
-func (t *memTx) PutEvent(e Event) { t.events[e.ID] = e }
+// PutEvent stores e; ids of deleted accounts are dropped from Members.
+func (t *memTx) PutEvent(e Event) {
+	e.Members = slices.DeleteFunc(slices.Clone(e.Members), func(id string) bool {
+		_, ok := t.users[id]
+		return !ok
+	})
+	t.events[e.ID] = e
+}

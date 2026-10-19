@@ -60,7 +60,7 @@ func (s *Server) handlePeople(w http.ResponseWriter, _ *http.Request, userID str
 	var groups []*group
 	byKey := map[string]*group{}
 	places := []string{}
-	_ = s.st.Tx(func(tx store.Tx) error {
+	if err := s.st.Tx(func(tx store.Tx) error {
 		for _, e := range tx.EdgesOf(userID) {
 			if e.Status != store.EdgeActive {
 				continue
@@ -96,7 +96,10 @@ func (s *Server) handlePeople(w http.ResponseWriter, _ *http.Request, userID str
 			g.People = append(g.People, p)
 		}
 		return nil
-	})
+	}); err != nil {
+		writeErr(w, err)
+		return
+	}
 	total := 0
 	for _, g := range groups {
 		total += len(g.People)
@@ -289,12 +292,15 @@ func view(tx store.Tx, ev store.Event, userID string) eventView {
 
 func (s *Server) handleEvents(w http.ResponseWriter, _ *http.Request, userID string) {
 	out := []eventView{}
-	_ = s.st.Tx(func(tx store.Tx) error {
+	if err := s.st.Tx(func(tx store.Tx) error {
 		for _, ev := range tx.EventsOf(userID) {
 			out = append(out, view(tx, ev, userID))
 		}
 		return nil
-	})
+	}); err != nil {
+		writeErr(w, err)
+		return
+	}
 	writeJSON(w, 200, map[string]any{"events": out})
 }
 

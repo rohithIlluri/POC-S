@@ -12,7 +12,7 @@ import (
 	"time"
 
 	"github.com/rohithIlluri/POC-S/pocs/tap/backend/internal/server"
-	"github.com/rohithIlluri/POC-S/pocs/tap/backend/internal/store"
+	"github.com/rohithIlluri/POC-S/pocs/tap/backend/internal/store/storetest"
 	"github.com/rohithIlluri/POC-S/pocs/tap/protocol"
 	"github.com/rohithIlluri/POC-S/pocs/tap/sim"
 )
@@ -39,14 +39,17 @@ func newServer(t *testing.T, mutate func(*server.Config)) *httptest.Server {
 	if mutate != nil {
 		mutate(&cfg)
 	}
-	srv, err := server.New(cfg, store.NewMemory())
+	srv, err := server.New(cfg, storetest.New(t))
 	if err != nil {
 		t.Fatal(err)
 	}
 	ts := httptest.NewServer(srv)
-	t.Cleanup(ts.Close)
+	servers.Store(ts.URL, srv)
+	t.Cleanup(func() { ts.Close(); srv.Close() })
 	return ts
 }
+
+var servers sync.Map // test server URL → *server.Server, for Flush
 
 func onboard(t *testing.T, ts *httptest.Server, name string) *sim.Phone {
 	t.Helper()
@@ -335,6 +338,27 @@ func TestRepeatReportsFreezeTapping(t *testing.T) {
 	wantCode(t, err, "frozen")
 }
 
+type eventsResp struct {
+	Events []struct {
+		ID        string `json:"id"`
+		Name      string `json:"name"`
+		TapCount  int    `json:"tap_count"`
+		PeopleMet int    `json:"people_met"`
+	} `json:"events"`
+}
+
+// eventsOf lets the event worker catch up, then lists p's events.
+func eventsOf(t *testing.T, ts *httptest.Server, p *sim.Phone) eventsResp {
+	t.Helper()
+	v, _ := servers.Load(ts.URL)
+	v.(*server.Server).Flush()
+	var out eventsResp
+	if err := p.Do("GET", "/v1/events", nil, &out); err != nil {
+		t.Fatal(err)
+	}
+	return out
+}
+
 func TestEventModeAndRecap(t *testing.T) {
 	ts := newServer(t, nil)
 	var ps []*sim.Phone
@@ -345,33 +369,24 @@ func TestEventModeAndRecap(t *testing.T) {
 	// Five taps in one place within the hour form an event.
 	for i := 1; i <= 4; i++ {
 		r, _ := tap(t, host, ps[i])
-		if mustMatch(t, r).EventID != "" {
+		mustMatch(t, r)
+		if n := len(eventsOf(t, ts, host).Events); n != 0 {
 			t.Fatalf("event formed after only %d taps", i)
 		}
 	}
 	r, _ := tap(t, ps[4], ps[5])
-	evID := mustMatch(t, r).EventID
-	if evID == "" {
-		t.Fatal("fifth tap did not form an event")
+	mustMatch(t, r)
+	evs := eventsOf(t, ts, ps[5])
+	if len(evs.Events) != 1 {
+		t.Fatalf("fifth tap did not form an event: %+v", evs)
 	}
+	evID := evs.Events[0].ID
 	// Later taps there join it.
 	r, _ = tap(t, host, ps[5])
-	if got := mustMatch(t, r).EventID; got != evID {
-		t.Errorf("sixth tap joined %q, want %q", got, evID)
-	}
-
-	var evs struct {
-		Events []struct {
-			ID        string `json:"id"`
-			Name      string `json:"name"`
-			PeopleMet int    `json:"people_met"`
-		} `json:"events"`
-	}
-	if err := host.Do("GET", "/v1/events", nil, &evs); err != nil {
-		t.Fatal(err)
-	}
-	if len(evs.Events) != 1 || evs.Events[0].PeopleMet != 5 {
-		t.Fatalf("host events: %+v", evs)
+	mustMatch(t, r)
+	evs = eventsOf(t, ts, host)
+	if len(evs.Events) != 1 || evs.Events[0].ID != evID || evs.Events[0].TapCount != 6 || evs.Events[0].PeopleMet != 5 {
+		t.Fatalf("host events after sixth tap: %+v", evs)
 	}
 	if err := host.Do("PUT", "/v1/events/"+evID, map[string]string{"name": "DevFest"}, nil); err != nil {
 		t.Fatal(err)
@@ -461,4 +476,61 @@ func TestOTPLocksAfterWrongCodes(t *testing.T) {
 	wantCode(t, err, "otp_locked")
 	err = p.Do("POST", "/v1/auth/otp/start", map[string]string{"phone": "555"}, nil)
 	wantCode(t, err, "bad_phone")
+}
+
+// TestSurvivesRestart stands up a second server over the same store with
+// the same secrets — what a redeploy does — and checks a returning user
+// finds their account, their connections and a verifiable receipt.
+func TestSurvivesRestart(t *testing.T) {
+	st := storetest.New(t)
+	cfg, err := server.DefaultConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.DevOTP, cfg.Logf = true, nil
+	boot := func() *httptest.Server {
+		srv, err := server.New(cfg, st)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ts := httptest.NewServer(srv)
+		t.Cleanup(ts.Close)
+		return ts
+	}
+	first := boot()
+	alice, bob := sim.NewPhone(first.URL, "Alice"), sim.NewPhone(first.URL, "Bob")
+	if err := alice.Onboard("+13145550001"); err != nil {
+		t.Fatal(err)
+	}
+	if err := bob.Onboard("+13145550002"); err != nil {
+		t.Fatal(err)
+	}
+	ra, _ := tap(t, alice, bob)
+	m := mustMatch(t, ra)
+	first.Close()
+
+	second := boot()
+	again := sim.NewPhone(second.URL, "ignored for returning users")
+	if err := again.Onboard("+13145550001"); err != nil {
+		t.Fatal(err)
+	}
+	if again.UserID != alice.UserID {
+		t.Fatalf("returning user got a new account: %s vs %s", again.UserID, alice.UserID)
+	}
+	if p := people(t, again); p.Total != 1 || p.Groups[0].People[0].Name != "Bob" {
+		t.Fatalf("connections lost across restart: %+v", p)
+	}
+	var key struct {
+		PublicKey string `json:"public_key"`
+	}
+	if err := again.Do("GET", "/v1/receipt-key", nil, &key); err != nil {
+		t.Fatal(err)
+	}
+	pub, err := protocol.ParsePublicKey(key.PublicKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := protocol.Verify(pub, m.Receipt.Canonical(), m.Signature); err != nil {
+		t.Errorf("receipt from before the restart no longer verifies: %v", err)
+	}
 }

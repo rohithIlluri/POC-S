@@ -313,7 +313,13 @@ meetupBtn.addEventListener('click', async () => {
       await guest.onboard(name, `+1314${String(Math.floor(Math.random() * 1e7)).padStart(7, '0')}`);
       const [ra] = await handshake(a, guest, { distance: 5, transport: 'ble_ultrasonic' }, { verbose: false });
       if (ra.status !== 'matched') { log(`${name}: ${ra.code}`, 'bad'); continue; }
-      log(`${name} tapped ${a.user.display_name}${ra.event_id ? ' · part of an event' : ''}`, 'ok');
+      log(`${name} tapped ${a.user.display_name}`, 'ok');
+    }
+    // Events are assigned just after taps commit; give the worker a moment.
+    for (let i = 0; i < 20; i++) {
+      const { events } = await a.api('GET', '/v1/events');
+      if (events.length) { log(`Event formed: ${events[0].name} · ${events[0].tap_count} taps`, 'ok'); break; }
+      await new Promise((r) => setTimeout(r, 150));
     }
     a.tab = 'events';
     renderAll();

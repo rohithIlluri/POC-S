@@ -75,8 +75,15 @@ func (s *Server) handleClaim(w http.ResponseWriter, r *http.Request, userID stri
 		matched *store.Tap
 		pairErr *apiError
 		waiter  chan matchResult
+		fresh   bool // this request committed the tap (not a retry of one)
 	)
 	err := s.st.Tx(func(tx store.Tx) error {
+		// A database store may retry this function; start each attempt clean
+		// and drop the waiter a failed attempt registered.
+		if waiter != nil {
+			s.unregister(key, c.DeviceID, waiter)
+		}
+		matched, pairErr, waiter, fresh = nil, nil, nil, false
 		now := s.cfg.Now()
 		if err := s.checkDevice(tx, userID, c.DeviceID); err != nil {
 			return err
@@ -127,7 +134,7 @@ func (s *Server) handleClaim(w http.ResponseWriter, r *http.Request, userID stri
 		}
 		if partner == nil {
 			tx.PutPendingClaim(mine)
-			waiter = s.register(key)
+			waiter = s.register(key, c.DeviceID)
 			return nil
 		}
 		if err := s.checkPair(tx, mine, *partner, now); err != nil {
@@ -139,9 +146,12 @@ func (s *Server) handleClaim(w http.ResponseWriter, r *http.Request, userID stri
 		if err != nil {
 			return err
 		}
-		matched = &tp
+		matched, fresh = &tp, true
 		return nil
 	})
+	if err != nil && waiter != nil {
+		s.unregister(key, c.DeviceID, waiter) // the pending claim was rolled back
+	}
 	switch {
 	case err != nil:
 		writeErr(w, err)
@@ -149,6 +159,9 @@ func (s *Server) handleClaim(w http.ResponseWriter, r *http.Request, userID stri
 		s.notify(key, matchResult{err: pairErr})
 		writeErr(w, pairErr)
 	case matched != nil:
+		if fresh {
+			s.enqueueTap(matched.ID)
+		}
 		s.notify(key, matchResult{tap: *matched})
 		s.writeMatch(w, userID, *matched)
 	default:
@@ -171,17 +184,20 @@ func (s *Server) awaitPartner(ctx context.Context, w http.ResponseWriter, userID
 	case <-timer.C:
 	case <-ctx.Done():
 	}
-	s.unregister(key, ch)
+	s.unregister(key, c.DeviceID, ch)
 	// The partner may have matched in the instant the wait ended.
 	var tp *store.Tap
-	_ = s.st.Tx(func(tx store.Tx) error {
+	if err := s.st.Tx(func(tx store.Tx) error {
 		if t, ok := tx.TapByPairKey(key); ok {
 			tp = &t
 			return nil
 		}
 		tx.DeletePendingClaim(key, c.DeviceID)
 		return nil
-	})
+	}); err != nil {
+		writeErr(w, err)
+		return
+	}
 	if tp != nil {
 		s.writeMatch(w, userID, *tp)
 		return
@@ -219,9 +235,9 @@ func (s *Server) checkPair(tx store.Tx, mine, partner store.PendingClaim, now ti
 	return nil
 }
 
-// commit writes the tap, the edge and any event in one transaction. The
-// receipt is signed before the first write so a signing failure leaves no
-// partial state.
+// commit writes the tap and the edge in one transaction; events are
+// assigned afterwards by the event worker. The receipt is signed before the
+// first write so a signing failure leaves no partial state.
 func (s *Server) commit(tx store.Tx, mine, partner store.PendingClaim, now time.Time) (store.Tap, error) {
 	a, b := store.Pair(mine.UserID, partner.UserID)
 	devA, devB := mine.Claim.DeviceID, partner.Claim.DeviceID
@@ -245,10 +261,6 @@ func (s *Server) commit(tx store.Tx, mine, partner store.PendingClaim, now time.
 		tx.PutNonce(n)
 	}
 	tx.PutTap(tp)
-	if id := s.assignEvent(tx, tp, now); id != "" {
-		tp.EventID = id
-		tx.PutTap(tp)
-	}
 	e, ok := tx.Edge(a, b)
 	if !ok {
 		e = store.Edge{UserA: a, UserB: b, CreatedAt: now, FirstTapID: tp.ID}
@@ -260,39 +272,6 @@ func (s *Server) commit(tx store.Tx, mine, partner store.PendingClaim, now time.
 	tx.DeletePendingClaim(mine.PairKey, devA)
 	tx.DeletePendingClaim(mine.PairKey, devB)
 	return tp, nil
-}
-
-// assignEvent implements event mode: EventMinTaps taps in one ~1 km cell
-// (geohash 6) within EventWindow become an event; later taps there join it.
-func (s *Server) assignEvent(tx store.Tx, tp store.Tap, now time.Time) string {
-	g6 := tp.Geohash[:6]
-	since := now.Add(-s.cfg.EventWindow)
-	if ev, ok := tx.ActiveEventNear(g6, since); ok {
-		ev.End = now
-		ev.TapCount++
-		ev.Members = addMembers(ev.Members, tp.UserA, tp.UserB)
-		tx.PutEvent(ev)
-		return ev.ID
-	}
-	var loose []store.Tap
-	for _, t := range tx.TapsNearSince(g6, since) {
-		if t.EventID == "" {
-			loose = append(loose, t)
-		}
-	}
-	if len(loose) < s.cfg.EventMinTaps {
-		return ""
-	}
-	ev := store.Event{ID: newID("evt_"), Geohash6: g6, Start: loose[0].CreatedAt, End: now, TapCount: len(loose)}
-	for _, t := range loose {
-		ev.Members = addMembers(ev.Members, t.UserA, t.UserB)
-		if t.ID != tp.ID {
-			t.EventID = ev.ID
-			tx.PutTap(t)
-		}
-	}
-	tx.PutEvent(ev)
-	return ev.ID
 }
 
 func addMembers(list []string, ids ...string) []string {
@@ -311,44 +290,55 @@ func (s *Server) writeMatch(w http.ResponseWriter, userID string, tp store.Tap) 
 	}
 	var peer store.User
 	var count int
-	_ = s.st.Tx(func(tx store.Tx) error {
+	if err := s.st.Tx(func(tx store.Tx) error {
 		peer, _ = tx.User(other)
 		e, _ := tx.Edge(tp.UserA, tp.UserB)
 		count = e.TapCount
 		return nil
-	})
+	}); err != nil {
+		writeErr(w, err)
+		return
+	}
 	writeJSON(w, 200, map[string]any{
 		"status":    "matched",
 		"receipt":   tp.Receipt,
 		"signature": tp.Signature,
-		"event_id":  tp.EventID,
 		"tap_count": count, // taps between these two people, this one included
 		"peer":      map[string]string{"user_id": peer.ID, "display_name": peer.DisplayName, "photo_url": peer.PhotoURL},
 	})
 }
 
-func (s *Server) register(key string) chan matchResult {
+// Waiters are keyed by pair and device so that one phone's registration
+// can never replace the other's.
+func (s *Server) register(key, deviceID string) chan matchResult {
 	ch := make(chan matchResult, 1)
 	s.mu.Lock()
-	s.wait[key] = ch
+	if s.wait[key] == nil {
+		s.wait[key] = map[string]chan matchResult{}
+	}
+	s.wait[key][deviceID] = ch
 	s.mu.Unlock()
 	return ch
 }
 
-func (s *Server) unregister(key string, ch chan matchResult) {
+func (s *Server) unregister(key, deviceID string, ch chan matchResult) {
 	s.mu.Lock()
-	if s.wait[key] == ch {
-		delete(s.wait, key)
+	if s.wait[key][deviceID] == ch {
+		delete(s.wait[key], deviceID)
+		if len(s.wait[key]) == 0 {
+			delete(s.wait, key)
+		}
 	}
 	s.mu.Unlock()
 }
 
+// notify delivers a decided handshake to every phone waiting on it.
 func (s *Server) notify(key string, res matchResult) {
 	s.mu.Lock()
-	ch, ok := s.wait[key]
+	waiters := s.wait[key]
 	delete(s.wait, key)
 	s.mu.Unlock()
-	if ok {
+	for _, ch := range waiters {
 		ch <- res
 	}
 }

@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/rohithIlluri/POC-S/pocs/tap/backend/internal/server"
-	"github.com/rohithIlluri/POC-S/pocs/tap/backend/internal/store"
+	"github.com/rohithIlluri/POC-S/pocs/tap/backend/internal/store/storetest"
 	"github.com/rohithIlluri/POC-S/pocs/tap/sim"
 )
 
@@ -21,7 +21,7 @@ func TestScenarios(t *testing.T) {
 	cfg.DevOTP = true
 	cfg.ClaimWait = 2 * time.Second // the relay scenario waits this out
 	cfg.Logf = nil
-	srv, err := server.New(cfg, store.NewMemory())
+	srv, err := server.New(cfg, storetest.New(t))
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -156,13 +156,16 @@ func (s *Server) handleRegisterDevice(w http.ResponseWriter, r *http.Request, us
 		return
 	}
 	d := store.Device{ID: newID("dev_"), UserID: userID, PublicKey: req.PublicKey, AttestStatus: status, CreatedAt: s.cfg.Now()}
-	_ = s.st.Tx(func(tx store.Tx) error { tx.PutDevice(d); return nil })
+	if err := s.st.Tx(func(tx store.Tx) error { tx.PutDevice(d); return nil }); err != nil {
+		writeErr(w, err)
+		return
+	}
 	writeJSON(w, 201, map[string]string{"device_id": d.ID})
 }
 
 func (s *Server) handleMe(w http.ResponseWriter, _ *http.Request, userID string) {
 	var resp map[string]any
-	_ = s.st.Tx(func(tx store.Tx) error {
+	if err := s.st.Tx(func(tx store.Tx) error {
 		u, _ := tx.User(userID)
 		taps := 0
 		for _, e := range tx.EdgesOf(userID) {
@@ -170,7 +173,10 @@ func (s *Server) handleMe(w http.ResponseWriter, _ *http.Request, userID string)
 		}
 		resp = map[string]any{"user": u, "tap_count": taps, "connections": len(activeOthers(tx, userID))}
 		return nil
-	})
+	}); err != nil {
+		writeErr(w, err)
+		return
+	}
 	writeJSON(w, 200, resp)
 }
 
@@ -184,7 +190,7 @@ func (s *Server) handleExport(w http.ResponseWriter, _ *http.Request, userID str
 		Status      string    `json:"status"`
 	}
 	var resp map[string]any
-	_ = s.st.Tx(func(tx store.Tx) error {
+	if err := s.st.Tx(func(tx store.Tx) error {
 		u, _ := tx.User(userID)
 		var conns []conn
 		for _, e := range tx.EdgesOf(userID) {
@@ -194,11 +200,17 @@ func (s *Server) handleExport(w http.ResponseWriter, _ *http.Request, userID str
 		}
 		resp = map[string]any{"user": u, "devices": tx.DevicesOf(userID), "connections": conns, "events": tx.EventsOf(userID)}
 		return nil
-	})
+	}); err != nil {
+		writeErr(w, err)
+		return
+	}
 	writeJSON(w, 200, resp)
 }
 
 func (s *Server) handleDeleteMe(w http.ResponseWriter, _ *http.Request, userID string) {
-	_ = s.st.Tx(func(tx store.Tx) error { tx.DeleteUser(userID); return nil })
+	if err := s.st.Tx(func(tx store.Tx) error { tx.DeleteUser(userID); return nil }); err != nil {
+		writeErr(w, err)
+		return
+	}
 	writeJSON(w, 200, map[string]bool{"deleted": true})
 }
