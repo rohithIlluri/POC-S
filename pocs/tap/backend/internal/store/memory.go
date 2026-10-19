@@ -29,6 +29,7 @@ type Memory struct {
 	events   map[string]Event
 	rounds   map[[2]string]PropsRound
 	votes    []PropsVote
+	attempts []Attempt
 }
 
 type session struct {
@@ -129,6 +130,7 @@ func (t *memTx) DeleteUser(id string) {
 		}
 	}
 	t.votes = slices.DeleteFunc(t.votes, func(v PropsVote) bool { return v.VoterID == id || v.PickedID == id })
+	t.attempts = slices.DeleteFunc(t.attempts, func(a Attempt) bool { return a.UserID == id })
 }
 
 func (t *memTx) PutSession(token, userID string, expires time.Time) {
@@ -345,5 +347,37 @@ func (t *memTx) PropsVotesFor(pickedID string, since time.Time) []PropsVote {
 		}
 	}
 	slices.SortStableFunc(out, func(a, b PropsVote) int { return b.CreatedAt.Compare(a.CreatedAt) })
+	return out
+}
+
+func (t *memTx) PropsVotesSince(since time.Time) int {
+	n := 0
+	for _, v := range t.votes {
+		if !v.CreatedAt.Before(since) {
+			n++
+		}
+	}
+	return n
+}
+
+func (t *memTx) PutAttempt(a Attempt) { t.attempts = append(t.attempts, a) }
+
+func (t *memTx) AttemptsSince(since time.Time) []Attempt {
+	var out []Attempt
+	for _, a := range t.attempts {
+		if !a.At.Before(since) {
+			out = append(out, a)
+		}
+	}
+	return out
+}
+
+func (t *memTx) TapsSince(since time.Time) []Tap {
+	var out []Tap
+	for _, id := range t.tapOrder {
+		if tp := t.taps[id]; !tp.CreatedAt.Before(since) {
+			out = append(out, tp)
+		}
+	}
 	return out
 }

@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"slices"
 	"time"
@@ -65,7 +66,9 @@ func (s *Server) handleClaim(w http.ResponseWriter, r *http.Request, userID stri
 		return
 	}
 	c := req.Claim
+	rec := s.recorder(c, userID)
 	if err := c.Validate(); err != nil {
+		rec("rejected", "bad_claim")
 		writeErr(w, fail(400, "bad_claim", "%v", err))
 		return
 	}
@@ -154,31 +157,59 @@ func (s *Server) handleClaim(w http.ResponseWriter, r *http.Request, userID stri
 	}
 	switch {
 	case err != nil:
+		rec("rejected", errCode(err))
 		writeErr(w, err)
 	case pairErr != nil:
 		s.notify(key, matchResult{err: pairErr})
+		rec("rejected", pairErr.Code)
 		writeErr(w, pairErr)
 	case matched != nil:
 		if fresh {
 			s.enqueueTap(matched.ID)
+			rec("matched", "")
+		} else {
+			rec("retry", "")
 		}
 		s.notify(key, matchResult{tap: *matched})
 		s.writeMatch(w, userID, *matched)
 	default:
-		s.awaitPartner(r.Context(), w, userID, c, waiter)
+		s.awaitPartner(r.Context(), w, userID, c, waiter, rec)
 	}
 }
 
-func (s *Server) awaitPartner(ctx context.Context, w http.ResponseWriter, userID string, c protocol.Claim, ch chan matchResult) {
+// recorder returns a function that logs how this claim request ended.
+func (s *Server) recorder(c protocol.Claim, userID string) func(outcome, code string) {
+	start := s.cfg.Now()
+	return func(outcome, code string) {
+		now := s.cfg.Now()
+		a := store.Attempt{ID: newID("att_"), At: now, UserID: userID, DeviceID: c.DeviceID, Transport: string(c.Transport),
+			DistanceCM: c.DistanceCM, Outcome: outcome, Code: code, WaitMS: now.Sub(start).Milliseconds()}
+		if err := s.st.Tx(func(tx store.Tx) error { tx.PutAttempt(a); return nil }); err != nil {
+			s.cfg.Logf("record attempt: %v", err)
+		}
+	}
+}
+
+func errCode(err error) string {
+	var ae *apiError
+	if errors.As(err, &ae) {
+		return ae.Code
+	}
+	return "internal"
+}
+
+func (s *Server) awaitPartner(ctx context.Context, w http.ResponseWriter, userID string, c protocol.Claim, ch chan matchResult, rec func(outcome, code string)) {
 	key := c.PairKey()
 	timer := time.NewTimer(s.cfg.ClaimWait)
 	defer timer.Stop()
 	select {
 	case res := <-ch:
 		if res.err != nil {
+			rec("rejected", res.err.Code)
 			writeErr(w, res.err)
 			return
 		}
+		rec("matched", "")
 		s.writeMatch(w, userID, res.tap)
 		return
 	case <-timer.C:
@@ -195,13 +226,16 @@ func (s *Server) awaitPartner(ctx context.Context, w http.ResponseWriter, userID
 		tx.DeletePendingClaim(key, c.DeviceID)
 		return nil
 	}); err != nil {
+		rec("rejected", errCode(err))
 		writeErr(w, err)
 		return
 	}
 	if tp != nil {
+		rec("matched", "")
 		s.writeMatch(w, userID, *tp)
 		return
 	}
+	rec("expired", "")
 	writeJSON(w, 200, map[string]string{"status": "expired"})
 }
 

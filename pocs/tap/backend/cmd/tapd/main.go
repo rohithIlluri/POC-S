@@ -47,6 +47,13 @@ func main() {
 	}
 	cfg.DevOTP = *dev
 	cfg.Static = web.FS
+	cfg.AdminToken = os.Getenv("TAP_ADMIN_TOKEN")
+	if cfg.AdminToken == "" && *dev {
+		b := make([]byte, 12)
+		_, _ = rand.Read(b)
+		cfg.AdminToken = hex.EncodeToString(b)
+		log.Printf("dev admin token for /admin.html: %s (set TAP_ADMIN_TOKEN to choose one)", cfg.AdminToken)
+	}
 
 	var st store.Store = store.NewMemory()
 	if *dbURL != "" {

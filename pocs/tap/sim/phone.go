@@ -44,6 +44,7 @@ type Phone struct {
 	Token    string
 	UserID   string
 	DeviceID string
+	Platform string // reported at device registration; "sim" when empty
 	key      *ecdsa.PrivateKey
 }
 
@@ -125,7 +126,11 @@ func (p *Phone) RegisterDevice() error {
 	var out struct {
 		DeviceID string `json:"device_id"`
 	}
-	if err := p.Do("POST", "/v1/devices", map[string]string{"public_key": pub, "attestation": "dev:sim"}, &out); err != nil {
+	platform := p.Platform
+	if platform == "" {
+		platform = "sim"
+	}
+	if err := p.Do("POST", "/v1/devices", map[string]string{"public_key": pub, "attestation": "dev:sim", "platform": platform}, &out); err != nil {
 		return err
 	}
 	p.key, p.DeviceID = key, out.DeviceID

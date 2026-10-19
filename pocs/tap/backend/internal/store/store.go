@@ -25,6 +25,7 @@ type Device struct {
 	UserID       string    `json:"user_id"`
 	PublicKey    string    `json:"public_key"`
 	AttestStatus string    `json:"attest_status"`
+	Platform     string    `json:"platform,omitempty"` // ios | android | web | sim
 	CreatedAt    time.Time `json:"created_at"`
 }
 
@@ -104,6 +105,21 @@ type Report struct {
 	SubjectID  string
 	Reason     string
 	CreatedAt  time.Time
+}
+
+// Attempt records how one claim request ended, for pilot metrics: the
+// success rate by failure code and channel is what Phase 0 and the pilot
+// are judged on.
+type Attempt struct {
+	ID         string
+	At         time.Time
+	UserID     string
+	DeviceID   string
+	Transport  string
+	DistanceCM int
+	Outcome    string // matched | retry | expired | rejected
+	Code       string // the error code when rejected
+	WaitMS     int64  // from receiving the claim to answering it
 }
 
 // PropsPoll is one question in a weekly Props round: a curated prompt and
@@ -189,6 +205,11 @@ type Tx interface {
 	PutPropsRound(PropsRound)
 	PutPropsVote(PropsVote)
 	PropsVotesFor(pickedID string, since time.Time) []PropsVote // newest first
+	PropsVotesSince(since time.Time) int
+
+	PutAttempt(Attempt)
+	AttemptsSince(since time.Time) []Attempt
+	TapsSince(since time.Time) []Tap // in commit order
 }
 
 // Pair orders two user ids the way edges and taps store them.

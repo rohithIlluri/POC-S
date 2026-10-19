@@ -37,6 +37,7 @@ type Config struct {
 	PropsOptions         int    // connections offered per poll
 	PropsMinConnections  int    // Props unlocks at this many connections
 	PropsHintMin         int    // an event hint needs this many of the user's connections there
+	AdminToken           string // bearer token for /v1/admin/stats; empty disables it
 	DevOTP               bool   // return OTP codes in the response instead of sending SMS
 	PhoneSalt            []byte // HMAC key for phone hashes
 	ReceiptKey           *ecdsa.PrivateKey
@@ -154,6 +155,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /v1/props/card", s.authed(s.handlePropsCard))
 	s.mux.HandleFunc("GET /v1/props/card.svg", s.authed(s.handlePropsCardSVG))
 	s.mux.HandleFunc("GET /props", s.handlePropsInvite)
+	s.mux.HandleFunc("GET /v1/admin/stats", s.handleStats)
 
 	if s.cfg.Static != nil {
 		s.mux.Handle("GET /", http.FileServerFS(s.cfg.Static))

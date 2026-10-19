@@ -64,7 +64,7 @@ class Phone {
     this.token = token;
     this.user = user;
     this.key = await P.generateDeviceKey();
-    const { device_id } = await this.api('POST', '/v1/devices', { public_key: this.key.publicKey, attestation: 'dev:web-demo' });
+    const { device_id } = await this.api('POST', '/v1/devices', { public_key: this.key.publicKey, attestation: 'dev:web-demo', platform: 'web' });
     this.deviceId = device_id;
   }
 

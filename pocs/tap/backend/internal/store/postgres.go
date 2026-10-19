@@ -233,10 +233,12 @@ func (t *pgTx) SessionUser(token string, now time.Time) (string, bool) {
 	return id, ok
 }
 
-const deviceCols = `id, user_id, public_key, attest_status, created_at`
+const deviceCols = `id, user_id, public_key, attest_status, created_at, platform`
 
 func scanDevice(d *Device) func(pgx.Row) error {
-	return func(r pgx.Row) error { return r.Scan(&d.ID, &d.UserID, &d.PublicKey, &d.AttestStatus, &d.CreatedAt) }
+	return func(r pgx.Row) error {
+		return r.Scan(&d.ID, &d.UserID, &d.PublicKey, &d.AttestStatus, &d.CreatedAt, &d.Platform)
+	}
 }
 
 func (t *pgTx) Device(id string) (Device, bool) {
@@ -259,9 +261,9 @@ func (t *pgTx) DevicesOf(userID string) []Device {
 }
 
 func (t *pgTx) PutDevice(d Device) {
-	t.exec(`INSERT INTO devices (`+deviceCols+`) VALUES ($1, $2, $3, $4, $5)
-		ON CONFLICT (id) DO UPDATE SET public_key = $3, attest_status = $4`,
-		d.ID, d.UserID, d.PublicKey, d.AttestStatus, d.CreatedAt)
+	t.exec(`INSERT INTO devices (`+deviceCols+`) VALUES ($1, $2, $3, $4, $5, $6)
+		ON CONFLICT (id) DO UPDATE SET public_key = $3, attest_status = $4, platform = $6`,
+		d.ID, d.UserID, d.PublicKey, d.AttestStatus, d.CreatedAt, d.Platform)
 }
 
 // ---- nonces and pending claims ----
@@ -549,5 +551,45 @@ func (t *pgTx) PropsVotesFor(pickedID string, since time.Time) []PropsVote {
 		return nil
 	}, `SELECT id, voter_id, picked_id, prompt_id, week, event_id, created_at FROM props_votes
 		WHERE picked_id = $1 AND created_at >= $2 ORDER BY created_at DESC, id`, pickedID, since)
+	return out
+}
+
+func (t *pgTx) PropsVotesSince(since time.Time) int {
+	var n int
+	t.scalar(&n, `SELECT count(*) FROM props_votes WHERE created_at >= $1`, since)
+	return n
+}
+
+// ---- metrics ----
+
+func (t *pgTx) PutAttempt(a Attempt) {
+	t.exec(`INSERT INTO tap_attempts (id, at, user_id, device_id, transport, distance_cm, outcome, code, wait_ms)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+		a.ID, a.At, a.UserID, a.DeviceID, a.Transport, a.DistanceCM, a.Outcome, a.Code, a.WaitMS)
+}
+
+func (t *pgTx) AttemptsSince(since time.Time) []Attempt {
+	var out []Attempt
+	t.many(func(r pgx.Rows) error {
+		var a Attempt
+		if err := r.Scan(&a.ID, &a.At, &a.UserID, &a.DeviceID, &a.Transport, &a.DistanceCM, &a.Outcome, &a.Code, &a.WaitMS); err != nil {
+			return err
+		}
+		out = append(out, a)
+		return nil
+	}, `SELECT id, at, user_id, device_id, transport, distance_cm, outcome, code, wait_ms FROM tap_attempts WHERE at >= $1 ORDER BY at`, since)
+	return out
+}
+
+func (t *pgTx) TapsSince(since time.Time) []Tap {
+	var out []Tap
+	t.many(func(r pgx.Rows) error {
+		var tp Tap
+		if err := scanTap(&tp)(r); err != nil {
+			return err
+		}
+		out = append(out, tp)
+		return nil
+	}, `SELECT `+tapCols+` FROM taps WHERE created_at >= $1 ORDER BY seq`, since)
 	return out
 }

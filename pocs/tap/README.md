@@ -26,6 +26,15 @@ The demo shows two phones side by side. Each one is a separate client with its o
 - **Simulate a Props week** — the attendees answer their weekly polls; open the Props tab on either phone to answer polls yourself, see what you were picked for, and share the weekly card;
 - Remove / Block in People, or Delete account under You.
 
+Pilot metrics live at **`/admin.html`**. In `-dev` mode `tapd` prints a generated admin token at start; otherwise set `TAP_ADMIN_TOKEN`. It shows the build plan's numbers for the last 7 days:
+- weekly taps per active user (the north star);
+- the share of users who tap again within 14 days of their first tap (the 40% pilot gate);
+- tap success, with every failed claim broken down by reason and channel;
+- the iPhone ↔ Android share of taps;
+- Props activity.
+
+They come from `GET /v1/admin/stats`, computed from a `tap_attempts` row recorded for every claim.
+
 Headless end-to-end run, including a venue-peak burst:
 
 ```bash
@@ -72,6 +81,7 @@ Retries are idempotent on the nonce pair, so a dropped response never makes a se
 | `GET /v1/props/card`, `…/card.svg` | Weekly card ("N people I've actually met picked me") at story size |
 | `GET /props` | Where a shared card's link lands: "You can't send Props online. Meet them." |
 | `GET /v1/me`, `GET /v1/me/export`, `DELETE /v1/me` | Profile, data export, deletion |
+| `GET /v1/admin/stats` | Pilot metrics (bearer `TAP_ADMIN_TOKEN`; 404 without it) |
 
 ## Props
 
@@ -94,6 +104,8 @@ tbh-style compliment polls where only people you have tapped can pick you ([desi
 | Storage | Postgres (SERIALIZABLE + retry) or in-memory, behind `store.Tx` | Cloud SQL Postgres, Spanner adapter later |
 | Receipt key | `TAP_RECEIPT_KEY` env (generated in-memory mode) | Cloud KMS |
 | Event queue | In-process worker, drained on SIGTERM | Pub/Sub with at-least-once delivery |
+| Metrics | Computed from Postgres rows on request (pilot scale) | BigQuery + Looker Studio |
+| OTP abuse limits | Per phone: 5 codes/h, 30 s apart, 5 wrong guesses/h across codes | Plus per-IP limits at the gateway |
 | Short-range radio | Simulated (demo slider, `sim` package) | BLE + ultrasonic, UWB in the native apps |
 | Props (tbh-style polls) | Real: curated prompts, real votes only, unlock at 5, removal/block/deletion honoured | Instagram Sharing to Stories + Snapchat Creative Kit in the apps |
 

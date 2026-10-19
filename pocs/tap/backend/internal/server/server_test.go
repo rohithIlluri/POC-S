@@ -929,3 +929,86 @@ func TestBadNameDoesNotConsumeCode(t *testing.T) {
 		t.Fatalf("code was consumed by the rejected attempt: %v", err)
 	}
 }
+
+type statsResp struct {
+	Attempts    int     `json:"attempts"`
+	Matched     int     `json:"matched"`
+	SuccessRate float64 `json:"success_rate"`
+	Failures    []struct {
+		Code  string `json:"code"`
+		Count int    `json:"count"`
+	} `json:"failures"`
+	ByTransport []struct {
+		Transport string `json:"transport"`
+		Attempts  int    `json:"attempts"`
+		Matched   int    `json:"matched"`
+	} `json:"by_transport"`
+	Taps               int     `json:"taps"`
+	ActiveUsers        int     `json:"active_users"`
+	TapsPerActiveUser  float64 `json:"taps_per_active_user"`
+	CrossPlatformShare float64 `json:"cross_platform_share"`
+	CrossPlatformBase  int     `json:"cross_platform_base"`
+	RetapCohort        int     `json:"retap_cohort"`
+	Retapped           int     `json:"retapped"`
+	RetapRate          float64 `json:"retap_rate"`
+	GateMet            bool    `json:"gate_met"`
+}
+
+func TestPilotStats(t *testing.T) {
+	clk := &clock{}
+	ts := newServer(t, func(c *server.Config) {
+		c.Now = clk.Now
+		c.AdminToken = "admin-secret"
+		c.ClaimWait = 300 * time.Millisecond
+	})
+	phone := func(name, platform string) *sim.Phone {
+		p := sim.NewPhone(ts.URL, name)
+		p.Platform = platform
+		if err := p.Onboard(fmt.Sprintf("+1314556%04d", phoneSeq.Add(1))); err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+	a, b, c, d := phone("A", "ios"), phone("B", "android"), phone("C", "ios"), phone("D", "web")
+	match := func(x, y *sim.Phone) {
+		t.Helper()
+		r, _ := tap(t, x, y)
+		mustMatch(t, r)
+	}
+	match(a, b) // day 0: everyone's first taps
+	match(a, c)
+	clk.Advance(3 * 24 * time.Hour)
+	match(a, b) // day 3: A and B tap again within 14 days; C never does
+	clk.Advance(15 * 24 * time.Hour)
+	match(a, b) // day 18: the only tap in the 7-day window, iPhone ↔ Android
+	far := sim.DefaultMeasurement()
+	far.DistanceCM = 400
+	tapWith(t, a, d, far, sim.DefaultMeasurement()) // A rejected too_far, D expires
+
+	admin := sim.NewPhone(ts.URL, "admin")
+	err := admin.Do("GET", "/v1/admin/stats", nil, nil)
+	wantCode(t, err, "not_found")
+	admin.Token = "admin-secret"
+	var st statsResp
+	if err := admin.Do("GET", "/v1/admin/stats", nil, &st); err != nil {
+		t.Fatal(err)
+	}
+	if st.Attempts != 4 || st.Matched != 2 || st.SuccessRate != 0.5 {
+		t.Errorf("attempts: %+v", st)
+	}
+	if len(st.Failures) != 2 || st.Failures[0].Code != "expired" || st.Failures[1].Code != "too_far" {
+		t.Errorf("failures: %+v", st.Failures)
+	}
+	if len(st.ByTransport) != 1 || st.ByTransport[0].Attempts != 4 || st.ByTransport[0].Matched != 2 {
+		t.Errorf("by transport: %+v", st.ByTransport)
+	}
+	if st.Taps != 1 || st.ActiveUsers != 2 || st.TapsPerActiveUser != 1 {
+		t.Errorf("north star: taps=%d active=%d per-user=%v", st.Taps, st.ActiveUsers, st.TapsPerActiveUser)
+	}
+	if st.CrossPlatformBase != 1 || st.CrossPlatformShare != 1 {
+		t.Errorf("cross-platform: base=%d share=%v", st.CrossPlatformBase, st.CrossPlatformShare)
+	}
+	if st.RetapCohort != 3 || st.Retapped != 2 || !st.GateMet {
+		t.Errorf("retap: cohort=%d retapped=%d rate=%v met=%v", st.RetapCohort, st.Retapped, st.RetapRate, st.GateMet)
+	}
+}

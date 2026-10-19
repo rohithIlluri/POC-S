@@ -347,3 +347,37 @@ func TestActiveEventNearPicksMostRecent(t *testing.T) {
 		})
 	}
 }
+
+func TestMetricsRecords(t *testing.T) {
+	st := storetest.New(t)
+	seedUsers(t, st, "usr_a", "usr_b")
+	tx(t, st, func(x store.Tx) {
+		x.PutDevice(store.Device{ID: "dev_a", UserID: "usr_a", PublicKey: "k", AttestStatus: "dev", CreatedAt: t0, Platform: "ios"})
+		x.PutAttempt(store.Attempt{ID: "att_1", At: t0, UserID: "usr_a", DeviceID: "dev_a", Transport: "uwb", DistanceCM: 4, Outcome: "matched", WaitMS: 120})
+		x.PutAttempt(store.Attempt{ID: "att_2", At: t0.Add(time.Hour), UserID: "usr_b", DeviceID: "dev_b", Transport: "ble_ultrasonic", DistanceCM: 400, Outcome: "rejected", Code: "too_far", WaitMS: 30})
+		x.PutTap(store.Tap{ID: "tap_2", UserA: "usr_a", UserB: "usr_b", CreatedAt: t0.Add(time.Hour), Geohash: "9yzgez3", PairKey: "pk2"})
+		x.PutTap(store.Tap{ID: "tap_1", UserA: "usr_a", UserB: "usr_b", CreatedAt: t0, Geohash: "9yzgez3", PairKey: "pk1"})
+		x.PutPropsVote(store.PropsVote{ID: "v1", VoterID: "usr_a", PickedID: "usr_b", PromptID: "p_kind", Week: "2026-W43", CreatedAt: t0})
+	})
+	tx(t, st, func(x store.Tx) {
+		if d, _ := x.Device("dev_a"); d.Platform != "ios" {
+			t.Errorf("platform = %q", d.Platform)
+		}
+		as := x.AttemptsSince(t0.Add(time.Minute))
+		if len(as) != 1 || as[0].Code != "too_far" || as[0].DistanceCM != 400 || as[0].WaitMS != 30 {
+			t.Errorf("AttemptsSince = %+v", as)
+		}
+		if ts := x.TapsSince(t0); len(ts) != 2 || ts[0].ID != "tap_2" { // insertion order, not timestamp order
+			t.Errorf("TapsSince = %v", ids(ts))
+		}
+		if n := x.PropsVotesSince(t0); n != 1 {
+			t.Errorf("PropsVotesSince = %d", n)
+		}
+		x.DeleteUser("usr_b")
+	})
+	tx(t, st, func(x store.Tx) {
+		if as := x.AttemptsSince(t0); len(as) != 1 || as[0].UserID != "usr_a" {
+			t.Errorf("deleted user's attempts remain: %+v", as)
+		}
+	})
+}

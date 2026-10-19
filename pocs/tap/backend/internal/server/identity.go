@@ -10,6 +10,7 @@ import (
 	"math/big"
 	"net/http"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 
@@ -197,6 +198,7 @@ func (s *Server) handleRegisterDevice(w http.ResponseWriter, r *http.Request, us
 	var req struct {
 		PublicKey   string `json:"public_key"`
 		Attestation string `json:"attestation"`
+		Platform    string `json:"platform"`
 	}
 	if err := decode(r, &req); err != nil {
 		writeErr(w, err)
@@ -206,12 +208,16 @@ func (s *Server) handleRegisterDevice(w http.ResponseWriter, r *http.Request, us
 		writeErr(w, fail(400, "bad_key", "%v", err))
 		return
 	}
+	if !slices.Contains([]string{"", "ios", "android", "web", "sim"}, req.Platform) {
+		writeErr(w, fail(400, "bad_platform", "platform must be ios, android, web or sim"))
+		return
+	}
 	status, err := s.cfg.Attest.Verify(req.PublicKey, req.Attestation)
 	if err != nil {
 		writeErr(w, fail(403, "attestation_failed", "%v", err))
 		return
 	}
-	d := store.Device{ID: newID("dev_"), UserID: userID, PublicKey: req.PublicKey, AttestStatus: status, CreatedAt: s.cfg.Now()}
+	d := store.Device{ID: newID("dev_"), UserID: userID, PublicKey: req.PublicKey, AttestStatus: status, CreatedAt: s.cfg.Now(), Platform: req.Platform}
 	if err := s.st.Tx(func(tx store.Tx) error { tx.PutDevice(d); return nil }); err != nil {
 		writeErr(w, err)
 		return
