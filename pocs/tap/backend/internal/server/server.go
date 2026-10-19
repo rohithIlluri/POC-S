@@ -82,17 +82,21 @@ func DefaultConfig() (Config, error) {
 }
 
 type Server struct {
-	cfg   Config
-	st    store.Store
-	mux   *http.ServeMux
-	mu    sync.Mutex
-	wait  map[string]map[string]chan matchResult // pair key → device → waiting claim
-	otps  map[string]otpEntry
-	keyID string // receipt public key, base64url
+	cfg        Config
+	st         store.Store
+	mux        *http.ServeMux
+	mu         sync.Mutex
+	wait       map[string]map[string]chan matchResult // pair key → device → waiting claim
+	otps       map[string]otpEntry
+	otpSweepAt int
+	keyID      string // receipt public key, base64url
 
-	tapCreated chan string    // committed tap ids for the event worker
-	eventsIdle sync.WaitGroup // taps queued but not yet processed
-	workerDone chan struct{}
+	queueMu     sync.Mutex
+	queueClosed bool
+	tapCreated  chan string    // committed tap ids for the event worker
+	eventsIdle  sync.WaitGroup // taps queued but not yet processed
+	workerDone  chan struct{}
+	stopJanitor chan struct{}
 }
 
 func New(cfg Config, st store.Store) (*Server, error) {
@@ -106,10 +110,12 @@ func New(cfg Config, st store.Store) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
-	s := &Server{cfg: cfg, st: st, mux: http.NewServeMux(), wait: map[string]map[string]chan matchResult{}, otps: map[string]otpEntry{}, keyID: pub}
+	s := &Server{cfg: cfg, st: st, mux: http.NewServeMux(), wait: map[string]map[string]chan matchResult{}, otps: map[string]otpEntry{}, otpSweepAt: 1024, keyID: pub}
 	s.tapCreated = make(chan string, 1<<16)
 	s.workerDone = make(chan struct{})
+	s.stopJanitor = make(chan struct{})
 	go s.runEventWorker()
+	go s.runJanitor()
 	s.routes()
 	return s, nil
 }

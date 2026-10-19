@@ -16,8 +16,39 @@ import (
 // assigned. The Pub/Sub version gets at-least-once delivery instead.
 
 func (s *Server) enqueueTap(id string) {
+	s.queueMu.Lock()
+	defer s.queueMu.Unlock()
+	if s.queueClosed {
+		// A claim that outlived shutdown's grace period: assign it here
+		// rather than send on the closed queue.
+		s.processTap(id)
+		return
+	}
 	s.eventsIdle.Add(1)
 	s.tapCreated <- id
+}
+
+// runJanitor prunes nonces and pending claims too old to matter: an old
+// nonce is rejected as unknown just as it would be as expired, and no
+// pending claim outlives ClaimWait. Without it both tables grow forever.
+func (s *Server) runJanitor() {
+	t := time.NewTicker(time.Minute)
+	defer t.Stop()
+	for {
+		select {
+		case <-s.stopJanitor:
+			return
+		case <-t.C:
+			s.pruneHandshakes()
+		}
+	}
+}
+
+func (s *Server) pruneHandshakes() {
+	cutoff := s.cfg.Now().Add(-(s.cfg.NonceTTL + s.cfg.ClaimWait + time.Minute))
+	if err := s.st.Tx(func(tx store.Tx) error { tx.PruneHandshakes(cutoff); return nil }); err != nil {
+		s.cfg.Logf("prune handshakes: %v", err)
+	}
 }
 
 func (s *Server) runEventWorker() {
@@ -48,10 +79,16 @@ func (s *Server) processTap(id string) {
 // Flush waits until every committed tap has been through the event worker.
 func (s *Server) Flush() { s.eventsIdle.Wait() }
 
-// Close stops the event worker after it drains the queue. Call it only
-// once no requests are in flight.
+// Close stops the event worker after it drains the queue. Taps committed
+// by requests still running afterwards are assigned inline.
 func (s *Server) Close() {
-	close(s.tapCreated)
+	s.queueMu.Lock()
+	if !s.queueClosed {
+		s.queueClosed = true
+		close(s.tapCreated)
+		close(s.stopJanitor)
+	}
+	s.queueMu.Unlock()
 	<-s.workerDone
 }
 

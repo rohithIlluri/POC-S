@@ -172,7 +172,7 @@ func TestTapsEdgesAndEvents(t *testing.T) {
 		if len(x.EdgesOf("usr_b")) != 0 {
 			t.Error("deleted user's edges remain")
 		}
-		if tp, _ := x.Tap("tap_1"); tp.UserA != "deleted" || tp.DeviceA != "" {
+		if tp, _ := x.Tap("tap_1"); tp.UserA != "deleted" || tp.DeviceA != "" || tp.Receipt.UserA != "" || tp.Signature != "" {
 			t.Errorf("tap not anonymised: %+v", tp)
 		}
 		if x.Blocked("usr_c", "usr_a") || x.DistinctReporters("usr_c") != 1 {
@@ -306,4 +306,44 @@ func TestEdgeOrderIsByteOrder(t *testing.T) {
 			t.Error("edge not found")
 		}
 	})
+}
+
+func TestPruneHandshakes(t *testing.T) {
+	st := storetest.New(t)
+	tx(t, st, func(x store.Tx) {
+		x.PutNonce(store.Nonce{Value: "old", DeviceID: "d", IssuedAt: t0})
+		x.PutNonce(store.Nonce{Value: "new", DeviceID: "d", IssuedAt: t0.Add(2 * time.Minute)})
+		x.PutPendingClaim(store.PendingClaim{PairKey: "o.p", UserID: "u", IssuedAt: t0, ReceivedAt: t0,
+			Claim: protocol.Claim{DeviceID: "d1", Geohash: "9yzgez3", Transport: protocol.TransportUWB}})
+		x.PutPendingClaim(store.PendingClaim{PairKey: "n.p", UserID: "u", IssuedAt: t0, ReceivedAt: t0.Add(2 * time.Minute),
+			Claim: protocol.Claim{DeviceID: "d1", Geohash: "9yzgez3", Transport: protocol.TransportUWB}})
+		x.PruneHandshakes(t0.Add(time.Minute))
+	})
+	tx(t, st, func(x store.Tx) {
+		if _, ok := x.Nonce("old"); ok {
+			t.Error("old nonce not pruned")
+		}
+		if _, ok := x.Nonce("new"); !ok {
+			t.Error("fresh nonce pruned")
+		}
+		if len(x.PendingClaims("o.p")) != 0 || len(x.PendingClaims("n.p")) != 1 {
+			t.Error("pending claims pruned wrongly")
+		}
+	})
+}
+
+func TestActiveEventNearPicksMostRecent(t *testing.T) {
+	st := storetest.New(t)
+	tx(t, st, func(x store.Tx) {
+		x.PutEvent(store.Event{ID: "evt_old", Geohash6: "9yzgez", Start: t0, End: t0.Add(10 * time.Minute)})
+		x.PutEvent(store.Event{ID: "evt_new", Geohash6: "9yzgez", Start: t0, End: t0.Add(20 * time.Minute)})
+		x.PutEvent(store.Event{ID: "evt_mid", Geohash6: "9yzgez", Start: t0, End: t0.Add(15 * time.Minute)})
+	})
+	for range 5 { // map iteration order varies; the answer must not
+		tx(t, st, func(x store.Tx) {
+			if ev, _ := x.ActiveEventNear("9yzgez", t0); ev.ID != "evt_new" {
+				t.Fatalf("ActiveEventNear = %s, want evt_new", ev.ID)
+			}
+		})
+	}
 }

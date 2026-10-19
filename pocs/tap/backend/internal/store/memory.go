@@ -4,6 +4,8 @@ import (
 	"slices"
 	"sync"
 	"time"
+
+	"github.com/rohithIlluri/POC-S/pocs/tap/protocol"
 )
 
 // Memory is the in-memory Store. One mutex serialises transactions, which
@@ -106,6 +108,9 @@ func (t *memTx) DeleteUser(id string) {
 	}
 	t.reports = slices.DeleteFunc(t.reports, func(r Report) bool { return r.ReporterID == id || r.SubjectID == id })
 	for tid, tp := range t.taps {
+		if tp.UserA == id || tp.UserB == id {
+			tp.Receipt, tp.Signature = protocol.Receipt{}, "" // the receipt names both users
+		}
 		if tp.UserA == id {
 			tp.UserA, tp.DeviceA = "deleted", ""
 		}
@@ -156,6 +161,22 @@ func (t *memTx) Nonce(v string) (Nonce, bool) { n, ok := t.nonces[v]; return n, 
 func (t *memTx) PutNonce(n Nonce)             { t.nonces[n.Value] = n }
 
 func (t *memTx) PendingClaims(k string) []PendingClaim { return slices.Clone(t.pending[k]) }
+
+func (t *memTx) PruneHandshakes(before time.Time) {
+	for v, n := range t.nonces {
+		if n.IssuedAt.Before(before) {
+			delete(t.nonces, v)
+		}
+	}
+	for k, list := range t.pending {
+		list = slices.DeleteFunc(list, func(p PendingClaim) bool { return p.ReceivedAt.Before(before) })
+		if len(list) == 0 {
+			delete(t.pending, k)
+		} else {
+			t.pending[k] = list
+		}
+	}
+}
 
 func (t *memTx) PutPendingClaim(pc PendingClaim) {
 	list := slices.DeleteFunc(t.pending[pc.PairKey], func(p PendingClaim) bool {
@@ -276,14 +297,18 @@ func (t *memTx) EventsOf(userID string) []Event {
 	return out
 }
 
+// ActiveEventNear returns the most recently active event in the cell, as
+// the Postgres store does.
 func (t *memTx) ActiveEventNear(g6 string, since time.Time) (Event, bool) {
+	var best Event
+	found := false
 	for _, e := range t.events {
-		if e.Geohash6 == g6 && !e.End.Before(since) {
-			e.Members = slices.Clone(e.Members)
-			return e, true
+		if e.Geohash6 == g6 && !e.End.Before(since) && (!found || e.End.After(best.End)) {
+			best, found = e, true
 		}
 	}
-	return Event{}, false
+	best.Members = slices.Clone(best.Members)
+	return best, found
 }
 
 // PutEvent stores e; ids of deleted accounts are dropped from Members.

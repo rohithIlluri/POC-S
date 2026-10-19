@@ -18,8 +18,8 @@ import (
 //   - every pick is a real vote by a real connection; nothing is generated;
 //   - only active connections appear as options or count toward a card,
 //     so a removal or block drops someone out in both directions at once;
-//   - Props unlocks at PropsMinConnections, so a pick can't be traced by
-//     elimination, and no response ever carries the voter.
+//   - Props unlocks at PropsMinConnections, for voting and for seeing picks,
+//     so a pick can't be traced by elimination; no response carries the voter.
 
 type prompt struct{ ID, Text string }
 
@@ -188,9 +188,13 @@ func (s *Server) handlePropsVote(w http.ResponseWriter, r *http.Request, userID 
 }
 
 // receivedPicks returns the votes for userID since a time, keeping only
-// those from people still connected.
-func receivedPicks(tx store.Tx, userID string, since time.Time) ([]store.PropsVote, map[string]string) {
+// those from people still connected. Below the unlock threshold it returns
+// none: with one or two connections, a single pick names its voter.
+func (s *Server) receivedPicks(tx store.Tx, userID string, since time.Time) ([]store.PropsVote, map[string]string) {
 	conns := connections(tx, userID)
+	if len(conns) < s.cfg.PropsMinConnections {
+		return nil, conns
+	}
 	var out []store.PropsVote
 	for _, v := range tx.PropsVotesFor(userID, since) {
 		if _, active := conns[v.VoterID]; active {
@@ -209,7 +213,7 @@ type pickView struct {
 func (s *Server) handlePropsInbox(w http.ResponseWriter, _ *http.Request, userID string) {
 	picks := []pickView{}
 	err := s.st.Tx(func(tx store.Tx) error {
-		votes, conns := receivedPicks(tx, userID, s.cfg.Now().AddDate(0, 0, -30))
+		votes, conns := s.receivedPicks(tx, userID, s.cfg.Now().AddDate(0, 0, -30))
 		// An event hint is shown only when the event holds enough of the
 		// user's connections that it can't single anyone out.
 		inEvent := map[string]int{}
@@ -257,7 +261,7 @@ func (s *Server) buildCard(userID string) (propsCard, error) {
 	err := s.st.Tx(func(tx store.Tx) error {
 		u, _ := tx.User(userID)
 		card.Name = u.DisplayName
-		votes, _ := receivedPicks(tx, userID, now.AddDate(0, 0, -8))
+		votes, _ := s.receivedPicks(tx, userID, now.AddDate(0, 0, -8))
 		people := map[string]bool{}
 		counts := map[string]int{}
 		for _, v := range votes {

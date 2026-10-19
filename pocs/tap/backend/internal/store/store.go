@@ -157,6 +157,7 @@ type Tx interface {
 	Nonce(value string) (Nonce, bool)
 	PutNonce(Nonce)
 
+	PruneHandshakes(before time.Time) // drop nonces issued and pending claims received before
 	PendingClaims(pairKey string) []PendingClaim
 	PutPendingClaim(PendingClaim)
 	DeletePendingClaim(pairKey, deviceID string)

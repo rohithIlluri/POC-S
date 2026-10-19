@@ -781,3 +781,151 @@ func TestPropsInvitePage(t *testing.T) {
 		t.Errorf("invite page: %d %.100s", resp.StatusCode, b)
 	}
 }
+
+// A device with claims pending under two pair keys must not turn one
+// nonce into two taps.
+func TestOneNonceOneTap(t *testing.T) {
+	ts := newServer(t, nil)
+	a, b, c := onboard(t, ts, "A"), onboard(t, ts, "B"), onboard(t, ts, "C")
+	sa, _ := a.StartTap()
+	sb, _ := b.StartTap()
+	sc, _ := c.StartTap()
+	m := sim.DefaultMeasurement()
+	ab, sigAB, _ := sa.Claim(sb.Nonce, sb.EphPub(), m)
+	ac, sigAC, _ := sa.Claim(sc.Nonce, sc.EphPub(), m)
+	ba, sigBA, _ := sb.Claim(sa.Nonce, sa.EphPub(), m)
+	ca, sigCA, _ := sc.Claim(sa.Nonce, sa.EphPub(), m)
+
+	results := make(chan error, 2)
+	go func() { _, err := a.Submit(ab, sigAB); results <- err }()
+	go func() { _, err := a.Submit(ac, sigAC); results <- err }()
+	time.Sleep(200 * time.Millisecond) // both of A's claims are pending
+	if _, err := b.Submit(ba, sigBA); err != nil {
+		t.Fatalf("first handshake: %v", err)
+	}
+	_, err := c.Submit(ca, sigCA)
+	wantCode(t, err, "nonce_used")
+	<-results
+	<-results
+	if n := people(t, a).Total; n != 1 {
+		t.Fatalf("one nonce produced %d connections", n)
+	}
+}
+
+// A pending claim from an account deleted while it waited must not commit.
+func TestPartnerDeletedWhileWaiting(t *testing.T) {
+	ts := newServer(t, nil)
+	a, b := onboard(t, ts, "A"), onboard(t, ts, "B")
+	sa, _ := a.StartTap()
+	sb, _ := b.StartTap()
+	ca, sigA, _ := sa.Claim(sb.Nonce, sb.EphPub(), sim.DefaultMeasurement())
+	cb, sigB, _ := sb.Claim(sa.Nonce, sa.EphPub(), sim.DefaultMeasurement())
+	done := make(chan struct{})
+	go func() { _, _ = a.Submit(ca, sigA); close(done) }()
+	time.Sleep(200 * time.Millisecond)
+	if err := a.Do("DELETE", "/v1/me", nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	_, err := b.Submit(cb, sigB)
+	wantCode(t, err, "partner_expired")
+	<-done
+	if people(t, b).Total != 0 {
+		t.Error("edge created with a deleted account")
+	}
+}
+
+// A claim that outlives shutdown's grace period still commits and is
+// assigned an event inline, instead of panicking on the closed queue.
+func TestMatchAfterClose(t *testing.T) {
+	ts := newServer(t, nil)
+	a, b := onboard(t, ts, "A"), onboard(t, ts, "B")
+	v, _ := servers.Load(ts.URL)
+	v.(*server.Server).Close()
+	r, _ := tap(t, a, b)
+	mustMatch(t, r)
+}
+
+func TestPropsHiddenFromRecipientsBelowThreshold(t *testing.T) {
+	ts := newServer(t, nil)
+	ps := mesh(t, ts, "Vic", "P1", "P2", "P3", "P4")
+	vic := ps[0]
+	newbie := onboard(t, ts, "Newbie") // will know only Vic
+	r, _ := tap(t, vic, newbie)
+	mustMatch(t, r)
+	if err := vote(vic, pollWith(t, vic, newbie.UserID), newbie.UserID); err != nil {
+		t.Fatal(err)
+	}
+	var inbox inboxResp
+	_ = newbie.Do("GET", "/v1/props/inbox", nil, &inbox)
+	var card struct {
+		People int `json:"people"`
+	}
+	_ = newbie.Do("GET", "/v1/props/card", nil, &card)
+	if len(inbox.Picks) != 0 || card.People != 0 {
+		t.Fatalf("a user with 1 connection sees picks (which name the voter): %+v %+v", inbox, card)
+	}
+	for _, p := range ps[1:] { // four more connections: now picks can't be traced
+		r, _ := tap(t, p, newbie)
+		mustMatch(t, r)
+	}
+	_ = newbie.Do("GET", "/v1/props/inbox", nil, &inbox)
+	if len(inbox.Picks) != 1 {
+		t.Fatalf("pick not shown after unlocking: %+v", inbox)
+	}
+}
+
+func TestOTPCannotBeFarmed(t *testing.T) {
+	clk := &clock{}
+	ts := newServer(t, func(c *server.Config) { c.Now = clk.Now })
+	p := sim.NewPhone(ts.URL, "X")
+	const phone = "+13145558888"
+	start := func() error { return p.Do("POST", "/v1/auth/otp/start", map[string]string{"phone": phone}, nil) }
+	verify := func(code, name string) error {
+		return p.Do("POST", "/v1/auth/otp/verify", map[string]string{"phone": phone, "code": code, "display_name": name}, nil)
+	}
+	if err := start(); err != nil {
+		t.Fatal(err)
+	}
+	wantCode(t, start(), "otp_cooldown")
+	for range 3 {
+		wantCode(t, verify("000000x", "X"), "otp_wrong")
+	}
+	clk.Advance(31 * time.Second)
+	if err := start(); err != nil { // a new code...
+		t.Fatal(err)
+	}
+	for range 2 { // ...but the wrong guesses carried over: 5 in total
+		wantCode(t, verify("000000x", "X"), "otp_wrong")
+	}
+	wantCode(t, verify("000000x", "X"), "otp_locked")
+	clk.Advance(31 * time.Second)
+	wantCode(t, start(), "otp_locked")
+	clk.Advance(time.Hour) // the window ends
+	if err := start(); err != nil {
+		t.Fatalf("after the window: %v", err)
+	}
+	for range 4 {
+		clk.Advance(31 * time.Second)
+		if err := start(); err != nil {
+			t.Fatal(err)
+		}
+	}
+	clk.Advance(31 * time.Second)
+	wantCode(t, start(), "otp_limit")
+}
+
+func TestBadNameDoesNotConsumeCode(t *testing.T) {
+	ts := newServer(t, nil)
+	p := sim.NewPhone(ts.URL, "X")
+	var start struct {
+		DevCode string `json:"dev_code"`
+	}
+	if err := p.Do("POST", "/v1/auth/otp/start", map[string]string{"phone": "+13145557777"}, &start); err != nil {
+		t.Fatal(err)
+	}
+	err := p.Do("POST", "/v1/auth/otp/verify", map[string]string{"phone": "+13145557777", "code": start.DevCode, "display_name": " "}, nil)
+	wantCode(t, err, "bad_name")
+	if err := p.Do("POST", "/v1/auth/otp/verify", map[string]string{"phone": "+13145557777", "code": start.DevCode, "display_name": "Xu"}, nil); err != nil {
+		t.Fatalf("code was consumed by the rejected attempt: %v", err)
+	}
+}

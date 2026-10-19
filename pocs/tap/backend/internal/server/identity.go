@@ -34,17 +34,27 @@ func (DevAttest) Verify(_, attestation string) (string, error) {
 	return "", fmt.Errorf("unsupported attestation format")
 }
 
+// otpEntry tracks one phone number's codes within a rolling window. Wrong
+// guesses carry over between codes, so requesting a new code never buys
+// fresh guesses; starts are capped and spaced so nobody can farm codes or
+// flood a victim with SMS.
 type otpEntry struct {
-	code     string
-	expires  time.Time
-	attempts int
+	code      string
+	expires   time.Time
+	attempts  int // wrong guesses in this window, across codes
+	window    time.Time
+	starts    int
+	lastStart time.Time
 }
 
 var e164 = regexp.MustCompile(`^\+[1-9][0-9]{7,14}$`)
 
 const (
 	otpTTL         = 5 * time.Minute
-	otpMaxAttempts = 5
+	otpMaxAttempts = 5 // wrong guesses per phone per window
+	otpMaxStarts   = 5 // codes per phone per window
+	otpCooldown    = 30 * time.Second
+	otpWindow      = time.Hour
 )
 
 func (s *Server) phoneHash(phone string) string {
@@ -67,9 +77,10 @@ func (s *Server) handleOTPStart(w http.ResponseWriter, r *http.Request) {
 	}
 	n, _ := rand.Int(rand.Reader, big.NewInt(1_000_000))
 	code := fmt.Sprintf("%06d", n.Int64())
-	s.mu.Lock()
-	s.otps[req.Phone] = otpEntry{code: code, expires: s.cfg.Now().Add(otpTTL)}
-	s.mu.Unlock()
+	if err := s.startOTP(req.Phone, code); err != nil {
+		writeErr(w, err)
+		return
+	}
 	resp := map[string]any{"sent": true}
 	if s.cfg.DevOTP {
 		resp["dev_code"] = code // no SMS provider in dev: hand the code back
@@ -88,6 +99,20 @@ func (s *Server) handleOTPVerify(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := decode(r, &req); err != nil {
 		writeErr(w, err)
+		return
+	}
+	// Validate a new account's name before the code is consumed, so a
+	// rejected name doesn't cost the user a fresh SMS.
+	var exists bool
+	if err := s.st.Tx(func(tx store.Tx) error {
+		_, exists = tx.UserByPhone(s.phoneHash(req.Phone))
+		return nil
+	}); err != nil {
+		writeErr(w, err)
+		return
+	}
+	if name := strings.TrimSpace(req.DisplayName); !exists && (name == "" || len(name) > 40) {
+		writeErr(w, fail(400, "bad_name", "new accounts need a display name of 1–40 characters"))
 		return
 	}
 	if err := s.checkOTP(req.Phone, req.Code); err != nil {
@@ -118,15 +143,46 @@ func (s *Server) handleOTPVerify(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]any{"token": token, "user": user})
 }
 
+func (s *Server) startOTP(phone, code string) error {
+	now := s.cfg.Now()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	e := s.otps[phone]
+	if e.window.IsZero() || now.Sub(e.window) > otpWindow {
+		e = otpEntry{window: now}
+	}
+	switch {
+	case e.attempts >= otpMaxAttempts:
+		return fail(429, "otp_locked", "too many attempts; try again in an hour")
+	case e.starts >= otpMaxStarts:
+		return fail(429, "otp_limit", "too many codes requested; try again in an hour")
+	case !e.lastStart.IsZero() && now.Sub(e.lastStart) < otpCooldown:
+		return fail(429, "otp_cooldown", "wait %s before requesting another code", otpCooldown)
+	}
+	e.code, e.expires, e.lastStart = code, now.Add(otpTTL), now
+	e.starts++
+	s.otps[phone] = e
+	// Drop finished windows once the map has doubled, so it can't grow forever.
+	if len(s.otps) >= s.otpSweepAt {
+		for p, old := range s.otps {
+			if now.Sub(old.window) > otpWindow {
+				delete(s.otps, p)
+			}
+		}
+		s.otpSweepAt = max(1024, 2*len(s.otps))
+	}
+	return nil
+}
+
 func (s *Server) checkOTP(phone, code string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	e, ok := s.otps[phone]
-	if !ok || s.cfg.Now().After(e.expires) {
+	if !ok || e.code == "" || s.cfg.Now().After(e.expires) {
 		return fail(400, "otp_expired", "request a new code")
 	}
 	if e.attempts >= otpMaxAttempts {
-		return fail(429, "otp_locked", "too many attempts; request a new code")
+		return fail(429, "otp_locked", "too many attempts; try again in an hour")
 	}
 	if subtle.ConstantTimeCompare([]byte(e.code), []byte(code)) != 1 {
 		e.attempts++

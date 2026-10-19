@@ -226,10 +226,21 @@ func (s *Server) checkPair(tx store.Tx, mine, partner store.PendingClaim, now ti
 	if mine.Claim.Geohash[:6] != partner.Claim.Geohash[:6] {
 		return fail(400, "location_mismatch", "the phones reported different places")
 	}
+	// The partner claim was checked when it arrived; recheck what may have
+	// changed while it waited. Its nonce may have been spent by another
+	// handshake (a device can have claims pending under several pair keys),
+	// and its account or device may have been deleted.
+	if n, ok := tx.Nonce(partner.Claim.Nonce); !ok || n.Used {
+		return fail(409, "nonce_used", "the other phone's nonce was already used")
+	}
+	pu, ok := tx.User(partner.UserID)
+	if _, devOK := tx.Device(partner.Claim.DeviceID); !ok || !devOK {
+		return fail(410, "partner_expired", "the other phone's account is gone")
+	}
 	if tx.Blocked(mine.UserID, partner.UserID) {
 		return fail(403, "blocked", "these accounts can't tap")
 	}
-	if u, _ := tx.User(partner.UserID); u.Frozen {
+	if pu.Frozen {
 		return fail(403, "frozen", "tapping is paused on the other account")
 	}
 	return nil

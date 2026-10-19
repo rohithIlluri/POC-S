@@ -215,6 +215,7 @@ func (t *pgTx) PutUser(u User) {
 }
 
 func (t *pgTx) DeleteUser(id string) {
+	t.exec(`UPDATE taps SET receipt = '{}'::jsonb, signature = '' WHERE user_a = $1 OR user_b = $1`, id) // the receipt names both users
 	t.exec(`UPDATE taps SET user_a = 'deleted', device_a = '' WHERE user_a = $1`, id)
 	t.exec(`UPDATE taps SET user_b = 'deleted', device_b = '' WHERE user_b = $1`, id)
 	t.exec(`DELETE FROM users WHERE id = $1`, id) // cascades to everything else
@@ -275,6 +276,11 @@ func (t *pgTx) Nonce(v string) (Nonce, bool) {
 func (t *pgTx) PutNonce(n Nonce) {
 	t.exec(`INSERT INTO nonces (value, device_id, issued_at, used) VALUES ($1, $2, $3, $4)
 		ON CONFLICT (value) DO UPDATE SET used = $4`, n.Value, n.DeviceID, n.IssuedAt, n.Used)
+}
+
+func (t *pgTx) PruneHandshakes(before time.Time) {
+	t.exec(`DELETE FROM nonces WHERE issued_at < $1`, before)
+	t.exec(`DELETE FROM pending_claims WHERE received_at < $1`, before)
 }
 
 func (t *pgTx) PendingClaims(k string) []PendingClaim {
