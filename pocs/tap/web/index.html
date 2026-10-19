@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Tap demo</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="top">
+    <h1>Tap <span>· two phones, one gesture</span></h1>
+    <p>Each phone below is a separate client with its own device key (WebCrypto, non-extractable), talking to the real Tap API. The radio between them is simulated; everything the server checks is real.</p>
+  </header>
+
+  <main class="stage">
+    <section class="phone" id="phone-a"></section>
+
+    <section class="bridge" aria-label="Simulated radio">
+      <h2>Between the phones</h2>
+      <label for="distance">Measured distance: <strong id="distance-label"></strong></label>
+      <input id="distance" type="range" min="0" max="500" value="4">
+      <label for="transport">Channel</label>
+      <select id="transport">
+        <option value="ble_ultrasonic">BLE + ultrasonic chirp</option>
+        <option value="uwb">UWB (Nearby Interaction)</option>
+        <option value="qr_ble">Rotating QR + BLE</option>
+      </select>
+      <button id="tap-btn" class="primary" disabled>Hold phones together</button>
+      <button id="meetup-btn" disabled>Simulate a meetup</button>
+      <p class="hint" id="meetup-hint">Five taps in one place within an hour form an event.</p>
+      <h3>Handshake log</h3>
+      <ol id="log" class="log" aria-live="polite"></ol>
+    </section>
+
+    <section class="phone" id="phone-b"></section>
+  </main>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>

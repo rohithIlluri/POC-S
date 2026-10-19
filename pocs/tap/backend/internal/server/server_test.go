@@ -228,15 +228,15 @@ func TestRejectsBadClaims(t *testing.T) {
 }
 
 // Each claim alone is within the 2 s skew of the server's clock, but the two
-// measurements are 3 s apart: not one simultaneous tap.
+// measurements are 2.5 s apart: not one simultaneous tap.
 func TestTimingMismatch(t *testing.T) {
 	ts := newServer(t, nil)
 	a, b := onboard(t, ts, "A"), onboard(t, ts, "B")
 	sa, _ := a.StartTap()
 	sb, _ := b.StartTap()
-	time.Sleep(1600 * time.Millisecond)
+	time.Sleep(1400 * time.Millisecond)
 	early, late := sim.DefaultMeasurement(), sim.DefaultMeasurement()
-	early.ElapsedOffset, late.ElapsedOffset = -1500*time.Millisecond, 1500*time.Millisecond
+	early.ElapsedOffset, late.ElapsedOffset = -1250*time.Millisecond, 1250*time.Millisecond
 	ca, siga, _ := sa.Claim(sb.Nonce, sb.EphPub(), early)
 	cb, sigb, _ := sb.Claim(sa.Nonce, sa.EphPub(), late)
 	errs := make(chan error, 2)

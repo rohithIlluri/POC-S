@@ -1,0 +1,40 @@
+name: tap CI
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - "pocs/tap/**"
+      - ".github/workflows/ci-tap.yml"
+  pull_request:
+    paths:
+      - "pocs/tap/**"
+      - ".github/workflows/ci-tap.yml"
+
+defaults:
+  run:
+    working-directory: pocs/tap
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: pocs/tap/go.mod
+          cache: false # stdlib only, no go.sum
+      - run: gofmt -l . | tee /tmp/fmt.out && test ! -s /tmp/fmt.out
+      - run: go vet ./...
+      - name: unit, server and e2e scenario tests
+        run: go test -race ./...
+
+  protocol-js:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22.x
+      - name: JS protocol matches the Go vectors
+        run: node web/protocol.test.mjs
