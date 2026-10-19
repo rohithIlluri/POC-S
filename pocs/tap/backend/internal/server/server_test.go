@@ -534,3 +534,250 @@ func TestSurvivesRestart(t *testing.T) {
 		t.Errorf("receipt from before the restart no longer verifies: %v", err)
 	}
 }
+
+// mesh onboards phones and taps every pair, so each has len-1 connections.
+func mesh(t *testing.T, ts *httptest.Server, names ...string) []*sim.Phone {
+	t.Helper()
+	var ps []*sim.Phone
+	for _, n := range names {
+		ps = append(ps, onboard(t, ts, n))
+	}
+	for i := range ps {
+		for j := i + 1; j < len(ps); j++ {
+			r, _ := tap(t, ps[i], ps[j])
+			mustMatch(t, r)
+		}
+	}
+	eventsOf(t, ts, ps[0]) // let the event worker assign first taps
+	return ps
+}
+
+type roundResp struct {
+	Unlocked    bool `json:"unlocked"`
+	Connections int  `json:"connections"`
+	Polls       []struct {
+		Index    int    `json:"index"`
+		Prompt   string `json:"prompt"`
+		Answered bool   `json:"answered"`
+		Options  []struct {
+			UserID string `json:"user_id"`
+		} `json:"options"`
+	} `json:"polls"`
+}
+
+func round(t *testing.T, p *sim.Phone) roundResp {
+	t.Helper()
+	var r roundResp
+	if err := p.Do("GET", "/v1/props/round", nil, &r); err != nil {
+		t.Fatal(err)
+	}
+	return r
+}
+
+// pollWith returns the index of an unanswered poll offering target.
+func pollWith(t *testing.T, p *sim.Phone, target string) int {
+	t.Helper()
+	for _, poll := range round(t, p).Polls {
+		for _, o := range poll.Options {
+			if o.UserID == target && !poll.Answered {
+				return poll.Index
+			}
+		}
+	}
+	t.Fatalf("no open poll offers %s", target)
+	return -1
+}
+
+func vote(p *sim.Phone, index int, pick string) error {
+	return p.Do("POST", "/v1/props/vote", map[string]any{"index": index, "pick": pick}, nil)
+}
+
+type inboxResp struct {
+	Picks []struct {
+		Prompt   string `json:"prompt"`
+		PickedOn string `json:"picked_on"`
+		Hint     string `json:"hint"`
+	} `json:"picks"`
+}
+
+func rawGet(t *testing.T, p *sim.Phone, path string) string {
+	t.Helper()
+	req, _ := http.NewRequest("GET", p.Base+path, nil)
+	req.Header.Set("Authorization", "Bearer "+p.Token)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	b, _ := io.ReadAll(resp.Body)
+	return string(b)
+}
+
+func TestPropsUnlocksAtFiveConnections(t *testing.T) {
+	ts := newServer(t, nil)
+	host := onboard(t, ts, "Host")
+	var guests []*sim.Phone
+	for i := range 5 {
+		g := onboard(t, ts, fmt.Sprintf("Guest%d", i))
+		guests = append(guests, g)
+		r, _ := tap(t, host, g)
+		mustMatch(t, r)
+		if i == 3 {
+			if rr := round(t, host); rr.Unlocked || len(rr.Polls) != 0 || rr.Connections != 4 {
+				t.Fatalf("unlocked at 4 connections: %+v", rr)
+			}
+			wantCode(t, vote(host, 0, ""), "no_round")
+		}
+	}
+	rr := round(t, host)
+	if !rr.Unlocked || len(rr.Polls) != 12 {
+		t.Fatalf("round at 5 connections: unlocked=%v polls=%d", rr.Unlocked, len(rr.Polls))
+	}
+	conn := map[string]bool{}
+	for _, g := range guests {
+		conn[g.UserID] = true
+	}
+	prompts := map[string]bool{}
+	for _, p := range rr.Polls {
+		if len(p.Options) != 4 || prompts[p.Prompt] || p.Prompt == "" {
+			t.Fatalf("bad poll %+v", p)
+		}
+		prompts[p.Prompt] = true
+		seen := map[string]bool{}
+		for _, o := range p.Options {
+			if !conn[o.UserID] || seen[o.UserID] {
+				t.Fatalf("option %s is not a distinct connection", o.UserID)
+			}
+			seen[o.UserID] = true
+		}
+	}
+	if again := round(t, host); again.Polls[0].Prompt != rr.Polls[0].Prompt {
+		t.Error("round changed within the week")
+	}
+}
+
+func TestPropsVotesAreRealAndAnonymous(t *testing.T) {
+	ts := newServer(t, nil)
+	ps := mesh(t, ts, "Alice", "Bob", "Cara", "Dev", "Eli", "Fay")
+	alice, bob := ps[0], ps[1]
+
+	i := pollWith(t, alice, bob.UserID)
+	if err := vote(alice, i, bob.UserID); err != nil {
+		t.Fatal(err)
+	}
+	wantCode(t, vote(alice, i, bob.UserID), "already_answered")
+	j := pollWith(t, alice, ps[2].UserID)
+	wantCode(t, vote(alice, j, alice.UserID), "bad_pick")
+	if err := vote(alice, j, ""); err != nil { // skipping is always allowed
+		t.Fatal(err)
+	}
+
+	var inbox inboxResp
+	if err := bob.Do("GET", "/v1/props/inbox", nil, &inbox); err != nil {
+		t.Fatal(err)
+	}
+	if len(inbox.Picks) != 1 || inbox.Picks[0].Prompt == "" || len(inbox.Picks[0].PickedOn) != 10 {
+		t.Fatalf("inbox = %+v", inbox)
+	}
+	if !strings.HasPrefix(inbox.Picks[0].Hint, "someone from ") {
+		t.Errorf("hint missing though all 5 of Bob's connections met at one event: %+v", inbox.Picks[0])
+	}
+	for _, path := range []string{"/v1/props/inbox", "/v1/props/card", "/v1/props/card.svg"} {
+		body := rawGet(t, bob, path)
+		if strings.Contains(body, alice.UserID) || strings.Contains(body, "Alice") {
+			t.Errorf("%s reveals the voter: %.200s", path, body)
+		}
+	}
+	var card struct {
+		People   int    `json:"people"`
+		Picks    int    `json:"picks"`
+		Headline string `json:"headline"`
+	}
+	if err := bob.Do("GET", "/v1/props/card", nil, &card); err != nil {
+		t.Fatal(err)
+	}
+	if card.People != 1 || card.Picks != 1 || card.Headline != "1 person I've actually met picked me this week" {
+		t.Errorf("card = %+v", card)
+	}
+	if svg := rawGet(t, bob, "/v1/props/card.svg"); !strings.Contains(svg, "Meet them.") {
+		t.Errorf("card.svg: %.120s", svg)
+	}
+	// Nobody else received anything: no generated picks.
+	for _, p := range ps[2:] {
+		var in inboxResp
+		_ = p.Do("GET", "/v1/props/inbox", nil, &in)
+		if len(in.Picks) != 0 {
+			t.Errorf("%s has picks nobody made: %+v", p.Name, in)
+		}
+	}
+}
+
+func TestPropsHintNeedsEnoughConnections(t *testing.T) {
+	ts := newServer(t, func(c *server.Config) { c.PropsHintMin = 6 })
+	ps := mesh(t, ts, "Alice", "Bob", "Cara", "Dev", "Eli", "Fay")
+	if err := vote(ps[0], pollWith(t, ps[0], ps[1].UserID), ps[1].UserID); err != nil {
+		t.Fatal(err)
+	}
+	var inbox inboxResp
+	_ = ps[1].Do("GET", "/v1/props/inbox", nil, &inbox)
+	if len(inbox.Picks) != 1 || inbox.Picks[0].Hint != "" {
+		t.Errorf("hint shown with only 5 connections at the event: %+v", inbox)
+	}
+}
+
+func TestPropsRemovalAndDeletionDropBothWays(t *testing.T) {
+	ts := newServer(t, nil)
+	ps := mesh(t, ts, "Alice", "Bob", "Cara", "Dev", "Eli", "Fay", "Gus")
+	alice, bob, cara := ps[0], ps[1], ps[2]
+	if err := vote(alice, pollWith(t, alice, bob.UserID), bob.UserID); err != nil {
+		t.Fatal(err)
+	}
+	open := pollWith(t, alice, bob.UserID) // a second poll still offering Bob
+
+	// Bob removes Alice: her pick disappears for him, and he disappears for her.
+	if err := bob.Do("DELETE", "/v1/people/"+alice.UserID, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	var inbox inboxResp
+	_ = bob.Do("GET", "/v1/props/inbox", nil, &inbox)
+	if len(inbox.Picks) != 0 {
+		t.Errorf("removed connection's pick still shown: %+v", inbox)
+	}
+	for _, p := range round(t, alice).Polls {
+		for _, o := range p.Options {
+			if o.UserID == bob.UserID {
+				t.Fatalf("removed connection still offered in poll %d", p.Index)
+			}
+		}
+	}
+	wantCode(t, vote(alice, open, bob.UserID), "not_connected")
+
+	// Cara picks Bob, then deletes her account: the pick goes with her.
+	if err := vote(cara, pollWith(t, cara, bob.UserID), bob.UserID); err != nil {
+		t.Fatal(err)
+	}
+	_ = bob.Do("GET", "/v1/props/inbox", nil, &inbox)
+	if len(inbox.Picks) != 1 {
+		t.Fatalf("Cara's pick missing: %+v", inbox)
+	}
+	if err := cara.Do("DELETE", "/v1/me", nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	_ = bob.Do("GET", "/v1/props/inbox", nil, &inbox)
+	if len(inbox.Picks) != 0 {
+		t.Errorf("deleted account's pick still shown: %+v", inbox)
+	}
+}
+
+func TestPropsInvitePage(t *testing.T) {
+	ts := newServer(t, nil)
+	resp, err := http.Get(ts.URL + "/props")
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if resp.StatusCode != 200 || !strings.Contains(string(b), "You can't send Props online.") {
+		t.Errorf("invite page: %d %.100s", resp.StatusCode, b)
+	}
+}

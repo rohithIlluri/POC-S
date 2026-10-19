@@ -151,6 +151,49 @@ func Scenarios(burstPairs int) []Scenario {
 			}
 			return recap.Headline, nil
 		}},
+		{"props week", func(base string) (string, error) {
+			ps, err := onboardAll(base, "Ada", "Bo", "Cy", "Di", "Ed", "Flo")
+			if err != nil {
+				return "", err
+			}
+			for i := range ps {
+				for j := i + 1; j < len(ps); j++ {
+					ra, _, err := Handshake(ps[i], ps[j], DefaultMeasurement(), DefaultMeasurement())
+					if err != nil {
+						return "", err
+					}
+					if err := matched(ra); err != nil {
+						return "", err
+					}
+				}
+			}
+			made := 0
+			for _, p := range ps {
+				n, err := p.AnswerProps(func(_ string, opts []Peer) int { return len(opts) - 1 })
+				if err != nil {
+					return "", fmt.Errorf("%s: %w", p.Name, err)
+				}
+				made += n
+			}
+			received, top := 0, ""
+			for _, p := range ps {
+				c, err := p.PropsCard()
+				if err != nil {
+					return "", err
+				}
+				if c.People > len(ps)-1 {
+					return "", fmt.Errorf("%s picked by %d people but has %d connections", p.Name, c.People, len(ps)-1)
+				}
+				received += c.Picks
+				if top == "" && len(c.ByPrompt) > 0 {
+					top = fmt.Sprintf("%s: %q", p.Name, c.Headline)
+				}
+			}
+			if received != made {
+				return "", fmt.Errorf("%d picks made but %d received", made, received)
+			}
+			return fmt.Sprintf("%d picks made = %d received; %s", made, received, top), nil
+		}},
 		{fmt.Sprintf("burst of %d simultaneous taps", burstPairs), func(base string) (string, error) {
 			return burst(base, burstPairs)
 		}},

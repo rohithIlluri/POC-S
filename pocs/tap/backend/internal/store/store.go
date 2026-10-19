@@ -106,6 +106,33 @@ type Report struct {
 	CreatedAt  time.Time
 }
 
+// PropsPoll is one question in a weekly Props round: a curated prompt and
+// up to four of the user's connections to pick from.
+type PropsPoll struct {
+	PromptID string   `json:"prompt_id"`
+	Options  []string `json:"options"`  // user ids
+	Answered bool     `json:"answered"` // picked or skipped; the pick itself lives only in PropsVote
+}
+
+type PropsRound struct {
+	UserID    string
+	Week      string // ISO week, e.g. 2026-W43
+	CreatedAt time.Time
+	Polls     []PropsPoll
+}
+
+// PropsVote is one real pick. The voter is stored so removals and
+// deletions can be honoured, and is never returned by any API.
+type PropsVote struct {
+	ID        string
+	VoterID   string
+	PickedID  string
+	PromptID  string
+	Week      string
+	EventID   string // event of the voter–picked edge's first tap, for the hint
+	CreatedAt time.Time
+}
+
 // Store runs fn as one transaction. Implementations must make fn's reads
 // and writes atomic with respect to other transactions.
 type Store interface {
@@ -156,6 +183,11 @@ type Tx interface {
 	EventsOf(userID string) []Event
 	ActiveEventNear(geohash6 string, since time.Time) (Event, bool)
 	PutEvent(Event)
+
+	PropsRound(userID, week string) (PropsRound, bool)
+	PutPropsRound(PropsRound)
+	PutPropsVote(PropsVote)
+	PropsVotesFor(pickedID string, since time.Time) []PropsVote // newest first
 }
 
 // Pair orders two user ids the way edges and taps store them.

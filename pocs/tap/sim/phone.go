@@ -285,3 +285,62 @@ func (p *Phone) WaitEvent(timeout time.Duration) (Event, error) {
 		time.Sleep(50 * time.Millisecond)
 	}
 }
+
+type PropsRound struct {
+	Unlocked bool `json:"unlocked"`
+	Polls    []struct {
+		Index    int    `json:"index"`
+		Prompt   string `json:"prompt"`
+		Answered bool   `json:"answered"`
+		Options  []Peer `json:"options"`
+	} `json:"polls"`
+}
+
+type PropsCard struct {
+	People   int    `json:"people"`
+	Picks    int    `json:"picks"`
+	Headline string `json:"headline"`
+	ByPrompt []struct {
+		Prompt string `json:"prompt"`
+		Count  int    `json:"count"`
+	} `json:"by_prompt"`
+}
+
+func (p *Phone) PropsRound() (PropsRound, error) {
+	var r PropsRound
+	err := p.Do("GET", "/v1/props/round", nil, &r)
+	return r, err
+}
+
+// AnswerProps answers every open poll with choose (which returns an option
+// index, or -1 to skip) and reports how many picks it made.
+func (p *Phone) AnswerProps(choose func(prompt string, options []Peer) int) (int, error) {
+	r, err := p.PropsRound()
+	if err != nil {
+		return 0, err
+	}
+	if !r.Unlocked {
+		return 0, errors.New("props locked")
+	}
+	picks := 0
+	for _, poll := range r.Polls {
+		if poll.Answered {
+			continue
+		}
+		pick := ""
+		if i := choose(poll.Prompt, poll.Options); i >= 0 {
+			pick = poll.Options[i].UserID
+			picks++
+		}
+		if err := p.Do("POST", "/v1/props/vote", map[string]any{"index": poll.Index, "pick": pick}, nil); err != nil {
+			return picks, err
+		}
+	}
+	return picks, nil
+}
+
+func (p *Phone) PropsCard() (PropsCard, error) {
+	var c PropsCard
+	err := p.Do("GET", "/v1/props/card", nil, &c)
+	return c, err
+}

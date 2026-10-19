@@ -100,10 +100,10 @@ class Phone {
       screen,
     );
     if (!this.ready) return this.renderOnboarding(screen);
-    const views = { tap: this.renderTap, people: this.renderPeople, events: this.renderEvents, you: this.renderYou };
+    const views = { tap: this.renderTap, people: this.renderPeople, events: this.renderEvents, props: this.renderProps, you: this.renderYou };
     Promise.resolve(views[this.tab].call(this, screen)).catch((e) => screen.append(h('p', { class: 'empty' }, e.message)));
     const tabs = h('nav', { class: 'tabs', role: 'tablist' });
-    for (const [id, name] of [['tap', 'Tap'], ['people', 'People'], ['events', 'Events'], ['you', 'You']]) {
+    for (const [id, name] of [['tap', 'Tap'], ['people', 'People'], ['events', 'Events'], ['props', 'Props'], ['you', 'You']]) {
       tabs.append(h('button', { role: 'tab', 'aria-selected': String(this.tab === id), onclick: () => { this.tab = id; this.render(); } }, name));
     }
     this.root.append(tabs);
@@ -216,6 +216,43 @@ class Phone {
     }
   }
 
+  async renderProps(screen) {
+    const round = await this.api('GET', '/v1/props/round');
+    if (!round.unlocked) {
+      screen.append(h('p', { class: 'empty' }, `Props unlocks at ${round.unlocks_at} connections. You have ${round.connections}.`));
+      return;
+    }
+    const open = round.polls.filter((p) => !p.answered);
+    screen.append(h('h2', {}, 'Props'), h('p', {}, `${round.polls.length - open.length} of ${round.polls.length} answered this week`));
+    const poll = open[0];
+    if (poll) {
+      const answer = async (pick) => {
+        await this.api('POST', '/v1/props/vote', { index: poll.index, pick });
+        if (pick) log(`${this.user.display_name} sent a Props pick (anonymous)`);
+        this.render();
+      };
+      screen.append(h('div', { class: 'poll' },
+        h('div', { class: 'q' }, poll.prompt),
+        h('div', { class: 'opts' },
+          poll.options.map((o) => h('button', { onclick: () => answer(o.user_id) }, o.display_name)),
+          h('button', { onclick: () => answer('') }, 'Skip'))));
+    }
+    const [{ picks }, card] = await Promise.all([this.api('GET', '/v1/props/inbox'), this.api('GET', '/v1/props/card')]);
+    const group = h('div', { class: 'group' }, h('h3', {}, picks.length ? 'Picked for' : 'No picks yet this week'));
+    for (const p of picks.slice(0, 6)) {
+      group.append(h('div', { class: 'pick' }, h('div', {}, p.prompt), h('div', { class: 'meta' }, [p.hint || 'someone you met', p.picked_on].join(' · '))));
+    }
+    screen.append(group);
+    if (card.picks) {
+      const src = `/v1/props/card.svg?token=${encodeURIComponent(this.token)}&v=${card.picks}`;
+      screen.append(
+        h('img', { class: 'recap', alt: card.headline, src }),
+        h('button', { class: 'go', onclick: () => shareCard(src, card.headline) }, 'Share to story'),
+        h('p', { class: 'devcode' }, 'The card links to /props: "You can\'t send Props online. Meet them."'),
+      );
+    }
+  }
+
   async renderYou(screen) {
     const me = await this.api('GET', '/v1/me');
     const out = h('pre', { class: 'devcode', style: 'white-space: pre-wrap' });
@@ -259,6 +296,26 @@ describeDistance();
 function updateBridge() {
   tapBtn.disabled = !(a.ready && b.ready);
   meetupBtn.disabled = !a.ready;
+  propsBtn.disabled = attendees.length === 0;
+}
+
+// shareCard rasterises the SVG card to PNG (Instagram and Snapchat take
+// images, not SVG) and opens the system share sheet, or downloads it.
+async function shareCard(src, headline) {
+  const img = new Image();
+  img.src = src;
+  await img.decode();
+  const canvas = Object.assign(document.createElement('canvas'), { width: 1080, height: 1920 });
+  canvas.getContext('2d').drawImage(img, 0, 0);
+  const blob = await new Promise((r) => canvas.toBlob(r, 'image/png'));
+  const file = new File([blob], 'tap-props.png', { type: 'image/png' });
+  if (navigator.canShare?.({ files: [file] })) {
+    await navigator.share({ files: [file], text: headline, url: `${location.origin}/props` });
+  } else {
+    const link = Object.assign(document.createElement('a'), { href: URL.createObjectURL(blob), download: 'tap-props.png' });
+    link.click();
+    log('Saved tap-props.png (no share sheet in this browser)');
+  }
 }
 
 function renderAll() { a.render(); b.render(); }
@@ -303,17 +360,26 @@ tapBtn.addEventListener('click', async () => {
   }
 });
 
+const attendees = [];
+const propsBtn = document.getElementById('props-btn');
+
 meetupBtn.addEventListener('click', async () => {
   meetupBtn.disabled = true;
   const names = ['Priya', 'Marcus', 'Lena', 'Diego', 'Sam'];
-  log(`Meetup: ${names.length} simulated attendees each tap ${a.user.display_name}`);
+  const close = { distance: 5, transport: 'ble_ultrasonic' };
+  const hosts = [a, b].filter((p) => p.ready);
+  log(`Meetup: ${names.length} simulated attendees tap ${hosts.map((p) => p.user.display_name).join(' and ')}, and each other`);
   try {
     for (const name of names) {
       const guest = new Phone(null, name, {});
       await guest.onboard(name, `+1314${String(Math.floor(Math.random() * 1e7)).padStart(7, '0')}`);
-      const [ra] = await handshake(a, guest, { distance: 5, transport: 'ble_ultrasonic' }, { verbose: false });
-      if (ra.status !== 'matched') { log(`${name}: ${ra.code}`, 'bad'); continue; }
-      log(`${name} tapped ${a.user.display_name}`, 'ok');
+      for (const host of hosts) {
+        const [r] = await handshake(host, guest, close, { verbose: false });
+        if (r.status !== 'matched') log(`${name} ↔ ${host.user.display_name}: ${r.code}`, 'bad');
+      }
+      for (const other of attendees) await handshake(other, guest, close, { verbose: false });
+      attendees.push(guest);
+      log(`${name} tapped ${hosts.length} phone${hosts.length > 1 ? 's' : ''} and ${attendees.length - 1} other attendees`, 'ok');
     }
     // Events are assigned just after taps commit; give the worker a moment.
     for (let i = 0; i < 20; i++) {
@@ -322,6 +388,27 @@ meetupBtn.addEventListener('click', async () => {
       await new Promise((r) => setTimeout(r, 150));
     }
     a.tab = 'events';
+    renderAll();
+  } finally {
+    updateBridge();
+  }
+});
+
+propsBtn.addEventListener('click', async () => {
+  propsBtn.disabled = true;
+  try {
+    let picks = 0;
+    for (const guest of attendees) {
+      const round = await guest.api('GET', '/v1/props/round');
+      if (!round.unlocked) continue;
+      for (const poll of round.polls.filter((p) => !p.answered)) {
+        const o = poll.options[Math.floor(Math.random() * poll.options.length)];
+        await guest.api('POST', '/v1/props/vote', { index: poll.index, pick: o.user_id });
+        picks++;
+      }
+    }
+    log(`${attendees.length} attendees answered their polls: ${picks} anonymous picks`, 'ok');
+    a.tab = b.tab = 'props';
     renderAll();
   } finally {
     updateBridge();

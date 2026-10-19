@@ -239,3 +239,51 @@ func TestTxReturnsFnError(t *testing.T) {
 		t.Fatalf("Tx = %v, want the fn's error", err)
 	}
 }
+
+func TestPropsRoundsAndVotes(t *testing.T) {
+	st := storetest.New(t)
+	seedUsers(t, st, "usr_a", "usr_b", "usr_c")
+	tx(t, st, func(x store.Tx) {
+		x.PutPropsRound(store.PropsRound{UserID: "usr_a", Week: "2026-W43", CreatedAt: t0, Polls: []store.PropsPoll{
+			{PromptID: "p_coffee", Options: []string{"usr_b", "usr_c"}},
+			{PromptID: "p_story", Options: []string{"usr_c", "usr_b"}},
+		}})
+		x.PutPropsVote(store.PropsVote{ID: "v1", VoterID: "usr_a", PickedID: "usr_b", PromptID: "p_coffee", Week: "2026-W43", CreatedAt: t0})
+		x.PutPropsVote(store.PropsVote{ID: "v2", VoterID: "usr_c", PickedID: "usr_b", PromptID: "p_story", Week: "2026-W43", EventID: "evt_1", CreatedAt: t0.Add(time.Minute)})
+		x.PutPropsVote(store.PropsVote{ID: "v3", VoterID: "usr_b", PickedID: "usr_c", PromptID: "p_story", Week: "2026-W43", CreatedAt: t0})
+	})
+	tx(t, st, func(x store.Tx) {
+		r, ok := x.PropsRound("usr_a", "2026-W43")
+		if !ok || len(r.Polls) != 2 || r.Polls[1].Options[0] != "usr_c" || r.Polls[0].Answered {
+			t.Fatalf("PropsRound = %+v %v", r, ok)
+		}
+		r.Polls[0].Answered = true
+		x.PutPropsRound(r)
+		if _, ok := x.PropsRound("usr_a", "2026-W44"); ok {
+			t.Error("round found for the wrong week")
+		}
+		vs := x.PropsVotesFor("usr_b", t0)
+		if len(vs) != 2 || vs[0].ID != "v2" || vs[0].EventID != "evt_1" {
+			t.Errorf("PropsVotesFor = %+v", vs)
+		}
+		if vs := x.PropsVotesFor("usr_b", t0.Add(30*time.Second)); len(vs) != 1 {
+			t.Errorf("since filter: %+v", vs)
+		}
+	})
+	tx(t, st, func(x store.Tx) {
+		if r, _ := x.PropsRound("usr_a", "2026-W43"); !r.Polls[0].Answered {
+			t.Error("answered flag lost")
+		}
+		x.DeleteUser("usr_c")
+	})
+	tx(t, st, func(x store.Tx) {
+		// usr_c's vote for usr_b and usr_b's vote for usr_c both go with the account.
+		if vs := x.PropsVotesFor("usr_b", t0); len(vs) != 1 || vs[0].VoterID != "usr_a" {
+			t.Errorf("after delete: %+v", vs)
+		}
+		x.DeleteUser("usr_a")
+		if _, ok := x.PropsRound("usr_a", "2026-W43"); ok {
+			t.Error("deleted user's round remains")
+		}
+	})
+}

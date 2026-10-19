@@ -504,3 +504,44 @@ func (t *pgTx) PutEvent(e Event) {
 		SELECT $1, u FROM unnest($2::text[]) AS u WHERE EXISTS (SELECT 1 FROM users WHERE id = u)
 		ON CONFLICT DO NOTHING`, e.ID, members)
 }
+
+// ---- props ----
+
+func (t *pgTx) PropsRound(userID, week string) (PropsRound, bool) {
+	r := PropsRound{UserID: userID, Week: week}
+	var raw []byte
+	ok := t.one(func(row pgx.Row) error { return row.Scan(&r.CreatedAt, &raw) },
+		`SELECT created_at, polls FROM props_rounds WHERE user_id = $1 AND week = $2`, userID, week)
+	if !ok {
+		return PropsRound{}, false
+	}
+	if err := json.Unmarshal(raw, &r.Polls); err != nil {
+		t.err = err
+		return PropsRound{}, false
+	}
+	return r, true
+}
+
+func (t *pgTx) PutPropsRound(r PropsRound) {
+	t.exec(`INSERT INTO props_rounds (user_id, week, created_at, polls) VALUES ($1, $2, $3, $4)
+		ON CONFLICT (user_id, week) DO UPDATE SET polls = $4`, r.UserID, r.Week, r.CreatedAt, t.jsonArg(r.Polls))
+}
+
+func (t *pgTx) PutPropsVote(v PropsVote) {
+	t.exec(`INSERT INTO props_votes (id, voter_id, picked_id, prompt_id, week, event_id, created_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)`, v.ID, v.VoterID, v.PickedID, v.PromptID, v.Week, v.EventID, v.CreatedAt)
+}
+
+func (t *pgTx) PropsVotesFor(pickedID string, since time.Time) []PropsVote {
+	var out []PropsVote
+	t.many(func(r pgx.Rows) error {
+		var v PropsVote
+		if err := r.Scan(&v.ID, &v.VoterID, &v.PickedID, &v.PromptID, &v.Week, &v.EventID, &v.CreatedAt); err != nil {
+			return err
+		}
+		out = append(out, v)
+		return nil
+	}, `SELECT id, voter_id, picked_id, prompt_id, week, event_id, created_at FROM props_votes
+		WHERE picked_id = $1 AND created_at >= $2 ORDER BY created_at DESC, id`, pickedID, since)
+	return out
+}

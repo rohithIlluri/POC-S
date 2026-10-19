@@ -25,6 +25,8 @@ type Memory struct {
 	blocks   map[[2]string]bool
 	reports  []Report
 	events   map[string]Event
+	rounds   map[[2]string]PropsRound
+	votes    []PropsVote
 }
 
 type session struct {
@@ -38,6 +40,7 @@ func NewMemory() *Memory {
 		devices: map[string]Device{}, nonces: map[string]Nonce{}, pending: map[string][]PendingClaim{},
 		taps: map[string]Tap{}, tapByKey: map[string]string{}, edges: map[[2]string]Edge{},
 		meta: map[[2]string]EdgeMeta{}, blocks: map[[2]string]bool{}, events: map[string]Event{},
+		rounds: map[[2]string]PropsRound{},
 	}
 }
 
@@ -115,6 +118,12 @@ func (t *memTx) DeleteUser(id string) {
 		e.Members = slices.DeleteFunc(e.Members, func(m string) bool { return m == id })
 		t.events[eid] = e
 	}
+	for k := range t.rounds {
+		if k[0] == id {
+			delete(t.rounds, k)
+		}
+	}
+	t.votes = slices.DeleteFunc(t.votes, func(v PropsVote) bool { return v.VoterID == id || v.PickedID == id })
 }
 
 func (t *memTx) PutSession(token, userID string, expires time.Time) {
@@ -284,4 +293,32 @@ func (t *memTx) PutEvent(e Event) {
 		return !ok
 	})
 	t.events[e.ID] = e
+}
+
+func cloneRound(r PropsRound) PropsRound {
+	r.Polls = slices.Clone(r.Polls)
+	for i := range r.Polls {
+		r.Polls[i].Options = slices.Clone(r.Polls[i].Options)
+	}
+	return r
+}
+
+func (t *memTx) PropsRound(userID, week string) (PropsRound, bool) {
+	r, ok := t.rounds[[2]string{userID, week}]
+	return cloneRound(r), ok
+}
+
+func (t *memTx) PutPropsRound(r PropsRound) { t.rounds[[2]string{r.UserID, r.Week}] = cloneRound(r) }
+
+func (t *memTx) PutPropsVote(v PropsVote) { t.votes = append(t.votes, v) }
+
+func (t *memTx) PropsVotesFor(pickedID string, since time.Time) []PropsVote {
+	var out []PropsVote
+	for _, v := range t.votes {
+		if v.PickedID == pickedID && !v.CreatedAt.Before(since) {
+			out = append(out, v)
+		}
+	}
+	slices.SortStableFunc(out, func(a, b PropsVote) int { return b.CreatedAt.Compare(a.CreatedAt) })
+	return out
 }

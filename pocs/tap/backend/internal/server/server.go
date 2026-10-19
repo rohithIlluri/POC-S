@@ -33,6 +33,10 @@ type Config struct {
 	EventMinTaps         int // taps nearby within EventWindow that form an event
 	EventWindow          time.Duration
 	ReportsToFreeze      int    // distinct reporters that freeze tapping
+	PropsPollsPerWeek    int    // polls in a weekly Props round
+	PropsOptions         int    // connections offered per poll
+	PropsMinConnections  int    // Props unlocks at this many connections
+	PropsHintMin         int    // an event hint needs this many of the user's connections there
 	DevOTP               bool   // return OTP codes in the response instead of sending SMS
 	PhoneSalt            []byte // HMAC key for phone hashes
 	ReceiptKey           *ecdsa.PrivateKey
@@ -66,6 +70,10 @@ func DefaultConfig() (Config, error) {
 		EventMinTaps:         5,
 		EventWindow:          time.Hour,
 		ReportsToFreeze:      3,
+		PropsPollsPerWeek:    12,
+		PropsOptions:         4,
+		PropsMinConnections:  5,
+		PropsHintMin:         5,
 		PhoneSalt:            salt,
 		ReceiptKey:           key,
 		Attest:               DevAttest{},
@@ -133,6 +141,13 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("PUT /v1/events/{id}", s.authed(s.handleNameEvent))
 	s.mux.HandleFunc("GET /v1/events/{id}/recap", s.authed(s.handleRecap))
 	s.mux.HandleFunc("GET /v1/events/{id}/recap.svg", s.authed(s.handleRecapSVG))
+
+	s.mux.HandleFunc("GET /v1/props/round", s.authed(s.handlePropsRound))
+	s.mux.HandleFunc("POST /v1/props/vote", s.authed(s.handlePropsVote))
+	s.mux.HandleFunc("GET /v1/props/inbox", s.authed(s.handlePropsInbox))
+	s.mux.HandleFunc("GET /v1/props/card", s.authed(s.handlePropsCard))
+	s.mux.HandleFunc("GET /v1/props/card.svg", s.authed(s.handlePropsCardSVG))
+	s.mux.HandleFunc("GET /props", s.handlePropsInvite)
 
 	if s.cfg.Static != nil {
 		s.mux.Handle("GET /", http.FileServerFS(s.cfg.Static))
