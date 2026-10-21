@@ -187,6 +187,12 @@ func (t *TapSession) Claim(peerNonce, peerEph string, m Measurement) (protocol.C
 	return c, sig, err
 }
 
+// SignClaim signs c with this phone's device key. Tests use it to submit a
+// deliberately altered claim that still carries a valid signature.
+func (p *Phone) SignClaim(c protocol.Claim) (string, error) {
+	return protocol.Sign(p.key, c.Canonical())
+}
+
 type Peer struct {
 	UserID      string `json:"user_id"`
 	DisplayName string `json:"display_name"`

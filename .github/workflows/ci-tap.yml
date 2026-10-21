@@ -45,6 +45,20 @@ jobs:
           TAP_TEST_PG: postgres://postgres:postgres@localhost:5432/tap_test?sslmode=disable
         run: go test -race -count=1 ./...
 
+  image:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: build the container image
+        run: docker build -t tapd:ci .
+      - name: image starts, serves, and shuts down cleanly
+        run: |
+          docker run -d --name tapd -p 8080:8080 tapd:ci -dev
+          for i in $(seq 1 20); do curl -fs localhost:8080/healthz && break || sleep 0.5; done
+          curl -fs localhost:8080/healthz
+          docker stop tapd
+          docker logs tapd 2>&1 | grep -q "stopped"
+
   protocol-js:
     runs-on: ubuntu-latest
     steps:

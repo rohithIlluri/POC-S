@@ -1012,3 +1012,65 @@ func TestPilotStats(t *testing.T) {
 		t.Errorf("retap: cohort=%d retapped=%d rate=%v met=%v", st.RetapCohort, st.Retapped, st.RetapRate, st.GateMet)
 	}
 }
+
+// Two server instances over one store, as on Cloud Run during a rollout:
+// the first phone's claim lands on instance 1, its partner's on instance 2.
+// Instance 2 can't wake instance 1's waiter, so the waiter must find the
+// result in the store rather than sit out the whole ClaimWait.
+func TestMatchAcrossInstances(t *testing.T) {
+	st := storetest.New(t)
+	cfg, err := server.DefaultConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.DevOTP, cfg.Logf = true, nil
+	cfg.ClaimWait = 8 * time.Second
+	cfg.ClaimPoll = 50 * time.Millisecond
+	boot := func() *httptest.Server {
+		srv, err := server.New(cfg, st)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ts := httptest.NewServer(srv)
+		t.Cleanup(func() { ts.Close(); srv.Close() })
+		return ts
+	}
+	one, two := boot(), boot()
+	// OTP state is per instance, so sign both phones in on instance 1 and
+	// point Bob at instance 2 with the same session.
+	alice, bob := onboard(t, one, "Alice"), onboard(t, one, "Bob")
+	bob.Base = two.URL
+
+	start := time.Now()
+	ra, rb := tap(t, alice, bob)
+	mustMatch(t, ra)
+	mustMatch(t, rb)
+	if took := time.Since(start); took > 3*time.Second {
+		t.Fatalf("cross-instance match took %s; the waiter slept through ClaimWait", took)
+	}
+	if ra.Match.Receipt.TapID != rb.Match.Receipt.TapID {
+		t.Error("the two instances produced different taps")
+	}
+
+	// A refused partner claim is also seen by the waiter on the other instance.
+	sa, _ := alice.StartTap()
+	sb, _ := bob.StartTap()
+	m := sim.DefaultMeasurement()
+	ca, siga, _ := sa.Claim(sb.Nonce, sb.EphPub(), m)
+	cb, _, _ := sb.Claim(sa.Nonce, sa.EphPub(), m)
+	cb.Geohash = protocol.Geohash(40.7128, -74.0060, 7) // Bob reports New York
+	sigb, err := bob.SignClaim(cb)
+	if err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	go func() { _, err := alice.Submit(ca, siga); done <- err }()
+	time.Sleep(150 * time.Millisecond)
+	_, err = bob.Submit(cb, sigb)
+	wantCode(t, err, "location_mismatch")
+	start = time.Now()
+	wantCode(t, <-done, "partner_rejected")
+	if took := time.Since(start); took > 3*time.Second {
+		t.Fatalf("waiter learned of the refusal after %s", took)
+	}
+}

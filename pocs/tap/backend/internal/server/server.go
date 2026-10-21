@@ -26,6 +26,7 @@ type Config struct {
 	Now                  func() time.Time
 	NonceTTL             time.Duration // a nonce is valid this long after issue
 	ClaimWait            time.Duration // how long POST /tap/claim waits for the partner
+	ClaimPoll            time.Duration // how often a waiting claim checks the store, for partners handled by another instance
 	MaxSkew              time.Duration // allowed gap between the two measurements
 	MaxDistanceCM        map[protocol.Transport]int
 	TapsPerDevicePerHour int
@@ -60,6 +61,7 @@ func DefaultConfig() (Config, error) {
 		Now:       time.Now,
 		NonceTTL:  20 * time.Second,
 		ClaimWait: 10 * time.Second,
+		ClaimPoll: 400 * time.Millisecond,
 		MaxSkew:   2 * time.Second,
 		MaxDistanceCM: map[protocol.Transport]int{
 			protocol.TransportUWB:           15,

@@ -202,23 +202,50 @@ func (s *Server) awaitPartner(ctx context.Context, w http.ResponseWriter, userID
 	key := c.PairKey()
 	timer := time.NewTimer(s.cfg.ClaimWait)
 	defer timer.Stop()
-	select {
-	case res := <-ch:
-		if res.err != nil {
-			rec("rejected", res.err.Code)
-			writeErr(w, res.err)
+	poll := time.NewTicker(s.cfg.ClaimPoll)
+	defer poll.Stop()
+wait:
+	for {
+		select {
+		case res := <-ch:
+			if res.err != nil {
+				rec("rejected", res.err.Code)
+				writeErr(w, res.err)
+				return
+			}
+			rec("matched", "")
+			s.writeMatch(w, userID, res.tap)
 			return
+		case <-poll.C:
+			// The partner's request may have reached another instance, which
+			// can't wake this one; the database is the shared truth.
+			tp, gone, err := s.peekHandshake(key, c.DeviceID)
+			switch {
+			case err != nil:
+				s.cfg.Logf("poll handshake: %v", err)
+			case tp != nil:
+				s.unregister(key, c.DeviceID, ch)
+				rec("matched", "")
+				s.writeMatch(w, userID, *tp)
+				return
+			case gone:
+				s.unregister(key, c.DeviceID, ch)
+				e := fail(409, "partner_rejected", "the other phone's claim was refused")
+				rec("rejected", e.Code)
+				writeErr(w, e)
+				return
+			}
+		case <-timer.C:
+			break wait
+		case <-ctx.Done():
+			break wait
 		}
-		rec("matched", "")
-		s.writeMatch(w, userID, res.tap)
-		return
-	case <-timer.C:
-	case <-ctx.Done():
 	}
 	s.unregister(key, c.DeviceID, ch)
 	// The partner may have matched in the instant the wait ended.
 	var tp *store.Tap
 	if err := s.st.Tx(func(tx store.Tx) error {
+		tp = nil
 		if t, ok := tx.TapByPairKey(key); ok {
 			tp = &t
 			return nil
@@ -237,6 +264,27 @@ func (s *Server) awaitPartner(ctx context.Context, w http.ResponseWriter, userID
 	}
 	rec("expired", "")
 	writeJSON(w, 200, map[string]string{"status": "expired"})
+}
+
+// peekHandshake reports the handshake's tap if it has been decided, or gone
+// if this device's pending claim was removed without one (the partner's
+// claim was refused).
+func (s *Server) peekHandshake(key, deviceID string) (tp *store.Tap, gone bool, err error) {
+	err = s.st.Tx(func(tx store.Tx) error {
+		tp, gone = nil, false
+		if t, ok := tx.TapByPairKey(key); ok {
+			tp = &t
+			return nil
+		}
+		gone = true
+		for _, p := range tx.PendingClaims(key) {
+			if p.Claim.DeviceID == deviceID {
+				gone = false
+			}
+		}
+		return nil
+	})
+	return
 }
 
 // checkPair decides whether two claims describe one physical tap.
