@@ -42,8 +42,8 @@ type view struct {
 // bytes are built by the tested Go codec, so the page never constructs a
 // command itself.
 type strapView struct {
-	Service, CmdTo, DataFrom string
-	RealtimeOn, RealtimeOff  string
+	Service, CmdTo, CmdFrom, Events, DataFrom string
+	RealtimeOn, RealtimeOff                   string
 }
 
 type whoopView struct {
@@ -132,6 +132,8 @@ func buildView(entries []store.Entry, cfg config.Config, creds whoop.Credentials
 		Strap: strapView{
 			Service:     whoopble.ServiceUUID,
 			CmdTo:       whoopble.CmdToStrapUUID,
+			CmdFrom:     whoopble.CmdFromStrapUUID,
+			Events:      whoopble.EventsFromStrapUUID,
 			DataFrom:    whoopble.DataFromStrapUUID,
 			RealtimeOn:  hex.EncodeToString(whoopble.RealtimeHR(1, true)),
 			RealtimeOff: hex.EncodeToString(whoopble.RealtimeHR(2, false)),

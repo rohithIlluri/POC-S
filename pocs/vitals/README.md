@@ -103,6 +103,13 @@ Safety: the only command vitals can build is realtime on/off. The generic
 command builder is unexported, so the strap's erase, flash-trim, reboot,
 unpair and persistent-setting commands cannot be constructed.
 
+**Protocol work:** in WHOOP direct mode the dashboard can **Download
+capture** — every packet exchanged with the strap — and
+`vitals strap decode <capture.txt>` summarises one. The plan for learning
+the rest of the protocol (with [REA](https://github.com/morluto/rea) and
+your own strap) is in
+[`docs/whoop-reverse-engineering.md`](docs/whoop-reverse-engineering.md).
+
 **Not yet:** downloading the history stored on the strap (sleep, overnight
 HRV). The record format is decoded and tested, but a sync must set the
 strap's clock and acknowledge batches in a firmware-specific way — and an

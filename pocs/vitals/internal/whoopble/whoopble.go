@@ -35,10 +35,11 @@ import (
 
 // GATT identifiers of the WHOOP custom service.
 const (
-	ServiceUUID       = "61080001-8d6d-82b8-614a-1c8cb0f8dcc6"
-	CmdToStrapUUID    = "61080002-8d6d-82b8-614a-1c8cb0f8dcc6"
-	CmdFromStrapUUID  = "61080003-8d6d-82b8-614a-1c8cb0f8dcc6"
-	DataFromStrapUUID = "61080005-8d6d-82b8-614a-1c8cb0f8dcc6"
+	ServiceUUID         = "61080001-8d6d-82b8-614a-1c8cb0f8dcc6"
+	CmdToStrapUUID      = "61080002-8d6d-82b8-614a-1c8cb0f8dcc6"
+	CmdFromStrapUUID    = "61080003-8d6d-82b8-614a-1c8cb0f8dcc6"
+	EventsFromStrapUUID = "61080004-8d6d-82b8-614a-1c8cb0f8dcc6"
+	DataFromStrapUUID   = "61080005-8d6d-82b8-614a-1c8cb0f8dcc6"
 )
 
 const sof = 0xAA

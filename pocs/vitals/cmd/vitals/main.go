@@ -97,6 +97,8 @@ func (a *app) run(args []string) int {
 		err = a.cmdGoal(rest)
 	case "whoop":
 		err = a.cmdWhoop(rest)
+	case "strap":
+		err = a.cmdStrap(rest)
 	case "serve", "web":
 		err = a.cmdServe(rest)
 	case "metrics":
@@ -155,6 +157,9 @@ WHOOP:
   vitals whoop login [--paste]         connect your account in the browser (--paste for SSH/remote)
   vitals whoop sync [--days N]         pull recovery, HRV, strain, sleep and workouts
   vitals whoop logout                  revoke access and forget tokens
+
+Strap (Bluetooth, via the dashboard):
+  vitals strap decode <capture.txt>    summarise a raw WHOOP capture saved from the dashboard
 
 Web:
   vitals serve [--addr localhost:8737] [--open]

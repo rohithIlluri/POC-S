@@ -230,14 +230,45 @@ function setupStrap() {
     service: card.dataset.whoopService,
     cmd: card.dataset.whoopCmd,
     data: card.dataset.whoopData,
+    cmdFrom: card.dataset.whoopCmdFrom,
+    events: card.dataset.whoopEvents,
     on: hexBytes(card.dataset.whoopRtOn),
     off: hexBytes(card.dataset.whoopRtOff),
   };
   let whoopCmd = null;
   const frames = new WhoopFrames();
+
+  // Raw capture of everything exchanged with a WHOOP, for protocol work:
+  // "<ms>\t<channel>\t<hex>" lines, read by `vitals strap decode`.
+  const captureBtn = $("strap-capture");
+  let capture = [];
+  let captureStart = 0;
+  const toHex = (u8) => Array.from(u8, (x) => x.toString(16).padStart(2, "0")).join("");
+  const logRaw = (channel, u8) => {
+    if (capture.length < 200000) capture.push(`${Date.now() - captureStart}\t${channel}\t${toHex(u8)}`);
+  };
+  const bytesOf = (dv) => new Uint8Array(dv.buffer, dv.byteOffset, dv.byteLength);
+  captureBtn.addEventListener("click", () => {
+    const header = [
+      "# vitals WHOOP capture v1",
+      `# device: ${(device && device.name) || "unknown"}`,
+      `# started: ${new Date(captureStart).toISOString()}`,
+      "# summarise with: vitals strap decode <this file>",
+    ];
+    const blob = new Blob([header.concat(capture).join("\n") + "\n"], { type: "text/plain" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = `whoop-capture-${new Date(captureStart).toISOString().replace(/[:.]/g, "-")}.txt`;
+    document.body.append(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  });
+
   const onWhoopData = (event) => {
-    const dv = event.target.value;
-    for (const body of frames.push(new Uint8Array(dv.buffer, dv.byteOffset, dv.byteLength))) {
+    const raw = bytesOf(event.target.value);
+    logRaw("data", raw);
+    for (const body of frames.push(raw)) {
       if (body[0] !== 0x28 || body.length < 18) continue;
       const n = body[9];
       const rr = [];
@@ -248,10 +279,12 @@ function setupStrap() {
       onSample(body[8], rr);
     }
   };
-  const writeCmd = (bytes) =>
-    whoopCmd.properties.writeWithoutResponse && whoopCmd.writeValueWithoutResponse
+  const writeCmd = (bytes) => {
+    logRaw("write", bytes);
+    return whoopCmd.properties.writeWithoutResponse && whoopCmd.writeValueWithoutResponse
       ? whoopCmd.writeValueWithoutResponse(bytes)
       : whoopCmd.writeValue(bytes);
+  };
 
   const save = () => {
     const f = form.elements;
@@ -306,9 +339,22 @@ function setupStrap() {
     const svc = await server.getPrimaryService(whoop.service);
     whoopCmd = await svc.getCharacteristic(whoop.cmd);
     const data = await svc.getCharacteristic(whoop.data);
+    capture = [];
+    captureStart = Date.now();
     data.addEventListener("characteristicvaluechanged", onWhoopData);
     await data.startNotifications();
+    // Listen (only) on the strap's other two channels so captures are complete.
+    for (const [name, uuid] of [["cmd", whoop.cmdFrom], ["events", whoop.events]]) {
+      try {
+        const ch = await svc.getCharacteristic(uuid);
+        ch.addEventListener("characteristicvaluechanged", (e) => logRaw(name, bytesOf(e.target.value)));
+        await ch.startNotifications();
+      } catch {
+        // Not every firmware exposes both; the capture just won't include it.
+      }
+    }
     await writeCmd(whoop.on);
+    captureBtn.hidden = false;
   };
   const connectStandard = async (server) => {
     const service = await server.getPrimaryService("heart_rate");
@@ -326,6 +372,7 @@ function setupStrap() {
       });
       device.addEventListener("gattserverdisconnected", () => {
         whoopCmd = null;
+        captureBtn.hidden = capture.length === 0;
         stop();
         show(false);
         status.textContent = "Disconnected";
