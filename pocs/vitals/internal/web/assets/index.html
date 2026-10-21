@@ -44,12 +44,14 @@
   </div>
 </section>
 
-<section class="card strap" id="strap" aria-labelledby="strap-h">
+<section class="card strap" id="strap" aria-labelledby="strap-h"
+  data-whoop-service="{{.Strap.Service}}" data-whoop-cmd="{{.Strap.CmdTo}}" data-whoop-data="{{.Strap.DataFrom}}"
+  data-whoop-rt-on="{{.Strap.RealtimeOn}}" data-whoop-rt-off="{{.Strap.RealtimeOff}}">
   <div class="strap-head">
     <h2 id="strap-h">Heart rate strap</h2>
     <span id="strap-status" class="muted" role="status">Needs JavaScript</span>
   </div>
-  <p class="muted" id="strap-help">Reads live heart rate over Bluetooth from anything that broadcasts it: a WHOOP strap with <em>Broadcast Heart Rate</em> turned on in the WHOOP app, a chest strap or a watch. Works in Chrome or Edge on a computer or Android.</p>
+  <p class="muted" id="strap-help">Reads live heart rate and beat-to-beat intervals over Bluetooth. A <strong>WHOOP 4.0</strong> connects directly over its own protocol — the WHOOP app and account aren't involved (close the app first so it doesn't hold the connection). Chest straps and watches that broadcast heart rate work too. Needs Chrome or Edge on a computer or Android.</p>
   <div class="strap-live" id="strap-live" hidden>
     <div class="bpm"><span id="strap-bpm">--</span> <span class="unit">bpm</span></div>
     <svg class="trace" viewBox="0 0 300 60" preserveAspectRatio="none" aria-hidden="true"><path id="strap-trace"></path></svg>

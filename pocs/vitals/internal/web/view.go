@@ -1,6 +1,7 @@
 package web
 
 import (
+	"encoding/hex"
 	"fmt"
 	"math"
 	"strings"
@@ -13,6 +14,7 @@ import (
 	"github.com/rohithIlluri/POC-S/pocs/vitals/internal/stats"
 	"github.com/rohithIlluri/POC-S/pocs/vitals/internal/store"
 	"github.com/rohithIlluri/POC-S/pocs/vitals/internal/whoop"
+	"github.com/rohithIlluri/POC-S/pocs/vitals/internal/whoopble"
 )
 
 // Disclaimer is shown under the insights.
@@ -33,6 +35,15 @@ type view struct {
 	Metrics    []metricOption
 	Disclaimer string
 	Empty      bool
+	Strap      strapView
+}
+
+// strapView hands the page the WHOOP direct-connection details. The command
+// bytes are built by the tested Go codec, so the page never constructs a
+// command itself.
+type strapView struct {
+	Service, CmdTo, DataFrom string
+	RealtimeOn, RealtimeOff  string
 }
 
 type whoopView struct {
@@ -118,7 +129,14 @@ func buildView(entries []store.Entry, cfg config.Config, creds whoop.Credentials
 		Days:       days,
 		DayOptions: []int{7, 30, 90},
 		Disclaimer: Disclaimer,
-		Empty:      len(entries) == 0,
+		Strap: strapView{
+			Service:     whoopble.ServiceUUID,
+			CmdTo:       whoopble.CmdToStrapUUID,
+			DataFrom:    whoopble.DataFromStrapUUID,
+			RealtimeOn:  hex.EncodeToString(whoopble.RealtimeHR(1, true)),
+			RealtimeOff: hex.EncodeToString(whoopble.RealtimeHR(2, false)),
+		},
+		Empty: len(entries) == 0,
 		Whoop: whoopView{
 			Configured: creds.Configured(),
 			Connected:  creds.Connected(),

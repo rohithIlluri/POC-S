@@ -56,27 +56,58 @@ Requires Go 1.24+.
 
 ## Use your strap directly (no WHOOP membership)
 
-The dashboard can read any Bluetooth heart-rate strap live, through the
-browser's Web Bluetooth and the standard Heart Rate service — the same
-profile fitness apps, Peloton or Zwift use. No account, no API, no cloud.
+The dashboard talks to a heart-rate strap straight from the browser via Web
+Bluetooth — no account, no API, no cloud.
 
-1. Make the strap broadcast. On WHOOP, turn on **Broadcast Heart Rate** in
-   the WHOOP app's device settings (whether that is reachable without an
-   active membership depends on WHOOP; chest straps and most watches
-   broadcast out of the box).
+**WHOOP 4.0 — direct mode.** vitals speaks the strap's own Bluetooth
+protocol: it asks the strap for its realtime stream (the same non-persistent
+command the WHOOP app sends when you start an activity) and decodes heart
+rate plus up to four beat-to-beat (RR) intervals per second. The WHOOP app
+and your WHOOP account are not involved, and nothing is changed on the
+strap: Disconnect sends the matching stop command.
+
+**Anything else** (chest straps, watches, or a WHOOP with *Broadcast Heart
+Rate* on) works through the standard Bluetooth Heart Rate service.
+
+1. Charge the strap and **close the WHOOP app** (it holds the connection).
 2. `vitals serve --open` in **Chrome or Edge** (desktop or Android — Safari
-   and iOS have no Web Bluetooth) → **Connect strap** → pick it from the list.
+   and iOS have no Web Bluetooth) → **Connect strap** → pick it. The status
+   line says `WHOOP direct` or `heart-rate broadcast`.
 3. Then:
    - **Resting check · 2 min** — sit still; saves resting `heartrate`, and
-     `hrv` (RMSSD) when the strap sends beat-to-beat intervals.
+     `hrv` (RMSSD) when beat-to-beat intervals arrive.
    - **Start workout / Stop & save** — saves `exercise` minutes, noted with
      average and max bpm.
 
 The page only records raw samples; the maths is in
 [`internal/hrv`](internal/hrv/hrv.go) — artifact filtering (impossible
-intervals and >20% beat-to-beat jumps are dropped), RMSSD from ≥ 30 clean
-beats, resting HR from RR when available or the median bpm otherwise.
-Entries are tagged `strap`. Nothing leaves the machine.
+intervals, >30% from the median, >20% beat-to-beat jumps), RMSSD from ≥ 30
+clean beats, resting HR from RR when available or the median bpm otherwise.
+Entries are tagged `strap`.
+
+### How the WHOOP protocol support was built
+
+[`internal/whoopble`](internal/whoopble/whoopble.go) implements framing,
+both checksums (CRC-8/SMBUS header, CRC-32 body), the realtime-stream
+command, and decoders for realtime and history records. It was written for
+vitals from the packet captures published in
+[Reverse Engineering Whoop 4.0 for fun and FREEDOM](https://github.com/bWanShiTong/reverse-engineering-whoop-post):
+the checksum parameters were derived from those captures, and the tests
+check every builder and decoder against them byte for byte (including
+history records re-paired from the write-up by matching their CRCs).
+[OpenStrap](https://github.com/OpenStrap) — a full subscription-free WHOOP
+app — was consulted for protocol facts and safety guidance only; it is
+AGPL-3.0, so none of its code is copied here.
+
+Safety: the only command vitals can build is realtime on/off. The generic
+command builder is unexported, so the strap's erase, flash-trim, reboot,
+unpair and persistent-setting commands cannot be constructed.
+
+**Not yet:** downloading the history stored on the strap (sleep, overnight
+HRV). The record format is decoded and tested, but a sync must set the
+strap's clock and acknowledge batches in a firmware-specific way — and an
+acknowledgement lets the strap free that data — so it will only ship once
+it can be verified against a real strap.
 
 ## Connect WHOOP (API, needs a membership)
 
@@ -228,6 +259,7 @@ internal/insights/   the rules above
 internal/whoop/      WHOOP OAuth, API client (refresh, pagination, 429 backoff), record → entry mapping
 internal/web/        the dashboard: server, view model, SVG charts, strap sessions, embedded assets
 internal/hrv/        RR-interval cleaning, RMSSD, resting HR, workout summary
+internal/whoopble/   WHOOP 4.0 Bluetooth protocol: framing, checksums, realtime command, decoders
 internal/fsutil/     atomic 0600 file writes
 ```
 

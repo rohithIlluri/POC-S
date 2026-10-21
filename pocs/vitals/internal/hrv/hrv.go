@@ -18,17 +18,34 @@ const (
 	// maxJump drops an interval that differs from the previous accepted one
 	// by more than this share — the classic signature of a missed or extra
 	// beat, which would otherwise dominate RMSSD.
-	maxJump = 0.20
+	maxJump       = 0.20
+	maxFromMedian = 0.30
 	// MinRRForHRV is how many clean intervals an HRV figure needs (~30 s
 	// of beats); fewer and RMSSD is too noisy to be worth saving.
 	MinRRForHRV = 30
 )
 
-// Clean drops physiologically impossible intervals and ectopic jumps.
+// Clean drops physiologically impossible intervals and ectopic beats. It
+// first discards anything more than 30% from the median — so one bad value
+// at the start can't become the reference that rejects every good beat
+// after it — then drops >20% jumps from the previous accepted beat.
 func Clean(rr []float64) []float64 {
-	out := make([]float64, 0, len(rr))
+	plausible := make([]float64, 0, len(rr))
 	for _, v := range rr {
-		if math.IsNaN(v) || v < minRR || v > maxRR {
+		if !math.IsNaN(v) && v >= minRR && v <= maxRR {
+			plausible = append(plausible, v)
+		}
+	}
+	if len(plausible) == 0 {
+		return nil
+	}
+	sorted := append([]float64(nil), plausible...)
+	sort.Float64s(sorted)
+	med := sorted[len(sorted)/2]
+
+	out := make([]float64, 0, len(plausible))
+	for _, v := range plausible {
+		if math.Abs(v-med)/med > maxFromMedian {
 			continue
 		}
 		if n := len(out); n > 0 && math.Abs(v-out[n-1])/out[n-1] > maxJump {

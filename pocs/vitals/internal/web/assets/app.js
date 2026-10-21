@@ -1,3 +1,66 @@
+function hexBytes(hex) {
+  const out = new Uint8Array((hex || "").length / 2);
+  for (let i = 0; i < out.length; i++) out[i] = parseInt(hex.substr(2 * i, 2), 16);
+  return out;
+}
+
+// Reassembles WHOOP frames from BLE notifications and validates both
+// checksums; mirrors internal/whoopble (the Go side is the tested reference):
+//   0xAA | len u16 LE | crc8(len) | body | crc32(body) u32 LE
+class WhoopFrames {
+  constructor() {
+    this.buf = new Uint8Array(0);
+  }
+  static crc8(a, b) {
+    let c = 0;
+    for (const byte of [a, b]) {
+      c ^= byte;
+      for (let i = 0; i < 8; i++) c = c & 0x80 ? ((c << 1) ^ 0x07) & 0xff : (c << 1) & 0xff;
+    }
+    return c;
+  }
+  static crc32(bytes) {
+    let c = ~0;
+    for (const byte of bytes) {
+      c ^= byte;
+      for (let i = 0; i < 8; i++) c = c & 1 ? (c >>> 1) ^ 0xedb88320 : c >>> 1;
+    }
+    return ~c >>> 0;
+  }
+  push(chunk) {
+    const merged = new Uint8Array(this.buf.length + chunk.length);
+    merged.set(this.buf);
+    merged.set(chunk, this.buf.length);
+    let b = merged;
+    const bodies = [];
+    for (;;) {
+      const start = b.indexOf(0xaa);
+      if (start < 0) {
+        b = new Uint8Array(0);
+        break;
+      }
+      b = b.subarray(start);
+      if (b.length < 4) break;
+      const len = b[1] | (b[2] << 8);
+      if (WhoopFrames.crc8(b[1], b[2]) !== b[3] || len < 5) {
+        b = b.subarray(1);
+        continue;
+      }
+      if (b.length < 4 + len) break;
+      const body = b.subarray(4, len);
+      const want = (b[len] | (b[len + 1] << 8) | (b[len + 2] << 16) | (b[len + 3] << 24)) >>> 0;
+      if (WhoopFrames.crc32(body) !== want) {
+        b = b.subarray(1);
+        continue;
+      }
+      bodies.push(body.slice());
+      b = b.subarray(4 + len);
+    }
+    this.buf = b.slice();
+    return bodies;
+  }
+}
+
 // Progressive enhancement only: every feature works without this file.
 (() => {
   // Show the "name" field for event metrics (symptom, med).
@@ -140,8 +203,7 @@ function setupStrap() {
     }
   };
 
-  const onMeasurement = (event) => {
-    const { bpm, rr } = parse(event.target.value);
+  const onSample = (bpm, rr) => {
     if (rr.length) sawRR = true;
     if (bpm > 0) {
       bpmEl.textContent = bpm;
@@ -155,6 +217,41 @@ function setupStrap() {
     }
     describe();
   };
+
+  const onMeasurement = (event) => {
+    const { bpm, rr } = parse(event.target.value);
+    onSample(bpm, rr);
+  };
+
+  // WHOOP 4.0 direct: the strap's own realtime stream (packet type 0x28)
+  // carries heart rate plus up to four RR intervals per second.
+  const card = $("strap");
+  const whoop = {
+    service: card.dataset.whoopService,
+    cmd: card.dataset.whoopCmd,
+    data: card.dataset.whoopData,
+    on: hexBytes(card.dataset.whoopRtOn),
+    off: hexBytes(card.dataset.whoopRtOff),
+  };
+  let whoopCmd = null;
+  const frames = new WhoopFrames();
+  const onWhoopData = (event) => {
+    const dv = event.target.value;
+    for (const body of frames.push(new Uint8Array(dv.buffer, dv.byteOffset, dv.byteLength))) {
+      if (body[0] !== 0x28 || body.length < 18) continue;
+      const n = body[9];
+      const rr = [];
+      for (let i = 0; i < n && i < 4; i++) {
+        const v = body[10 + 2 * i] | (body[11 + 2 * i] << 8);
+        if (v >= 300 && v <= 2000) rr.push(v);
+      }
+      onSample(body[8], rr);
+    }
+  };
+  const writeCmd = (bytes) =>
+    whoopCmd.properties.writeWithoutResponse && whoopCmd.writeValueWithoutResponse
+      ? whoopCmd.writeValueWithoutResponse(bytes)
+      : whoopCmd.writeValue(bytes);
 
   const save = () => {
     const f = form.elements;
@@ -202,22 +299,48 @@ function setupStrap() {
     save();
   });
 
+  // Prefer the WHOOP's own realtime stream (no app or membership needed);
+  // fall back to the standard Heart Rate service for any other strap, or a
+  // WHOOP with broadcast already on.
+  const connectWhoop = async (server) => {
+    const svc = await server.getPrimaryService(whoop.service);
+    whoopCmd = await svc.getCharacteristic(whoop.cmd);
+    const data = await svc.getCharacteristic(whoop.data);
+    data.addEventListener("characteristicvaluechanged", onWhoopData);
+    await data.startNotifications();
+    await writeCmd(whoop.on);
+  };
+  const connectStandard = async (server) => {
+    const service = await server.getPrimaryService("heart_rate");
+    const ch = await service.getCharacteristic("heart_rate_measurement");
+    ch.addEventListener("characteristicvaluechanged", onMeasurement);
+    await ch.startNotifications();
+  };
+
   connectBtn.addEventListener("click", async () => {
     try {
       status.textContent = "Choose your strap…";
-      device = await navigator.bluetooth.requestDevice({ filters: [{ services: ["heart_rate"] }] });
+      device = await navigator.bluetooth.requestDevice({
+        filters: [{ services: ["heart_rate"] }, { namePrefix: "WHOOP" }],
+        optionalServices: ["heart_rate", whoop.service],
+      });
       device.addEventListener("gattserverdisconnected", () => {
+        whoopCmd = null;
         stop();
         show(false);
         status.textContent = "Disconnected";
       });
       status.textContent = "Connecting…";
       const server = await device.gatt.connect();
-      const service = await server.getPrimaryService("heart_rate");
-      const ch = await service.getCharacteristic("heart_rate_measurement");
-      ch.addEventListener("characteristicvaluechanged", onMeasurement);
-      await ch.startNotifications();
-      status.textContent = `Connected · ${device.name || "heart-rate strap"}`;
+      let mode = "heart-rate broadcast";
+      try {
+        await connectWhoop(server);
+        mode = "WHOOP direct";
+      } catch {
+        whoopCmd = null;
+        await connectStandard(server);
+      }
+      status.textContent = `Connected · ${device.name || "heart-rate strap"} · ${mode}`;
       recent = [];
       show(true);
       describe();
@@ -225,13 +348,18 @@ function setupStrap() {
       show(false);
       status.textContent =
         err && err.name === "NotFoundError"
-          ? "No strap chosen — is heart-rate broadcast on?"
+          ? "No strap chosen — is it charged, nearby, and the WHOOP app closed?"
           : `Couldn't connect: ${(err && err.message) || err}`;
     }
   });
 
-  disconnectBtn.addEventListener("click", () => {
+  disconnectBtn.addEventListener("click", async () => {
     stop();
+    if (whoopCmd) {
+      // Stop the realtime stream so the strap goes back to normal battery use.
+      await writeCmd(whoop.off).catch(() => {});
+      whoopCmd = null;
+    }
     if (device && device.gatt.connected) device.gatt.disconnect();
     show(false);
     status.textContent = "Not connected";

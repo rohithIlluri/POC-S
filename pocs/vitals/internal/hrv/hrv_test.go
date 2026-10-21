@@ -18,6 +18,18 @@ func TestCleanDropsArtifacts(t *testing.T) {
 	}
 }
 
+func TestCleanSurvivesABadFirstBeat(t *testing.T) {
+	// A start-of-stream glitch (seen in real WHOOP captures) must not become
+	// the reference that every later, correct beat is compared against.
+	rr := []float64{1639}
+	for i := 0; i < 40; i++ {
+		rr = append(rr, 900+float64(i%2)*20)
+	}
+	if got := Clean(rr); len(got) != 40 || got[0] != 900 {
+		t.Fatalf("Clean kept %d beats starting %v", len(got), got[:1])
+	}
+}
+
 func TestRMSSD(t *testing.T) {
 	// Alternating 1000/1040 ms: every successive difference is 40 ms.
 	rr := make([]float64, 40)
