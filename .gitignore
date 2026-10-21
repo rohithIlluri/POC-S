@@ -11,6 +11,9 @@ pocs/sparkroom/tests/bundle.cjs
 # Local companion state (never commit a user's usage data)
 .aipet/
 
+# Local health log (pocs/vitals) — never commit personal health data
+.vitals/
+
 # Python (pocs/signalhire)
 __pycache__/
 *.egg-info/
