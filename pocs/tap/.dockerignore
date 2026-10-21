@@ -1,0 +1,7 @@
+deploy
+docs
+README.md
+Dockerfile
+*.md
+tap-secrets.env
+**/*_test.go

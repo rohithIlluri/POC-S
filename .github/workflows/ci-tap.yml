@@ -1,0 +1,70 @@
+name: tap CI
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - "pocs/tap/**"
+      - ".github/workflows/ci-tap.yml"
+  pull_request:
+    paths:
+      - "pocs/tap/**"
+      - ".github/workflows/ci-tap.yml"
+
+defaults:
+  run:
+    working-directory: pocs/tap
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: tap_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: pocs/tap/go.mod
+          cache-dependency-path: pocs/tap/go.sum
+      - run: gofmt -l . | tee /tmp/fmt.out && test ! -s /tmp/fmt.out
+      - run: go vet ./...
+      - name: tests on the in-memory store
+        run: go test -race ./...
+      - name: tests on Postgres (store contract, server, e2e scenarios)
+        env:
+          TAP_TEST_PG: postgres://postgres:postgres@localhost:5432/tap_test?sslmode=disable
+        run: go test -race -count=1 ./...
+
+  image:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: build the container image
+        run: docker build -t tapd:ci .
+      - name: image starts, serves, and shuts down cleanly
+        run: |
+          docker run -d --name tapd -p 8080:8080 tapd:ci -dev
+          for i in $(seq 1 20); do curl -fs localhost:8080/healthz && break || sleep 0.5; done
+          curl -fs localhost:8080/healthz
+          docker stop tapd
+          docker logs tapd 2>&1 | grep -q "stopped"
+
+  protocol-js:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22.x
+      - name: JS protocol matches the Go vectors
+        run: node web/protocol.test.mjs

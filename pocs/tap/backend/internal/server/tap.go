@@ -1,0 +1,444 @@
+package server
+
+import (
+	"context"
+	"errors"
+	"net/http"
+	"slices"
+	"time"
+
+	"github.com/rohithIlluri/POC-S/pocs/tap/backend/internal/store"
+	"github.com/rohithIlluri/POC-S/pocs/tap/protocol"
+)
+
+// matchResult is what a waiting first claimant receives when its partner's
+// claim is decided.
+type matchResult struct {
+	tap store.Tap
+	err *apiError
+}
+
+func (s *Server) handleNonce(w http.ResponseWriter, r *http.Request, userID string) {
+	var req struct {
+		DeviceID string `json:"device_id"`
+	}
+	if err := decode(r, &req); err != nil {
+		writeErr(w, err)
+		return
+	}
+	nonce := randomB64(16)
+	err := s.st.Tx(func(tx store.Tx) error {
+		if err := s.checkDevice(tx, userID, req.DeviceID); err != nil {
+			return err
+		}
+		tx.PutNonce(store.Nonce{Value: nonce, DeviceID: req.DeviceID, IssuedAt: s.cfg.Now()})
+		return nil
+	})
+	if err != nil {
+		writeErr(w, err)
+		return
+	}
+	writeJSON(w, 200, map[string]any{"nonce": nonce, "expires_in_ms": s.cfg.NonceTTL.Milliseconds()})
+}
+
+func (s *Server) checkDevice(tx store.Tx, userID, deviceID string) error {
+	d, ok := tx.Device(deviceID)
+	if !ok || d.UserID != userID {
+		return fail(403, "device_unknown", "register this device first")
+	}
+	if u, _ := tx.User(userID); u.Frozen {
+		return fail(403, "frozen", "tapping is paused on this account pending review")
+	}
+	return nil
+}
+
+// handleClaim accepts one phone's signed claim. The first claim of a
+// handshake waits up to ClaimWait for its partner; the second decides the
+// match for both. Every path is idempotent on the nonce pair, so a retried
+// request gets the same receipt instead of a second edge.
+func (s *Server) handleClaim(w http.ResponseWriter, r *http.Request, userID string) {
+	var req struct {
+		Claim     protocol.Claim `json:"claim"`
+		Signature string         `json:"signature"`
+	}
+	if err := decode(r, &req); err != nil {
+		writeErr(w, err)
+		return
+	}
+	c := req.Claim
+	rec := s.recorder(c, userID)
+	if err := c.Validate(); err != nil {
+		rec("rejected", "bad_claim")
+		writeErr(w, fail(400, "bad_claim", "%v", err))
+		return
+	}
+	key := c.PairKey()
+
+	var (
+		matched *store.Tap
+		pairErr *apiError
+		waiter  chan matchResult
+		fresh   bool // this request committed the tap (not a retry of one)
+	)
+	err := s.st.Tx(func(tx store.Tx) error {
+		// A database store may retry this function; start each attempt clean
+		// and drop the waiter a failed attempt registered.
+		if waiter != nil {
+			s.unregister(key, c.DeviceID, waiter)
+		}
+		matched, pairErr, waiter, fresh = nil, nil, nil, false
+		now := s.cfg.Now()
+		if err := s.checkDevice(tx, userID, c.DeviceID); err != nil {
+			return err
+		}
+		d, _ := tx.Device(c.DeviceID)
+		pub, err := protocol.ParsePublicKey(d.PublicKey)
+		if err != nil {
+			return fail(500, "internal", "stored device key unreadable")
+		}
+		if err := protocol.Verify(pub, c.Canonical(), req.Signature); err != nil {
+			return fail(401, "bad_signature", "%v", err)
+		}
+		if tp, ok := tx.TapByPairKey(key); ok {
+			if tp.DeviceA == c.DeviceID || tp.DeviceB == c.DeviceID {
+				matched = &tp // a retry of a claim that already matched
+				return nil
+			}
+			return fail(409, "handshake_used", "this handshake already produced a tap")
+		}
+		n, ok := tx.Nonce(c.Nonce)
+		if !ok || n.DeviceID != c.DeviceID {
+			return fail(400, "nonce_unknown", "nonce was not issued to this device")
+		}
+		if n.Used {
+			return fail(409, "nonce_used", "nonce already used (replay)")
+		}
+		elapsed := now.Sub(n.IssuedAt)
+		if elapsed > s.cfg.NonceTTL {
+			return fail(410, "nonce_expired", "nonce older than %s", s.cfg.NonceTTL)
+		}
+		if absDur(elapsed-time.Duration(c.ElapsedMS)*time.Millisecond) > s.cfg.MaxSkew {
+			return fail(400, "clock_mismatch", "claimed elapsed time disagrees with the server's")
+		}
+		if max := s.cfg.MaxDistanceCM[c.Transport]; c.DistanceCM > max {
+			return fail(422, "too_far", "measured %d cm; %s allows %d cm", c.DistanceCM, c.Transport, max)
+		}
+		if tx.TapsByDeviceSince(c.DeviceID, now.Add(-time.Hour)) >= s.cfg.TapsPerDevicePerHour {
+			return fail(429, "rate_limited", "tap limit reached for this hour")
+		}
+
+		mine := store.PendingClaim{PairKey: key, UserID: userID, Claim: c, IssuedAt: n.IssuedAt, ReceivedAt: now}
+		var partner *store.PendingClaim
+		for _, p := range tx.PendingClaims(key) {
+			if p.Claim.DeviceID != c.DeviceID {
+				partner = &p
+				break
+			}
+		}
+		if partner == nil {
+			tx.PutPendingClaim(mine)
+			waiter = s.register(key, c.DeviceID)
+			return nil
+		}
+		if err := s.checkPair(tx, mine, *partner, now); err != nil {
+			tx.DeletePendingClaim(key, partner.Claim.DeviceID)
+			pairErr = err
+			return nil
+		}
+		tp, err := s.commit(tx, mine, *partner, now)
+		if err != nil {
+			return err
+		}
+		matched, fresh = &tp, true
+		return nil
+	})
+	if err != nil && waiter != nil {
+		s.unregister(key, c.DeviceID, waiter) // the pending claim was rolled back
+	}
+	switch {
+	case err != nil:
+		rec("rejected", errCode(err))
+		writeErr(w, err)
+	case pairErr != nil:
+		s.notify(key, matchResult{err: pairErr})
+		rec("rejected", pairErr.Code)
+		writeErr(w, pairErr)
+	case matched != nil:
+		if fresh {
+			s.enqueueTap(matched.ID)
+			rec("matched", "")
+		} else {
+			rec("retry", "")
+		}
+		s.notify(key, matchResult{tap: *matched})
+		s.writeMatch(w, userID, *matched)
+	default:
+		s.awaitPartner(r.Context(), w, userID, c, waiter, rec)
+	}
+}
+
+// recorder returns a function that logs how this claim request ended.
+func (s *Server) recorder(c protocol.Claim, userID string) func(outcome, code string) {
+	start := s.cfg.Now()
+	return func(outcome, code string) {
+		now := s.cfg.Now()
+		a := store.Attempt{ID: newID("att_"), At: now, UserID: userID, DeviceID: c.DeviceID, Transport: string(c.Transport),
+			DistanceCM: c.DistanceCM, Outcome: outcome, Code: code, WaitMS: now.Sub(start).Milliseconds()}
+		if err := s.st.Tx(func(tx store.Tx) error { tx.PutAttempt(a); return nil }); err != nil {
+			s.cfg.Logf("record attempt: %v", err)
+		}
+	}
+}
+
+func errCode(err error) string {
+	var ae *apiError
+	if errors.As(err, &ae) {
+		return ae.Code
+	}
+	return "internal"
+}
+
+func (s *Server) awaitPartner(ctx context.Context, w http.ResponseWriter, userID string, c protocol.Claim, ch chan matchResult, rec func(outcome, code string)) {
+	key := c.PairKey()
+	timer := time.NewTimer(s.cfg.ClaimWait)
+	defer timer.Stop()
+	poll := time.NewTicker(s.cfg.ClaimPoll)
+	defer poll.Stop()
+wait:
+	for {
+		select {
+		case res := <-ch:
+			if res.err != nil {
+				rec("rejected", res.err.Code)
+				writeErr(w, res.err)
+				return
+			}
+			rec("matched", "")
+			s.writeMatch(w, userID, res.tap)
+			return
+		case <-poll.C:
+			// The partner's request may have reached another instance, which
+			// can't wake this one; the database is the shared truth.
+			tp, gone, err := s.peekHandshake(key, c.DeviceID)
+			switch {
+			case err != nil:
+				s.cfg.Logf("poll handshake: %v", err)
+			case tp != nil:
+				s.unregister(key, c.DeviceID, ch)
+				rec("matched", "")
+				s.writeMatch(w, userID, *tp)
+				return
+			case gone:
+				s.unregister(key, c.DeviceID, ch)
+				e := fail(409, "partner_rejected", "the other phone's claim was refused")
+				rec("rejected", e.Code)
+				writeErr(w, e)
+				return
+			}
+		case <-timer.C:
+			break wait
+		case <-ctx.Done():
+			break wait
+		}
+	}
+	s.unregister(key, c.DeviceID, ch)
+	// The partner may have matched in the instant the wait ended.
+	var tp *store.Tap
+	if err := s.st.Tx(func(tx store.Tx) error {
+		tp = nil
+		if t, ok := tx.TapByPairKey(key); ok {
+			tp = &t
+			return nil
+		}
+		tx.DeletePendingClaim(key, c.DeviceID)
+		return nil
+	}); err != nil {
+		rec("rejected", errCode(err))
+		writeErr(w, err)
+		return
+	}
+	if tp != nil {
+		rec("matched", "")
+		s.writeMatch(w, userID, *tp)
+		return
+	}
+	rec("expired", "")
+	writeJSON(w, 200, map[string]string{"status": "expired"})
+}
+
+// peekHandshake reports the handshake's tap if it has been decided, or gone
+// if this device's pending claim was removed without one (the partner's
+// claim was refused).
+func (s *Server) peekHandshake(key, deviceID string) (tp *store.Tap, gone bool, err error) {
+	err = s.st.Tx(func(tx store.Tx) error {
+		tp, gone = nil, false
+		if t, ok := tx.TapByPairKey(key); ok {
+			tp = &t
+			return nil
+		}
+		gone = true
+		for _, p := range tx.PendingClaims(key) {
+			if p.Claim.DeviceID == deviceID {
+				gone = false
+			}
+		}
+		return nil
+	})
+	return
+}
+
+// checkPair decides whether two claims describe one physical tap.
+func (s *Server) checkPair(tx store.Tx, mine, partner store.PendingClaim, now time.Time) *apiError {
+	if partner.UserID == mine.UserID {
+		return fail(400, "self_tap", "both phones belong to the same account")
+	}
+	if !mine.Claim.Mirrors(partner.Claim) {
+		return fail(400, "claims_disagree", "the two phones saw different keys or nonces")
+	}
+	if now.Sub(partner.ReceivedAt) > s.cfg.ClaimWait {
+		return fail(410, "partner_expired", "the other phone's claim timed out")
+	}
+	// Compare the two measurement moments on the server's clock.
+	at := func(p store.PendingClaim) time.Time {
+		return p.IssuedAt.Add(time.Duration(p.Claim.ElapsedMS) * time.Millisecond)
+	}
+	if absDur(at(mine).Sub(at(partner))) > s.cfg.MaxSkew {
+		return fail(400, "timing_mismatch", "the phones measured more than %s apart", s.cfg.MaxSkew)
+	}
+	if mine.Claim.Geohash[:6] != partner.Claim.Geohash[:6] {
+		return fail(400, "location_mismatch", "the phones reported different places")
+	}
+	// The partner claim was checked when it arrived; recheck what may have
+	// changed while it waited. Its nonce may have been spent by another
+	// handshake (a device can have claims pending under several pair keys),
+	// and its account or device may have been deleted.
+	if n, ok := tx.Nonce(partner.Claim.Nonce); !ok || n.Used {
+		return fail(409, "nonce_used", "the other phone's nonce was already used")
+	}
+	pu, ok := tx.User(partner.UserID)
+	if _, devOK := tx.Device(partner.Claim.DeviceID); !ok || !devOK {
+		return fail(410, "partner_expired", "the other phone's account is gone")
+	}
+	if tx.Blocked(mine.UserID, partner.UserID) {
+		return fail(403, "blocked", "these accounts can't tap")
+	}
+	if pu.Frozen {
+		return fail(403, "frozen", "tapping is paused on the other account")
+	}
+	return nil
+}
+
+// commit writes the tap and the edge in one transaction; events are
+// assigned afterwards by the event worker. The receipt is signed before the
+// first write so a signing failure leaves no partial state.
+func (s *Server) commit(tx store.Tx, mine, partner store.PendingClaim, now time.Time) (store.Tap, error) {
+	a, b := store.Pair(mine.UserID, partner.UserID)
+	devA, devB := mine.Claim.DeviceID, partner.Claim.DeviceID
+	if a != mine.UserID {
+		devA, devB = devB, devA
+	}
+	tp := store.Tap{
+		ID: newID("tap_"), UserA: a, UserB: b, DeviceA: devA, DeviceB: devB,
+		CreatedAt: now, Geohash: mine.Claim.Geohash, PairKey: mine.PairKey,
+	}
+	tp.Receipt = protocol.Receipt{TapID: tp.ID, UserA: a, UserB: b, CreatedAt: now.UnixMilli(), Geohash: tp.Geohash, PairKey: tp.PairKey}
+	sig, err := protocol.Sign(s.cfg.ReceiptKey, tp.Receipt.Canonical())
+	if err != nil {
+		return store.Tap{}, fail(500, "internal", "receipt signing failed")
+	}
+	tp.Signature = sig
+
+	for _, v := range []string{mine.Claim.Nonce, partner.Claim.Nonce} {
+		n, _ := tx.Nonce(v)
+		n.Used = true
+		tx.PutNonce(n)
+	}
+	tx.PutTap(tp)
+	e, ok := tx.Edge(a, b)
+	if !ok {
+		e = store.Edge{UserA: a, UserB: b, CreatedAt: now, FirstTapID: tp.ID}
+	}
+	e.Status = store.EdgeActive // a new tap after a removal is fresh mutual consent
+	e.TapCount++
+	e.LastTapAt = now
+	tx.PutEdge(e)
+	tx.DeletePendingClaim(mine.PairKey, devA)
+	tx.DeletePendingClaim(mine.PairKey, devB)
+	return tp, nil
+}
+
+func addMembers(list []string, ids ...string) []string {
+	for _, id := range ids {
+		if !slices.Contains(list, id) {
+			list = append(list, id)
+		}
+	}
+	return list
+}
+
+func (s *Server) writeMatch(w http.ResponseWriter, userID string, tp store.Tap) {
+	other := tp.UserA
+	if other == userID {
+		other = tp.UserB
+	}
+	var peer store.User
+	var count int
+	if err := s.st.Tx(func(tx store.Tx) error {
+		peer, _ = tx.User(other)
+		e, _ := tx.Edge(tp.UserA, tp.UserB)
+		count = e.TapCount
+		return nil
+	}); err != nil {
+		writeErr(w, err)
+		return
+	}
+	writeJSON(w, 200, map[string]any{
+		"status":    "matched",
+		"receipt":   tp.Receipt,
+		"signature": tp.Signature,
+		"tap_count": count, // taps between these two people, this one included
+		"peer":      map[string]string{"user_id": peer.ID, "display_name": peer.DisplayName, "photo_url": peer.PhotoURL},
+	})
+}
+
+// Waiters are keyed by pair and device so that one phone's registration
+// can never replace the other's.
+func (s *Server) register(key, deviceID string) chan matchResult {
+	ch := make(chan matchResult, 1)
+	s.mu.Lock()
+	if s.wait[key] == nil {
+		s.wait[key] = map[string]chan matchResult{}
+	}
+	s.wait[key][deviceID] = ch
+	s.mu.Unlock()
+	return ch
+}
+
+func (s *Server) unregister(key, deviceID string, ch chan matchResult) {
+	s.mu.Lock()
+	if s.wait[key][deviceID] == ch {
+		delete(s.wait[key], deviceID)
+		if len(s.wait[key]) == 0 {
+			delete(s.wait, key)
+		}
+	}
+	s.mu.Unlock()
+}
+
+// notify delivers a decided handshake to every phone waiting on it.
+func (s *Server) notify(key string, res matchResult) {
+	s.mu.Lock()
+	waiters := s.wait[key]
+	delete(s.wait, key)
+	s.mu.Unlock()
+	for _, ch := range waiters {
+		ch <- res
+	}
+}
+
+func absDur(d time.Duration) time.Duration {
+	if d < 0 {
+		return -d
+	}
+	return d
+}

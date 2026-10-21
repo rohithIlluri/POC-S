@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Tap pilot metrics</title>
+  <style>
+    :root {
+      --bg: #f4f5f7; --panel: #fff; --ink: #15171c; --muted: #5d6470; --line: #dde0e6;
+      --accent: #2f6fed; --good: #1f7a45; --good-bg: #e3f4ea; --warn: #8a5a00; --warn-bg: #fdf1d8;
+      color-scheme: light;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #0b0c0f; --panel: #15171c; --ink: #eef0f4; --muted: #9aa3b2; --line: #2a2e36;
+        --accent: #5b8cff; --good: #5fd08f; --good-bg: #13291d; --warn: #f0c060; --warn-bg: #2d2412;
+        color-scheme: dark;
+      }
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+    main { max-width: 1080px; margin: 0 auto; padding: 24px 16px 48px; }
+    h1 { font-size: 22px; margin: 0; }
+    .sub { color: var(--muted); margin: 4px 0 20px; }
+    form { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 20px; }
+    input { flex: 1; min-width: 200px; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); font: inherit; }
+    button { padding: 10px 16px; border-radius: 10px; border: 0; background: var(--accent); color: #fff; font: inherit; font-weight: 600; cursor: pointer; }
+    .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
+    .tile { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 16px; }
+    .tile .label { color: var(--muted); font-size: 13px; }
+    .tile .value { font-size: 34px; font-weight: 700; font-variant-numeric: tabular-nums; margin: 4px 0; }
+    .tile .note { color: var(--muted); font-size: 13px; }
+    .status { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; padding: 2px 8px; border-radius: 999px; }
+    .status.good { color: var(--good); background: var(--good-bg); }
+    .status.warn { color: var(--warn); background: var(--warn-bg); }
+    h2 { font-size: 16px; margin: 28px 0 8px; }
+    .tables { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 12px; }
+    table { width: 100%; border-collapse: collapse; background: var(--panel); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; font-variant-numeric: tabular-nums; }
+    th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--line); }
+    th { color: var(--muted); font-weight: 600; font-size: 13px; }
+    td.num, th.num { text-align: right; }
+    tr:last-child td { border-bottom: 0; }
+    .err { color: var(--warn); }
+    .empty { color: var(--muted); }
+  </style>
+</head>
+<body>
+  <main>
+    <h1>Tap pilot metrics</h1>
+    <p class="sub" id="sub">Last 7 days. Enter the admin token tapd was started with.</p>
+    <form id="form">
+      <label for="token" class="sub" style="margin:0;align-self:center">Admin token</label>
+      <input id="token" type="password" autocomplete="off" required>
+      <button>Load</button>
+    </form>
+    <p id="msg" class="err" role="alert"></p>
+    <section id="out" hidden>
+      <div class="tiles" id="tiles"></div>
+      <div class="tables">
+        <div><h2>Why taps fail</h2><table id="failures"></table></div>
+        <div><h2>By channel</h2><table id="channels"></table></div>
+      </div>
+    </section>
+  </main>
+  <script>
+    const $ = (id) => document.getElementById(id);
+    const pct = (x) => `${Math.round(x * 100)}%`;
+    const el = (tag, props = {}, ...kids) => {
+      const n = Object.assign(document.createElement(tag), props);
+      n.append(...kids.map((k) => (k instanceof Node ? k : String(k))));
+      return n;
+    };
+    const REASONS = {
+      expired: "partner never claimed", too_far: "measured too far apart", clock_mismatch: "phone clock off",
+      timing_mismatch: "measured at different moments", location_mismatch: "different places", claims_disagree: "heard different handshakes",
+      nonce_used: "replayed or reused nonce", nonce_expired: "took longer than 20 s", rate_limited: "hourly limit", blocked: "blocked pair",
+      frozen: "account frozen", self_tap: "same account", bad_signature: "bad signature", device_unknown: "unregistered device",
+    };
+
+    try { $("token").value = sessionStorage.getItem("tapAdmin") || ""; } catch {}
+
+    function tile(label, value, note, status) {
+      const t = el("div", { className: "tile" }, el("div", { className: "label" }, label), el("div", { className: "value" }, value));
+      if (status) t.append(status);
+      if (note) t.append(el("div", { className: "note" }, note));
+      return t;
+    }
+
+    function render(s) {
+      $("sub").textContent = `Last ${s.window_days} days · generated ${new Date(s.generated_at).toLocaleString()}`;
+      const gate = s.retap_cohort === 0
+        ? el("span", { className: "status warn" }, "◷ Not enough data yet")
+        : s.gate_met
+          ? el("span", { className: "status good" }, "✓ Gate met")
+          : el("span", { className: "status warn" }, "! Below gate");
+      $("tiles").replaceChildren(
+        tile("Taps per active user", s.taps_per_active_user.toFixed(1), `${s.taps} taps · ${s.active_users} active users (north star)`),
+        tile("Re-tap within 14 days", s.retap_cohort ? pct(s.retap_rate) : "–", `${s.retapped} of ${s.retap_cohort} users · gate ${pct(s.pilot_gate)}`, gate),
+        tile("Tap success", s.attempts ? pct(s.success_rate) : "–", `${s.matched} of ${s.attempts} claims · match p50 ${s.match_wait_p50_ms} ms, p95 ${s.match_wait_p95_ms} ms`),
+        tile("iPhone ↔ Android", s.cross_platform_base ? pct(s.cross_platform_share) : "–", `of ${s.cross_platform_base} taps between two phones`),
+        tile("Props picks", s.props_votes, "anonymous votes this week"),
+      );
+      const failures = $("failures");
+      failures.replaceChildren(el("tr", {}, el("th", {}, "Reason"), el("th", { className: "num" }, "Claims"), el("th", { className: "num" }, "Share")));
+      if (!s.failures.length) failures.append(el("tr", {}, el("td", { className: "empty", colSpan: 3 }, "No failed claims")));
+      const failed = s.attempts - s.matched;
+      for (const f of s.failures) {
+        failures.append(el("tr", {},
+          el("td", {}, el("code", {}, f.code), REASONS[f.code] ? ` · ${REASONS[f.code]}` : ""),
+          el("td", { className: "num" }, f.count), el("td", { className: "num" }, pct(f.count / failed))));
+      }
+      const channels = $("channels");
+      channels.replaceChildren(el("tr", {}, el("th", {}, "Channel"), el("th", { className: "num" }, "Claims"), el("th", { className: "num" }, "Success")));
+      if (!s.by_transport.length) channels.append(el("tr", {}, el("td", { className: "empty", colSpan: 3 }, "No claims yet")));
+      for (const t of s.by_transport) {
+        channels.append(el("tr", {}, el("td", {}, t.transport), el("td", { className: "num" }, t.attempts), el("td", { className: "num" }, pct(t.success_rate))));
+      }
+      $("out").hidden = false;
+    }
+
+    async function load() {
+      const token = $("token").value.trim();
+      try { sessionStorage.setItem("tapAdmin", token); } catch {}
+      const res = await fetch("/v1/admin/stats", { headers: { Authorization: `Bearer ${token}` } });
+      if (!res.ok) { $("msg").textContent = "Wrong token, or tapd was started without TAP_ADMIN_TOKEN."; $("out").hidden = true; return; }
+      $("msg").textContent = "";
+      render(await res.json());
+    }
+    $("form").addEventListener("submit", (e) => { e.preventDefault(); load(); });
+    if ($("token").value) load();
+  </script>
+</body>
+</html>
