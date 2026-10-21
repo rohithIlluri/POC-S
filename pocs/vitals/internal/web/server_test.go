@@ -117,8 +117,8 @@ func TestSecurityHeaders(t *testing.T) {
 	if csp := w.Header().Get("Content-Security-Policy"); !strings.Contains(csp, "script-src 'self'") || !strings.Contains(csp, "frame-ancestors 'none'") {
 		t.Errorf("CSP = %q", csp)
 	}
-	if w.Header().Get("Referrer-Policy") != "no-referrer" {
-		t.Error("missing Referrer-Policy")
+	if rp := w.Header().Get("Referrer-Policy"); rp != "same-origin" {
+		t.Errorf("Referrer-Policy = %q (no-referrer would make browsers send Origin: null and break every form)", rp)
 	}
 }
 
@@ -132,6 +132,9 @@ func TestPostRequiresCSRFAndSameOrigin(t *testing.T) {
 	form.Set("csrf", c.csrf)
 	if w := c.do("POST", "/log", form, func(r *http.Request) { r.Header.Set("Origin", "https://evil.example") }); w.Code != 403 {
 		t.Errorf("cross-origin got %d", w.Code)
+	}
+	if w := c.do("POST", "/log", form, func(r *http.Request) { r.Header.Set("Origin", "null") }); w.Code != 403 {
+		t.Errorf("opaque origin got %d", w.Code)
 	}
 	if w := c.do("POST", "/log", form, func(r *http.Request) { r.Header.Set("Origin", "http://localhost:8737") }); w.Code != 303 {
 		t.Errorf("same-origin got %d", w.Code)

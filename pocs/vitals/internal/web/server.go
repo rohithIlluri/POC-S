@@ -10,6 +10,9 @@
 //     random token, and a cross-origin Origin header is refused.
 //   - OAuth: each WHOOP login gets a single-use, 10-minute state value.
 //   - A strict Content-Security-Policy with no inline script.
+//
+// It can also read a Bluetooth heart-rate strap live (WHOOP in broadcast
+// mode, chest straps, watches) via Web Bluetooth in the page; see strap.go.
 package web
 
 import (
@@ -105,6 +108,7 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("GET /static/", http.StripPrefix("/static/", staticFiles(static)))
 	mux.HandleFunc("POST /log", s.post(s.logEntry))
 	mux.HandleFunc("POST /delete", s.post(s.deleteEntry))
+	mux.HandleFunc("POST /strap/save", s.post(s.strapSave))
 	mux.HandleFunc("GET /whoop/connect", s.whoopConnect)
 	mux.HandleFunc("GET /whoop/callback", s.whoopCallback)
 	mux.HandleFunc("POST /whoop/sync", s.post(s.whoopSync))
@@ -146,8 +150,12 @@ func (s *Server) guard(next http.Handler) http.Handler {
 		h := w.Header()
 		h.Set("Content-Security-Policy", "default-src 'none'; style-src 'self'; script-src 'self'; img-src 'self' data:; form-action 'self'; base-uri 'none'; frame-ancestors 'none'")
 		h.Set("X-Content-Type-Options", "nosniff")
-		h.Set("Referrer-Policy", "no-referrer") // keeps the OAuth code out of any Referer
+		// same-origin, not no-referrer: no-referrer makes browsers send
+		// "Origin: null" on form posts, which the CSRF check must refuse.
+		// same-origin still keeps the OAuth code out of any cross-site Referer.
+		h.Set("Referrer-Policy", "same-origin")
 		h.Set("Cache-Control", "no-store")
+		h.Set("Permissions-Policy", "bluetooth=(self), camera=(), microphone=(), geolocation=()")
 		next.ServeHTTP(w, r)
 	})
 }
@@ -162,7 +170,7 @@ func (s *Server) post(fn http.HandlerFunc) http.HandlerFunc {
 				return
 			}
 		}
-		r.Body = http.MaxBytesReader(w, r.Body, 64<<10)
+		r.Body = http.MaxBytesReader(w, r.Body, 1<<20) // room for a long strap session
 		if err := r.ParseForm(); err != nil {
 			http.Error(w, "bad form", http.StatusBadRequest)
 			return

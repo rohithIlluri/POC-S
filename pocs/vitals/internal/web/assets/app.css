@@ -41,6 +41,7 @@
 }
 
 * { box-sizing: border-box; }
+[hidden] { display: none !important; } /* or a display rule on buttons would override it */
 body {
   margin: 0;
   background: var(--page);
@@ -80,6 +81,7 @@ button, .button {
   font: inherit; font-size: 14px; border-radius: 8px; padding: 7px 14px; cursor: pointer;
   border: 1px solid var(--border); background: var(--surface); color: var(--ink); text-decoration: none; display: inline-block;
 }
+button:disabled { opacity: 0.45; cursor: not-allowed; }
 .primary { background: var(--accent); color: var(--accent-ink); border-color: transparent; }
 .quiet { color: var(--ink-2); }
 button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
@@ -137,3 +139,15 @@ td form { margin: 0; }
 .src { font-size: 11px; color: var(--muted); border: 1px solid var(--border); border-radius: 4px; padding: 0 4px; margin-left: 4px; }
 .x { padding: 0 8px; line-height: 24px; color: var(--muted); background: transparent; border-color: transparent; }
 .x:hover { color: var(--critical-text); border-color: var(--border); }
+
+.strap-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+.strap-head h2 { margin: 0; }
+#strap-help { margin: 6px 0 12px; color: var(--ink-2); }
+.strap-live { display: grid; grid-template-columns: auto 1fr; gap: 4px 16px; align-items: center; margin-bottom: 12px; }
+.bpm { font-size: 44px; font-weight: 600; line-height: 1; letter-spacing: -0.02em; }
+.bpm .unit { font-size: 15px; font-weight: 400; color: var(--ink-2); }
+.trace { width: 100%; height: 60px; display: block; }
+.trace path { fill: none; stroke: var(--series); stroke-width: 2; stroke-linejoin: round; vector-effect: non-scaling-stroke; }
+.strap-note { grid-column: 1 / -1; margin: 0; font-size: 13px; }
+.strap-actions { flex-wrap: wrap; }
+.recording { border-color: var(--critical); color: var(--critical-text); }

@@ -44,6 +44,30 @@
   </div>
 </section>
 
+<section class="card strap" id="strap" aria-labelledby="strap-h">
+  <div class="strap-head">
+    <h2 id="strap-h">Heart rate strap</h2>
+    <span id="strap-status" class="muted" role="status">Needs JavaScript</span>
+  </div>
+  <p class="muted" id="strap-help">Reads live heart rate over Bluetooth from anything that broadcasts it: a WHOOP strap with <em>Broadcast Heart Rate</em> turned on in the WHOOP app, a chest strap or a watch. Works in Chrome or Edge on a computer or Android.</p>
+  <div class="strap-live" id="strap-live" hidden>
+    <div class="bpm"><span id="strap-bpm">--</span> <span class="unit">bpm</span></div>
+    <svg class="trace" viewBox="0 0 300 60" preserveAspectRatio="none" aria-hidden="true"><path id="strap-trace"></path></svg>
+    <p class="muted strap-note" id="strap-note"></p>
+  </div>
+  <div class="actions strap-actions">
+    <button type="button" id="strap-connect" class="primary" hidden>Connect strap</button>
+    <button type="button" id="strap-rest" hidden>Resting check · 2 min</button>
+    <button type="button" id="strap-workout" hidden>Start workout</button>
+    <button type="button" id="strap-disconnect" class="quiet" hidden>Disconnect</button>
+  </div>
+  <form id="strap-form" method="post" action="/strap/save" hidden>
+    <input type="hidden" name="csrf" value="{{.CSRF}}">
+    <input type="hidden" name="days" value="{{.Days}}">
+    <input type="hidden" name="kind"><input type="hidden" name="hr"><input type="hidden" name="rr"><input type="hidden" name="seconds">
+  </form>
+</section>
+
 {{if .Tiles}}
 <section class="tiles" aria-label="Latest">
   {{range .Tiles}}

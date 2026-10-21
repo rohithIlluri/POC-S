@@ -34,6 +34,8 @@ Insights
   [`internal/insights`](internal/insights/insights.go).
 - **Read-only WHOOP access.** vitals requests only `read:*` scopes (plus
   `offline` for a refresh token) and never writes to WHOOP.
+- **Bluetooth strap data stays local.** Live heart rate goes strap →
+  browser → the local vitals server; no WHOOP account or network involved.
 - **Local-only dashboard.** `vitals serve` binds loopback only (it refuses
   `0.0.0.0`), rejects non-localhost `Host` headers (DNS rebinding), requires a
   CSRF token on every POST, and ships a strict CSP with no inline script.
@@ -52,7 +54,31 @@ make install        # → $GOBIN/vitals
 
 Requires Go 1.24+.
 
-## Connect WHOOP
+## Use your strap directly (no WHOOP membership)
+
+The dashboard can read any Bluetooth heart-rate strap live, through the
+browser's Web Bluetooth and the standard Heart Rate service — the same
+profile fitness apps, Peloton or Zwift use. No account, no API, no cloud.
+
+1. Make the strap broadcast. On WHOOP, turn on **Broadcast Heart Rate** in
+   the WHOOP app's device settings (whether that is reachable without an
+   active membership depends on WHOOP; chest straps and most watches
+   broadcast out of the box).
+2. `vitals serve --open` in **Chrome or Edge** (desktop or Android — Safari
+   and iOS have no Web Bluetooth) → **Connect strap** → pick it from the list.
+3. Then:
+   - **Resting check · 2 min** — sit still; saves resting `heartrate`, and
+     `hrv` (RMSSD) when the strap sends beat-to-beat intervals.
+   - **Start workout / Stop & save** — saves `exercise` minutes, noted with
+     average and max bpm.
+
+The page only records raw samples; the maths is in
+[`internal/hrv`](internal/hrv/hrv.go) — artifact filtering (impossible
+intervals and >20% beat-to-beat jumps are dropped), RMSSD from ≥ 30 clean
+beats, resting HR from RR when available or the median bpm otherwise.
+Entries are tagged `strap`. Nothing leaves the machine.
+
+## Connect WHOOP (API, needs a membership)
 
 WHOOP data comes through the official
 [WHOOP Developer Platform](https://developer.whoop.com) (API v2), which needs
@@ -200,7 +226,8 @@ internal/config/     goals (config.json)
 internal/stats/      daily roll-ups, windows, sparklines, Pearson r, streaks
 internal/insights/   the rules above
 internal/whoop/      WHOOP OAuth, API client (refresh, pagination, 429 backoff), record → entry mapping
-internal/web/        the dashboard: server, view model, SVG charts, embedded assets
+internal/web/        the dashboard: server, view model, SVG charts, strap sessions, embedded assets
+internal/hrv/        RR-interval cleaning, RMSSD, resting HR, workout summary
 internal/fsutil/     atomic 0600 file writes
 ```
 
