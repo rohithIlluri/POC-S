@@ -111,3 +111,36 @@ func TestNewIDUnique(t *testing.T) {
 		seen[id] = true
 	}
 }
+
+func TestUpsertIsIdempotentAndUpdatesInPlace(t *testing.T) {
+	s, _ := Open(t.TempDir())
+	t0 := time.Date(2026, 10, 1, 8, 0, 0, 0, time.UTC)
+	_ = s.Append(Entry{ID: "manual", Time: t0, Metric: "mood", Value: 4})
+
+	batch := []Entry{
+		{ID: "whoop:strain:1", Time: t0, Metric: "strain", Value: 8.2, Source: "whoop"},
+		{ID: "whoop:recovery:1", Time: t0, Metric: "recovery", Value: 64, Source: "whoop"},
+	}
+	if a, u, err := s.Upsert(batch); err != nil || a != 2 || u != 0 {
+		t.Fatalf("first upsert: added=%d updated=%d err=%v", a, u, err)
+	}
+	if a, u, err := s.Upsert(batch); err != nil || a != 0 || u != 0 {
+		t.Fatalf("repeat upsert should be a no-op: added=%d updated=%d err=%v", a, u, err)
+	}
+	batch[0].Value = 14.6 // the day's strain kept climbing after the first sync
+	if a, u, err := s.Upsert(batch); err != nil || a != 0 || u != 1 {
+		t.Fatalf("rescored upsert: added=%d updated=%d err=%v", a, u, err)
+	}
+	got, skipped, _ := s.Load()
+	if len(got) != 3 || skipped != 0 {
+		t.Fatalf("entries = %+v", got)
+	}
+	for _, e := range got {
+		if e.ID == "whoop:strain:1" && e.Value != 14.6 {
+			t.Errorf("strain not updated: %v", e.Value)
+		}
+	}
+	if last, _ := s.LastWritten(); last.ID != "whoop:recovery:1" {
+		t.Errorf("in-place update must not reorder the log; last = %s", last.ID)
+	}
+}

@@ -122,3 +122,23 @@ func TestEmptyLogHasNoInsights(t *testing.T) {
 		t.Fatalf("got %+v", got)
 	}
 }
+
+func TestRecoveryAndHRVRules(t *testing.T) {
+	var e []store.Entry
+	for d := 0; d < 14; d++ {
+		rec, hrv := 70.0, 70.0
+		if d < 7 {
+			rec, hrv = 25, 50
+		}
+		e = append(e,
+			store.Entry{Metric: "recovery", Time: at(d), Value: rec},
+			store.Entry{Metric: "hrv", Time: at(d), Value: hrv})
+	}
+	got := Generate(e, config.Config{}, now, utc)
+	if i, ok := find(got, "Recovery has averaged 25%"); !ok || i.Level != Watch {
+		t.Errorf("red recovery not flagged: %+v", got)
+	}
+	if _, ok := find(got, "HRV is down 29%"); !ok {
+		t.Errorf("hrv drop not flagged: %+v", got)
+	}
+}

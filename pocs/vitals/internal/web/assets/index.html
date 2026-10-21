@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>vitals</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="/static/app.css">
+<script src="/static/app.js" defer></script>
+</head>
+<body>
+<header class="top">
+  <div>
+    <h1>vitals</h1>
+    <p class="muted">{{.Today}} · private, on this machine</p>
+  </div>
+  <nav class="range" aria-label="Time range">
+    {{range .DayOptions}}<a href="/?days={{.}}"{{if eq . $.Days}} aria-current="page"{{end}}>{{.}}d</a>{{end}}
+  </nav>
+</header>
+
+<main>
+{{range .Flash}}<p class="flash flash-{{.Level}}" role="status">{{.Text}}</p>{{end}}
+
+<section class="card whoop" aria-labelledby="whoop-h">
+  <div>
+    <h2 id="whoop-h">WHOOP</h2>
+    {{if .Whoop.Connected}}
+      <p>Connected{{if .Whoop.Member}} as <strong>{{.Whoop.Member}}</strong>{{end}}{{if .Whoop.LastSync}} · last synced {{.Whoop.LastSync}}{{else}} · not synced yet{{end}}</p>
+    {{else if .Whoop.Configured}}
+      <p>App credentials saved. Connect your WHOOP account to pull recovery, strain, sleep, HRV and workouts.</p>
+    {{else}}
+      <p>To connect, create an app at <strong>developer.whoop.com</strong> with redirect URL <code>{{.Whoop.Redirect}}</code>, then run<br>
+      <code>vitals whoop setup --client-id &lt;id&gt;</code> (it asks for the secret).</p>
+    {{end}}
+  </div>
+  <div class="actions">
+    {{if .Whoop.Connected}}
+      <form method="post" action="/whoop/sync"><input type="hidden" name="csrf" value="{{.CSRF}}"><input type="hidden" name="days" value="{{.Days}}"><button class="primary">Sync now</button></form>
+      <form method="post" action="/whoop/disconnect"><input type="hidden" name="csrf" value="{{.CSRF}}"><input type="hidden" name="days" value="{{.Days}}"><button class="quiet">Disconnect</button></form>
+    {{else if .Whoop.Configured}}
+      <a class="button primary" href="/whoop/connect">Connect WHOOP</a>
+    {{end}}
+  </div>
+</section>
+
+{{if .Tiles}}
+<section class="tiles" aria-label="Latest">
+  {{range .Tiles}}
+  <div class="tile">
+    <span class="tile-label">{{.Label}}</span>
+    <span class="tile-value">{{.Value}}</span>
+    <span class="tile-when muted">{{.When}}{{if .Badge}} <span class="badge badge-{{.Status}}"><span class="dot" aria-hidden="true"></span>{{.Badge}}</span>{{end}}</span>
+  </div>
+  {{end}}
+</section>
+{{end}}
+
+<div class="grid">
+  <section class="card" aria-labelledby="ins-h">
+    <h2 id="ins-h">Insights</h2>
+    {{if .Insights}}
+    <ul class="insights">
+      {{range .Insights}}<li class="ins ins-{{.Level}}"><span class="ins-icon" aria-hidden="true">{{.Icon}}</span><span><span class="sr">{{.Label}}: </span>{{.Text}}</span></li>{{end}}
+    </ul>
+    {{else}}
+    <p class="muted">Not enough data yet. Log a few days of sleep and mood, or sync WHOOP, and check back.</p>
+    {{end}}
+    <p class="fine muted">{{.Disclaimer}}</p>
+  </section>
+
+  <section class="card" aria-labelledby="log-h">
+    <h2 id="log-h">Log something</h2>
+    <form method="post" action="/log" class="logform">
+      <input type="hidden" name="csrf" value="{{.CSRF}}">
+      <input type="hidden" name="days" value="{{.Days}}">
+      <label>Metric
+        <select name="metric" id="metric">
+          {{range .Metrics}}<option value="{{.Name}}" data-event="{{.Event}}" title="{{.Desc}}">{{.Name}}</option>{{end}}
+        </select>
+      </label>
+      <label id="label-field" hidden>Name <input name="label" placeholder="headache, ibuprofen…" maxlength="200"></label>
+      <label>Value <input name="value" inputmode="decimal" placeholder="7.5" autocomplete="off"></label>
+      <label class="wide">Note <input name="note" maxlength="200" placeholder="optional"></label>
+      <button class="primary">Log</button>
+    </form>
+  </section>
+</div>
+
+<section aria-labelledby="trend-h">
+  <h2 id="trend-h">Trends · last {{.Days}} days</h2>
+  {{if .Charts}}
+  <div class="charts">
+    {{range .Charts}}
+    <figure class="card chart" data-chart>
+      <figcaption>
+        <span class="chart-title" title="{{.Desc}}">{{.Name}}</span>
+        <span class="chart-avg">{{.Avg}}</span>
+      </figcaption>
+      <div class="plot">
+        <svg viewBox="0 0 {{.W}} {{.H}}" preserveAspectRatio="none" role="img" aria-label="{{.Name}}, {{.Avg}}, range {{.Range}}">
+          <line class="avgline" x1="0" x2="{{.W}}" y1="{{.AvgY}}" y2="{{.AvgY}}"></line>
+          {{if .Single}}{{else}}<path class="line" d="{{.Path}}"></path>{{end}}
+          {{range .Points}}<circle class="pt" cx="{{.X}}" cy="{{.Y}}" r="0" data-tip="{{.Tip}}"></circle>{{end}}
+          <line class="cross" x1="0" x2="0" y1="0" y2="{{.H}}" hidden></line>
+        </svg>
+        <div class="marker" aria-hidden="true" hidden{{if .Single}} data-single{{end}}></div>
+        <div class="tip" role="tooltip" hidden></div>
+      </div>
+      <div class="chart-foot muted"><span>{{.First}}</span><span>{{.Range}}</span><span>{{.Last}}</span></div>
+      {{if .Delta}}<p class="delta delta-{{.DeltaDir}}">{{.Delta}}</p>{{end}}
+    </figure>
+    {{end}}
+  </div>
+  {{else}}
+  <p class="muted">No measurements in this window yet.</p>
+  {{end}}
+  {{range .Events}}<p class="events"><strong>{{.Metric}}</strong> {{range $i, $e := .Items}}{{if $i}}, {{end}}{{$e}}{{end}}</p>{{end}}
+</section>
+
+<section class="card" aria-labelledby="rec-h">
+  <h2 id="rec-h">Last 7 days</h2>
+  {{if .Recent}}
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>When</th><th>Metric</th><th class="num">Value</th><th>Note</th><th><span class="sr">Remove</span></th></tr></thead>
+    <tbody>
+    {{range .Recent}}
+      <tr>
+        <td class="nowrap">{{.When}}</td>
+        <td>{{.Metric}}{{if .Source}} <span class="src">{{.Source}}</span>{{end}}</td>
+        <td class="num">{{.Value}}</td>
+        <td class="note">{{.Note}}</td>
+        <td><form method="post" action="/delete"><input type="hidden" name="csrf" value="{{$.CSRF}}"><input type="hidden" name="days" value="{{$.Days}}"><input type="hidden" name="id" value="{{.ID}}"><button class="x" title="Remove this entry" aria-label="Remove {{.Metric}} {{.When}}">×</button></form></td>
+      </tr>
+    {{end}}
+    </tbody>
+  </table>
+  </div>
+  {{else}}
+  <p class="muted">Nothing logged in the last 7 days.</p>
+  {{end}}
+</section>
+</main>
+</body>
+</html>

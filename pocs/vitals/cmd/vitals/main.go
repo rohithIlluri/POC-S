@@ -1,50 +1,57 @@
 // Command vitals is a private, local-first personal health tracker for the
-// terminal: log sleep, steps, mood, symptoms, meds and more in one line, then
-// see trends and plain-language insights. Data never leaves the machine.
+// terminal and browser: log sleep, steps, mood, symptoms, meds and more in
+// one line, sync WHOOP, then see trends and plain-language insights. Data
+// stays on the machine; the only network calls are to WHOOP, on request.
 //
 //	vitals log sleep 7.5            log a measurement
 //	vitals log symptom headache 4   log a labelled event (severity 1-5)
 //	vitals today                    what you've logged today
 //	vitals trends                   30-day summary with sparklines
 //	vitals insights                 explainable observations from your data
+//	vitals whoop sync               pull recovery, HRV, strain, sleep, workouts
+//	vitals serve                    local web dashboard
 //	vitals help                     everything else
 package main
 
 import (
+	"bufio"
 	"encoding/csv"
 	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"text/tabwriter"
 	"time"
-	"unicode"
 
 	"github.com/rohithIlluri/POC-S/pocs/vitals/internal/config"
+	"github.com/rohithIlluri/POC-S/pocs/vitals/internal/entry"
 	"github.com/rohithIlluri/POC-S/pocs/vitals/internal/insights"
 	"github.com/rohithIlluri/POC-S/pocs/vitals/internal/metrics"
 	"github.com/rohithIlluri/POC-S/pocs/vitals/internal/stats"
 	"github.com/rohithIlluri/POC-S/pocs/vitals/internal/store"
+	"github.com/rohithIlluri/POC-S/pocs/vitals/internal/whoop"
 )
 
 // version is overridden at build time via -ldflags "-X main.version=...".
 var version = "0.1.0"
 
-const (
-	maxTextLen = 200
-	disclaimer = "vitals is a personal log, not medical advice. For health concerns, talk to a clinician."
-)
+const disclaimer = "vitals is a personal log, not medical advice. For health concerns, talk to a clinician."
 
 type app struct {
-	out, err io.Writer
-	home     string
-	now      func() time.Time
-	loc      *time.Location
+	in        io.Reader
+	stdin     *bufio.Reader // lazily wraps in; see readLine
+	out, err  io.Writer
+	home      string
+	now       func() time.Time
+	loc       *time.Location
+	whoopBase string
+	http      *http.Client // nil means the default client
 }
 
 func main() {
@@ -53,7 +60,7 @@ func main() {
 		fmt.Fprintln(os.Stderr, "vitals:", err)
 		os.Exit(1)
 	}
-	a := &app{out: os.Stdout, err: os.Stderr, home: home, now: time.Now, loc: time.Local}
+	a := &app{in: os.Stdin, out: os.Stdout, err: os.Stderr, home: home, now: time.Now, loc: time.Local, whoopBase: whoop.DefaultBase}
 	os.Exit(a.run(os.Args[1:]))
 }
 
@@ -88,6 +95,10 @@ func (a *app) run(args []string) int {
 		err = a.cmdInsights(rest)
 	case "goal", "goals":
 		err = a.cmdGoal(rest)
+	case "whoop":
+		err = a.cmdWhoop(rest)
+	case "serve", "web":
+		err = a.cmdServe(rest)
 	case "metrics":
 		a.cmdMetrics()
 	case "export":
@@ -132,12 +143,25 @@ Usage:
   vitals goal <metric> <target>        set a daily goal       e.g. vitals goal steps 8000, vitals goal weight <=75
   vitals goal <metric> --clear         remove a goal
   vitals metrics                       what you can track
+
   vitals export [--format csv|json]    dump everything to stdout
   vitals undo                          remove the most recent entry
   vitals delete <id>                   remove a specific entry
   vitals version
 
-Data lives in $VITALS_HOME (default ~/.vitals) and never leaves this machine.
+WHOOP:
+  vitals whoop                         connection status and setup steps
+  vitals whoop setup --client-id <id>  save your WHOOP developer app (prompts for the secret)
+  vitals whoop login [--paste]         connect your account in the browser (--paste for SSH/remote)
+  vitals whoop sync [--days N]         pull recovery, HRV, strain, sleep and workouts
+  vitals whoop logout                  revoke access and forget tokens
+
+Web:
+  vitals serve [--addr localhost:8737] [--open]
+                                       local dashboard: charts, insights, quick log, WHOOP sync
+
+Data lives in $VITALS_HOME (default ~/.vitals) and stays on this machine. The only
+network calls vitals makes are to WHOOP, and only when you ask it to sync or connect.
 `+disclaimer+"\n")
 }
 
@@ -179,21 +203,6 @@ func (a *app) open() (*store.Store, []store.Entry, error) {
 	return s, entries, nil
 }
 
-// cleanText rejects control characters (they would garble the terminal on
-// display) and over-long input.
-func cleanText(field, s string) (string, error) {
-	s = strings.TrimSpace(s)
-	if len([]rune(s)) > maxTextLen {
-		return "", fmt.Errorf("%s is longer than %d characters", field, maxTextLen)
-	}
-	for _, r := range s {
-		if unicode.IsControl(r) {
-			return "", fmt.Errorf("%s contains control characters", field)
-		}
-	}
-	return s, nil
-}
-
 // parseWhen understands the --at forms listed in usage().
 func parseWhen(s string, now time.Time, loc *time.Location) (time.Time, error) {
 	now = now.In(loc)
@@ -226,42 +235,23 @@ func (a *app) cmdLog(args []string) error {
 	if len(pos) == 0 {
 		return errors.New("usage: vitals log <metric> <value>  (see `vitals metrics`)")
 	}
-	m, ok := metrics.Lookup(pos[0])
-	if !ok {
-		return fmt.Errorf("unknown metric %q (see `vitals metrics`)", pos[0])
-	}
-
-	e := store.Entry{ID: store.NewID(), Time: a.now().In(a.loc), Metric: m.Name}
-	var raw string
-	if m.Kind == metrics.Event {
+	var label, raw string
+	if m, ok := metrics.Lookup(pos[0]); ok && m.Kind == metrics.Event {
 		if len(pos) < 2 || len(pos) > 3 {
 			return fmt.Errorf("usage: vitals log %s <name> [value]", m.Name)
 		}
-		if e.Label, err = cleanText("name", pos[1]); err != nil {
-			return err
-		}
-		if e.Label == "" {
-			return errors.New("name must not be empty")
-		}
-		e.Value = m.Default
+		label = pos[1]
 		if len(pos) == 3 {
 			raw = pos[2]
 		}
-	} else {
+	} else if ok {
 		if len(pos) != 2 {
 			return fmt.Errorf("usage: vitals log %s <value>", m.Name)
 		}
 		raw = pos[1]
 	}
-	if raw != "" {
-		if e.Value, err = strconv.ParseFloat(raw, 64); err != nil {
-			return fmt.Errorf("%s: %q is not a number", m.Name, raw)
-		}
-	}
-	if err := m.Validate(e.Value); err != nil {
-		return err
-	}
-	if e.Note, err = cleanText("note", *note); err != nil {
+	e, m, err := entry.New(pos[0], label, raw, *note, a.now().In(a.loc))
+	if err != nil {
 		return err
 	}
 	if *when != "" {
@@ -282,23 +272,8 @@ func (a *app) cmdLog(args []string) error {
 	if err := s.Append(e); err != nil {
 		return err
 	}
-	fmt.Fprintf(a.out, "logged %s  (%s, id %s)\n", describe(m, e), e.Time.In(a.loc).Format("Mon 2 Jan 15:04"), e.ID)
+	fmt.Fprintf(a.out, "logged %s  (%s, id %s)\n", entry.Describe(m, e), e.Time.In(a.loc).Format("Mon 2 Jan 15:04"), e.ID)
 	return nil
-}
-
-// describe renders an entry's metric and value in one phrase.
-func describe(m metrics.Metric, e store.Entry) string {
-	switch {
-	case m.Name == "symptom":
-		return fmt.Sprintf("symptom %s (%s)", e.Label, m.FormatWithUnit(e.Value))
-	case m.Kind == metrics.Event:
-		if e.Value == 1 {
-			return fmt.Sprintf("%s %s", m.Name, e.Label)
-		}
-		return fmt.Sprintf("%s %s ×%s", m.Name, e.Label, m.Format(e.Value))
-	default:
-		return fmt.Sprintf("%s %s", m.Name, m.FormatWithUnit(e.Value))
-	}
 }
 
 func (a *app) printEntries(entries []store.Entry, withDate bool) {
@@ -312,15 +287,14 @@ func (a *app) printEntries(entries []store.Entry, withDate bool) {
 		if withDate {
 			layout = "Mon 02 Jan 15:04"
 		}
-		value := m.FormatWithUnit(e.Value)
-		if m.Kind == metrics.Event {
-			value = strings.TrimPrefix(describe(m, e), m.Name+" ")
-		}
 		note := ""
 		if e.Note != "" {
 			note = strconv.Quote(e.Note)
 		}
-		fmt.Fprintf(tw, "  %s\t%s\t%s\t%s\t%s\n", e.Time.In(a.loc).Format(layout), m.Name, value, note, e.ID)
+		if e.Source != "" {
+			note = strings.TrimSpace("[" + e.Source + "] " + note)
+		}
+		fmt.Fprintf(tw, "  %s\t%s\t%s\t%s\t%s\n", e.Time.In(a.loc).Format(layout), m.Name, entry.Value(m, e), note, e.ID)
 	}
 	tw.Flush()
 }
@@ -674,7 +648,7 @@ func (a *app) remove(s *store.Store, id string) error {
 	}
 	desc := e.Metric
 	if m, ok := metrics.Lookup(e.Metric); ok {
-		desc = describe(m, e)
+		desc = entry.Describe(m, e)
 	}
 	fmt.Fprintf(a.out, "removed %s  (%s)\n", desc, e.Time.In(a.loc).Format("Mon 2 Jan 15:04"))
 	return nil

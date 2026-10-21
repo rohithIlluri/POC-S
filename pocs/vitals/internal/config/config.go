@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+
+	"github.com/rohithIlluri/POC-S/pocs/vitals/internal/fsutil"
 )
 
 // FileName is the settings file inside the vitals home.
@@ -80,21 +82,5 @@ func Save(dir string, c Config) error {
 	if err != nil {
 		return err
 	}
-	tmp, err := os.CreateTemp(dir, ".config-*.tmp")
-	if err != nil {
-		return err
-	}
-	defer os.Remove(tmp.Name())
-	if err := tmp.Chmod(0o600); err != nil {
-		tmp.Close()
-		return err
-	}
-	if _, err := tmp.Write(append(data, '\n')); err != nil {
-		tmp.Close()
-		return err
-	}
-	if err := tmp.Close(); err != nil {
-		return err
-	}
-	return os.Rename(tmp.Name(), filepath.Join(dir, FileName))
+	return fsutil.WriteAtomic(filepath.Join(dir, FileName), append(data, '\n'))
 }

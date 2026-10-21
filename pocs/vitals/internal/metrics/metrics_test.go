@@ -61,6 +61,9 @@ func TestFormat(t *testing.T) {
 	if got := steps.FormatWithUnit(8000); got != "8000 steps" {
 		t.Errorf("steps = %q", got)
 	}
+	if r, _ := Lookup("recovery"); r.FormatWithUnit(64) != "64%" {
+		t.Errorf("recovery = %q", r.FormatWithUnit(64))
+	}
 	if got := mood.FormatStatWithUnit(3.84); got != "3.8/5" {
 		t.Errorf("mood mean = %q", got)
 	}

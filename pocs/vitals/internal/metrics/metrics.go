@@ -58,6 +58,15 @@ var registry = []Metric{
 	{Name: "energy", Unit: "/5", Desc: "energy, 1 (drained) to 5 (energised)", Agg: Mean, Min: 1, Max: 5, Integer: true, Better: Higher},
 	{Name: "heartrate", Unit: "bpm", Desc: "resting heart rate", Agg: Mean, Min: 20, Max: 250, Integer: true, Better: Lower, Aliases: []string{"hr", "rhr"}},
 	{Name: "weight", Unit: "kg", Desc: "body weight", Agg: Last, Min: 1, Max: 500, Better: Neutral},
+	// Recovery-style metrics, usually synced from a wearable (WHOOP) but
+	// loggable by hand like everything else.
+	{Name: "recovery", Unit: "%", Desc: "recovery score (WHOOP)", Agg: Mean, Min: 0, Max: 100, Integer: true, Better: Higher},
+	{Name: "hrv", Unit: "ms", Desc: "heart rate variability, RMSSD", Agg: Mean, Min: 0, Max: 500, Better: Higher},
+	{Name: "strain", Unit: "/21", Desc: "day strain, 0-21 (WHOOP)", Agg: Last, Min: 0, Max: 21, Better: Neutral},
+	{Name: "sleepperf", Unit: "%", Desc: "sleep performance: sleep got vs needed (WHOOP)", Agg: Mean, Min: 0, Max: 100, Integer: true, Better: Higher, Aliases: []string{"sleepscore"}},
+	{Name: "resprate", Unit: "rpm", Desc: "respiratory rate during sleep", Agg: Mean, Min: 0, Max: 60, Better: Neutral},
+	{Name: "spo2", Unit: "%", Desc: "blood oxygen saturation", Agg: Mean, Min: 50, Max: 100, Better: Higher},
+	{Name: "skintemp", Unit: "°C", Desc: "skin temperature", Agg: Mean, Min: 20, Max: 45, Better: Neutral},
 	{Name: "symptom", Unit: "/5", Desc: "a symptom with severity 1-5 (default 3)", Kind: Event, Agg: Mean, Min: 1, Max: 5, Default: 3, Integer: true, Better: Lower},
 	{Name: "med", Unit: "dose", Desc: "a medication or supplement taken (default 1 dose)", Kind: Event, Agg: Sum, Min: 0, Max: 100, Default: 1, Better: Neutral, Aliases: []string{"meds", "medication"}},
 }
@@ -128,7 +137,7 @@ func (m Metric) FormatStatWithUnit(v float64) string {
 }
 
 func (m Metric) withUnit(s string) string {
-	if strings.HasPrefix(m.Unit, "/") {
+	if strings.HasPrefix(m.Unit, "/") || m.Unit == "%" {
 		return s + m.Unit
 	}
 	return s + " " + m.Unit

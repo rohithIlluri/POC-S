@@ -14,6 +14,8 @@ import (
 	"path/filepath"
 	"sort"
 	"time"
+
+	"github.com/rohithIlluri/POC-S/pocs/vitals/internal/fsutil"
 )
 
 // FileName is the log file inside the vitals home.
@@ -27,6 +29,10 @@ type Entry struct {
 	Value  float64   `json:"value"`
 	Label  string    `json:"label,omitempty"`
 	Note   string    `json:"note,omitempty"`
+	// Source is where the entry came from: "" for typed by hand, "whoop" for
+	// synced. Synced entries carry deterministic IDs so re-syncing is
+	// idempotent (see Upsert).
+	Source string `json:"source,omitempty"`
 }
 
 // ErrNotFound is returned by Delete when no entry has the given ID.
@@ -64,15 +70,7 @@ func (s *Store) Append(e Entry) error {
 	if err != nil {
 		return err
 	}
-	f, err := os.OpenFile(s.path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
-	if err != nil {
-		return err
-	}
-	if _, err := f.Write(append(line, '\n')); err != nil {
-		f.Close()
-		return err
-	}
-	return f.Close()
+	return s.appendRaw(append(line, '\n'))
 }
 
 // Load reads every entry, sorted by time. Lines that fail to parse are
@@ -157,25 +155,91 @@ func (s *Store) Delete(id string) (Entry, error) {
 	if !found {
 		return Entry{}, ErrNotFound
 	}
-	return removed, writeAtomic(s.path, out.Bytes())
+	return removed, fsutil.WriteAtomic(s.path, out.Bytes())
 }
 
-func writeAtomic(path string, data []byte) error {
-	tmp, err := os.CreateTemp(filepath.Dir(path), ".log-*.tmp")
+// Upsert writes entries keyed by ID: new IDs are appended, existing IDs whose
+// content changed are replaced in place, identical ones are left alone. This
+// is what makes a re-sync safe to run any number of times. The log is only
+// rewritten when something was actually replaced; otherwise it is appended to.
+func (s *Store) Upsert(entries []Entry) (added, updated int, err error) {
+	data, err := os.ReadFile(s.path)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return 0, 0, err
+	}
+	incoming := make(map[string]Entry, len(entries))
+	order := make([]string, 0, len(entries))
+	for _, e := range entries {
+		if _, dup := incoming[e.ID]; !dup {
+			order = append(order, e.ID)
+		}
+		incoming[e.ID] = e
+	}
+
+	var out bytes.Buffer
+	seen := map[string]bool{}
+	for _, line := range bytes.Split(data, []byte{'\n'}) {
+		if len(bytes.TrimSpace(line)) == 0 {
+			continue
+		}
+		var cur Entry
+		if json.Unmarshal(line, &cur) == nil {
+			if next, ok := incoming[cur.ID]; ok && !seen[cur.ID] {
+				seen[cur.ID] = true
+				if !sameEntry(cur, next) {
+					b, err := json.Marshal(next)
+					if err != nil {
+						return 0, 0, err
+					}
+					line = b
+					updated++
+				}
+			}
+		}
+		out.Write(line)
+		out.WriteByte('\n')
+	}
+
+	var appended bytes.Buffer
+	for _, id := range order {
+		if seen[id] {
+			continue
+		}
+		b, err := json.Marshal(incoming[id])
+		if err != nil {
+			return 0, 0, err
+		}
+		appended.Write(b)
+		appended.WriteByte('\n')
+		added++
+	}
+
+	switch {
+	case updated > 0:
+		out.Write(appended.Bytes())
+		err = fsutil.WriteAtomic(s.path, out.Bytes())
+	case added > 0:
+		err = s.appendRaw(appended.Bytes())
+	}
+	if err != nil {
+		return 0, 0, err
+	}
+	return added, updated, nil
+}
+
+func sameEntry(a, b Entry) bool {
+	return a.Time.Equal(b.Time) && a.Metric == b.Metric && a.Value == b.Value &&
+		a.Label == b.Label && a.Note == b.Note && a.Source == b.Source
+}
+
+func (s *Store) appendRaw(b []byte) error {
+	f, err := os.OpenFile(s.path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
 	if err != nil {
 		return err
 	}
-	defer os.Remove(tmp.Name())
-	if err := tmp.Chmod(0o600); err != nil {
-		tmp.Close()
+	if _, err := f.Write(b); err != nil {
+		f.Close()
 		return err
 	}
-	if _, err := tmp.Write(data); err != nil {
-		tmp.Close()
-		return err
-	}
-	if err := tmp.Close(); err != nil {
-		return err
-	}
-	return os.Rename(tmp.Name(), path)
+	return f.Close()
 }

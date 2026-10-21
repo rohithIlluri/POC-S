@@ -43,6 +43,9 @@ const (
 	symptomRepeat   = 3
 	sleepContrastH  = 0.75
 	heartRateRiseBP = 5.0
+	recoveryRed     = 34.0 // WHOOP's red zone is 0–33%
+	recoveryGreen   = 67.0 // and green is 67–100%
+	hrvDropShare    = 0.15
 )
 
 // correlated pairs worth reporting, phrased as "more X → Y tends to be ...".
@@ -52,6 +55,9 @@ var pairs = [][2]string{
 	{"exercise", "mood"},
 	{"steps", "mood"},
 	{"water", "energy"},
+	{"sleep", "recovery"},
+	{"recovery", "mood"},
+	{"recovery", "energy"},
 }
 
 func metric(name string) metrics.Metric {
@@ -172,6 +178,22 @@ func Generate(entries []store.Entry, cfg config.Config, now time.Time, loc *time
 		if rise := s.Recent - s.Prior; rise >= heartRateRiseBP {
 			add(Watch, "Resting heart rate is up %.0f bpm vs the previous week (%.0f → %.0f). Stress, illness, poor sleep or overtraining can all do this.",
 				rise, s.Prior, s.Recent)
+		}
+	}
+
+	if s, ok := stats.Summarize(entries, metric("recovery"), now, 7, loc); ok && s.Days >= 3 {
+		switch {
+		case s.Mean < recoveryRed:
+			add(Watch, "Recovery has averaged %.0f%% over the last 7 days — in the red. Prioritise sleep and go easy on strain.", s.Mean)
+		case s.Mean >= recoveryGreen:
+			add(Good, "Recovery has averaged %.0f%% over the last 7 days — in the green.", s.Mean)
+		}
+	}
+
+	if s, ok := stats.Summarize(entries, metric("hrv"), now, shortWindow, loc); ok && s.HasDelta && s.Prior > 0 {
+		if drop := (s.Prior - s.Recent) / s.Prior; drop >= hrvDropShare {
+			add(Watch, "HRV is down %.0f%% vs the previous week (%.0f → %.0f ms). Often an early sign of stress, illness or under-recovery.",
+				drop*100, s.Prior, s.Recent)
 		}
 	}
 
