@@ -1,6 +1,7 @@
 package web
 
 import (
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"math"
@@ -12,6 +13,7 @@ import (
 	"github.com/rohithIlluri/POC-S/pocs/vitals/internal/hrv"
 	"github.com/rohithIlluri/POC-S/pocs/vitals/internal/metrics"
 	"github.com/rohithIlluri/POC-S/pocs/vitals/internal/store"
+	"github.com/rohithIlluri/POC-S/pocs/vitals/internal/whoopble"
 )
 
 // StrapSource tags entries recorded live from a Bluetooth heart-rate strap.
@@ -47,6 +49,15 @@ func (s *Server) strapSave(w http.ResponseWriter, r *http.Request) {
 		s.addFlash("good", "Saved from your strap: %s.", strings.Join(parts, ", "))
 	}
 	back(w, r)
+}
+
+// strapClockCommand returns the SetClock frame for this moment, hex encoded.
+// The page writes it to the strap only when its owner clicks "Set strap
+// clock"; the server just builds the bytes and sends nothing itself.
+func (s *Server) strapClockCommand(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
+	fmt.Fprint(w, hex.EncodeToString(whoopble.SetClock(3, s.Now())))
 }
 
 func (s *Server) strapEntries(r *http.Request) ([]store.Entry, error) {

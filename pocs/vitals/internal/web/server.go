@@ -109,6 +109,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /log", s.post(s.logEntry))
 	mux.HandleFunc("POST /delete", s.post(s.deleteEntry))
 	mux.HandleFunc("POST /strap/save", s.post(s.strapSave))
+	mux.HandleFunc("GET /strap/clock-command", s.strapClockCommand)
 	mux.HandleFunc("GET /whoop/connect", s.whoopConnect)
 	mux.HandleFunc("GET /whoop/callback", s.whoopCallback)
 	mux.HandleFunc("POST /whoop/sync", s.post(s.whoopSync))

@@ -137,6 +137,7 @@ function setupStrap() {
   const restBtn = $("strap-rest");
   const workoutBtn = $("strap-workout");
   const disconnectBtn = $("strap-disconnect");
+  const clockBtn = $("strap-clock");
   const live = $("strap-live");
   const bpmEl = $("strap-bpm");
   const trace = $("strap-trace");
@@ -160,6 +161,7 @@ function setupStrap() {
   const show = (connected) => {
     connectBtn.hidden = connected;
     restBtn.hidden = workoutBtn.hidden = disconnectBtn.hidden = !connected;
+    clockBtn.hidden = !connected || !whoopCmd;
     live.hidden = !connected;
   };
 
@@ -248,6 +250,21 @@ function setupStrap() {
     if (capture.length < 200000) capture.push(`${Date.now() - captureStart}\t${channel}\t${toHex(u8)}`);
   };
   const bytesOf = (dv) => new Uint8Array(dv.buffer, dv.byteOffset, dv.byteLength);
+  // Only on a click: ask the server for the SetClock frame (it holds the
+  // tested builder) and write it to the strap. The answer lands in the capture.
+  clockBtn.addEventListener("click", async () => {
+    clockBtn.disabled = true;
+    try {
+      const res = await fetch("/strap/clock-command", { cache: "no-store" });
+      if (!res.ok) throw new Error(`server said ${res.status}`);
+      await writeCmd(hexBytes((await res.text()).trim()));
+      status.textContent = "Clock sent to the strap — check the capture for its answer";
+    } catch (err) {
+      status.textContent = `Couldn't set the clock: ${(err && err.message) || err}`;
+    } finally {
+      clockBtn.disabled = false;
+    }
+  });
   captureBtn.addEventListener("click", () => {
     const header = [
       "# vitals WHOOP capture v1",
@@ -281,8 +298,10 @@ function setupStrap() {
   };
   const writeCmd = (bytes) => {
     logRaw("write", bytes);
-    return whoopCmd.properties.writeWithoutResponse && whoopCmd.writeValueWithoutResponse
-      ? whoopCmd.writeValueWithoutResponse(bytes)
+    // The official app writes every command with response; the strap never
+    // answered our write-without-response in captures, so match it when we can.
+    return whoopCmd.properties.write && whoopCmd.writeValueWithResponse
+      ? whoopCmd.writeValueWithResponse(bytes)
       : whoopCmd.writeValue(bytes);
   };
 

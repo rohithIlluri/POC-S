@@ -20,9 +20,15 @@
 //	0x23 | sequence | command | payload …
 //
 // Safety: the only commands this package can build are RealtimeHR on/off,
-// which change nothing on the strap that outlives the connection. The
-// generic builder is unexported, so nothing outside can construct the
-// strap's erase, trim, reboot or persistent-setting commands.
+// which change nothing on the strap that outlives the connection, and
+// SetClock, which sets only the strap's clock. The generic builder is
+// unexported, and it refuses (panics on) every opcode in blockedCommands, so
+// nothing can construct the strap's erase, trim, reboot, firmware or
+// persistent-setting commands.
+//
+// Write every command to the strap WITH response (a normal GATT write). The
+// strap ignored write-without-response commands in captures and answered the
+// same command once it was written with response.
 package whoopble
 
 import (
@@ -46,16 +52,67 @@ const sof = 0xAA
 
 // Packet types (first body byte).
 const (
-	TypeCommand  = 0x23
-	TypeRealtime = 0x28 // 1 Hz live heart rate + RR while realtime is on
-	TypeHistory  = 0x2F // 1 Hz stored records during a history sync
-	TypeMetadata = 0x31 // e.g. end-of-batch markers during a sync
+	TypeCommand         = 0x23
+	TypeCommandResponse = 0x24 // the strap's answer to a command
+	TypeRealtime        = 0x28 // 1 Hz live heart rate + RR while realtime is on
+	TypeHistory         = 0x2F // 1 Hz stored records during a history sync
+	TypeEvent           = 0x30 // housekeeping: battery, wrist, charging, clock lost…
+	TypeMetadata        = 0x31 // e.g. end-of-batch markers during a sync
 )
 
 // Commands (third body byte of a TypeCommand packet) this package builds.
 const (
 	CmdToggleRealtimeHR = 0x03 // payload 01 = start, 00 = stop; not persisted
+	CmdSetClock         = 0x0A // payload u32 seconds, u32 sub-second ticks (WHOOP 4.0)
 )
+
+// blockedCommands are opcodes that erase, reboot, reflash, lock or persistently
+// reconfigure the strap. They come from the opcode names in the official
+// Android app. command refuses to build any of them.
+var blockedCommands = map[byte]string{
+	0x0F: "forget bonds",
+	25:   "force trim (flash erase)",
+	29:   "reboot",
+	32:   "power cycle",
+	33:   "set read pointer",
+	36:   "start firmware load",
+	37:   "load firmware data",
+	38:   "process firmware image",
+	45:   "enter BLE DFU",
+	83:   "verify firmware image",
+	142:  "start firmware load (new)",
+	143:  "load firmware data (new)",
+	144:  "process firmware image (new)",
+	155:  "start certificate transfer",
+	156:  "load certificate",
+	157:  "verify certificate",
+	158:  "process certificate",
+	159:  "lock device",
+	66:   "set alarm",
+	69:   "disable alarm",
+	39:   "set LED drive",
+	41:   "set TIA gain",
+	43:   "set bias offset",
+	52:   "set data-path type",
+	53:   "force data-path type",
+	77:   "set advertising name",
+	140:  "set advertising name",
+	115:  "device config key exchange",
+	116:  "send device config",
+	117:  "feature flag key exchange",
+	118:  "send feature flag",
+	119:  "set device config value",
+	120:  "set feature flag value",
+	131:  "set research packet",
+	153:  "toggle persistent R20",
+	154:  "toggle persistent R21",
+}
+
+// IsBlocked reports whether cmd is an opcode this package will never build.
+func IsBlocked(cmd byte) bool {
+	_, ok := blockedCommands[cmd]
+	return ok
+}
 
 // ErrShort means more bytes are needed before a frame can be read.
 var ErrShort = errors.New("whoopble: incomplete frame")
@@ -92,7 +149,26 @@ func Frame(body []byte) []byte {
 // The strap doesn't check the sequence number, but callers should still
 // increment it like the app does.
 func command(seq byte, cmd byte, payload ...byte) []byte {
+	if why, blocked := blockedCommands[cmd]; blocked {
+		panic(fmt.Sprintf("whoopble: refusing to build command %#x (%s)", cmd, why))
+	}
 	return Frame(append([]byte{TypeCommand, seq, cmd}, payload...))
+}
+
+// ClockTicksPerSecond is the strap clock's sub-second resolution: the
+// sub-second field of every timestamp counts 1/32768 s.
+const ClockTicksPerSecond = 32768
+
+// SetClock sets the strap's clock to t. A strap that has lost its clock
+// counts from 1971-01-01 since power-on (it reports an RTC-lost event), so
+// stored history carries wrong timestamps until this is sent. The payload
+// layout comes from the official app's code and has not yet been sent to a
+// strap: check the next capture for a success response before relying on it.
+func SetClock(seq byte, t time.Time) []byte {
+	var p [8]byte
+	binary.LittleEndian.PutUint32(p[0:4], uint32(t.Unix()))
+	binary.LittleEndian.PutUint32(p[4:8], uint32(int64(t.Nanosecond())*ClockTicksPerSecond/1e9))
+	return command(seq, CmdSetClock, p[:]...)
 }
 
 // RealtimeHR starts (on) or stops the 1 Hz realtime heart-rate stream.
@@ -206,9 +282,14 @@ func rr(body []byte, countOff, valuesOff, slots int) []int {
 	return out
 }
 
-// DecodeRealtime reads a TypeRealtime body:
+// DecodeRealtime reads a TypeRealtime body (20 bytes in captures from a
+// WHOOP 4.0; [1] was always 0x02 and [18:20] always 01 01):
 //
 //	[0] 0x28 [1] ? [2:6] unix seconds [6:8] sub-second [8] HR [9] RR count [10:18] 4 × RR u16 ms
+//
+// Beat-to-beat intervals are sparse in the realtime stream: one capture got
+// RR in only about 13% of beats, in a few bursts. Don't expect a complete RR
+// series from realtime; history records hold more.
 func DecodeRealtime(body []byte) (Sample, bool) {
 	if len(body) < 18 || body[0] != TypeRealtime {
 		return Sample{}, false
@@ -221,7 +302,9 @@ func DecodeRealtime(body []byte) (Sample, bool) {
 }
 
 // DecodeHistory reads the heart-rate part of a TypeHistory record (the rest
-// of the 92-byte body holds sensor data that isn't decoded here):
+// of the 88-byte body holds sensor data that isn't decoded here; in the
+// published sample records, three little-endian float32s at [36:48] look like
+// a gravity vector in g, magnitude about 1.04):
 //
 //	[0] 0x2F [1] ? [2] record kind [3:7] record number [7:11] unix seconds [11:17] ? [17] HR [18] RR count [19:27] 4 × RR u16 ms
 func DecodeHistory(body []byte) (rec Sample, number uint32, ok bool) {
