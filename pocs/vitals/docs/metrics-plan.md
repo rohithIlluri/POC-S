@@ -39,7 +39,7 @@ Today is the first day of data. vitals will not try to back-fill the strap's old
   summed. **verified** (zones and weights from a clinical-protocol description of Edwards 1993).
 - **Banister TRIMP:** `sum( minutes × x × 0.64 × e^(k·x) )` with `x` = fraction of heart-rate reserve,
   `k` = 1.92 for men and 1.67 for women. **secondary**: the shape and the two exponents were found on
-  several pages; the women's multiplier is commonly given as 0.86 but was not seen. Verify against
+  several pages; a second search found several independent pages giving 0.64 and 1.92 for men and 0.86 and 1.67 for women (the code uses these), but one worked example (45 min at 160 bpm, rest 40, max 190) gave about 118 where the formula gives about 107, so the absolute value is approximate. Verify against
   Morton et al. 1990 / Banister 1991 before coding. The two methods correlated 0.80-0.99 in one study
   of 10 athletes (small sample).
 - **Day strain:** TRIMP summed over the day, mapped to a 0-21 display scale by **own design**:
@@ -72,7 +72,7 @@ Today is the first day of data. vitals will not try to back-fill the strap's old
 - **Sleep/wake from motion:** Cole-Kripke and Sadeh actigraphy algorithms. Against polysomnography on a
   wrist device, Cole-Kripke was more sensitive to sleep (0.88-0.96) but less specific to wake (0.35-0.64) than Sadeh
   (0.82-0.91 and 0.47-0.68). Total sleep time agreed reasonably; wake after sleep onset agreed poorly (**verified**
-  from a validation study). The original epoch weights were **not** retrieved; read the 1992 and 1994 papers (Sleep) first.
+  from a validation study). The papers that unify these algorithms give their structure (Cole-Kripke: a weighted sum over neighbouring one-minute epochs, wake above 1; Sadeh: a linear score from window mean, count of epochs in a band, a short-window SD and a log term) but not the numeric weights, so the weights must come from the 1992 and 1994 papers before any code is written. Sleep is therefore not built.
 - **Stages from heart rate/HRV + motion:** published neural-network work on accelerometer plus inter-beat
   intervals reports Cohen's kappa about 0.64 and 78% accuracy for four classes in 30 s epochs (**verified**,
   abstract-level). Expect rough stage estimates, good totals.
@@ -106,7 +106,7 @@ Today is the first day of data. vitals will not try to back-fill the strap's old
 |---|---|---|
 | Calories | Keytel et al., J Sports Sci 2005;23:289-97, no-VO2max model (r = 0.857). Coefficients seen only on third-party pages and they disagree on units | **secondary** — do not code until read in the paper |
 | Respiratory rate | peak of the 0.1-0.5 Hz respiratory component in the RR series (respiratory sinus arrhythmia); correlations 0.68-0.89 with reference at rest in one validation, lower than ECG-based | verified; needs a complete RR series |
-| Skin temperature, blood oxygen | raw values are in the history records but not decoded; unit conversions are protocol facts and can be taken from the app | open |
+| Skin temperature, blood oxygen | Not decodable from the official app: its code shows both only as labels and as values delivered from WHOOP's servers, with no packet-level decoder or unit conversion. The raw fields would have to be found empirically in your own history records, and absolute degrees or % SpO2 would need a reference device. A relative nightly trend against your own baseline is the realistic target | open |
 | Steps | motion peaks from the accelerometer | open, depends on decoding the record |
 
 ## Build order

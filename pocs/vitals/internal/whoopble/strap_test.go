@@ -88,7 +88,7 @@ func TestSetClockLayout(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(body) != 3+8 || body[0] != TypeCommand || body[1] != 7 || body[2] != CmdSetClock {
+	if len(body) != 12 || body[0] != TypeCommand || body[1] != 7 || body[2] != CmdSetClock || body[11] != 0 {
 		t.Fatalf("body = %x", body)
 	}
 	if got := binary.LittleEndian.Uint32(body[3:7]); got != 1700000000 {
@@ -122,5 +122,23 @@ func TestDangerousCommandsCannotBeBuilt(t *testing.T) {
 		if IsBlocked(cmd) {
 			t.Errorf("offered command %#x is blocked", cmd)
 		}
+	}
+}
+
+func TestRealtimePacketSaysWhereAndWhetherItIsWorn(t *testing.T) {
+	body, _ := Parse(unhex(t, strapRealtimeTwoRR))
+	smp, ok := DecodeRealtime(body)
+	if !ok || smp.OffWrist || smp.Location != LocationWrist {
+		t.Fatalf("a strap worn on the wrist decoded as %+v", smp)
+	}
+	// The same packet with the flag byte cleared is what the app treats as off-wrist.
+	off := append([]byte(nil), body...)
+	off[18] = 0
+	if smp, _ := DecodeRealtime(off); !smp.OffWrist {
+		t.Error("[18] == 0 must read as off-wrist")
+	}
+	// A short (18-byte) body has no flag: it is not reported as off-wrist.
+	if smp, ok := DecodeRealtime(body[:18]); !ok || smp.OffWrist || smp.Location != LocationUnknown {
+		t.Errorf("18-byte body: %+v %v", smp, ok)
 	}
 }

@@ -17,7 +17,7 @@
 // CRC-8/SMBUS (poly 0x07, init 0); the trailer is standard CRC-32 (IEEE).
 // The body starts with a packet type; commands to the strap are
 //
-//	0x23 | sequence | command | payload …
+//	0x23 | sequence | command | payload … | zero padding to a multiple of 4 bytes
 //
 // Safety: the only commands this package can build are RealtimeHR on/off,
 // which change nothing on the strap that outlives the connection, and
@@ -57,6 +57,7 @@ const (
 	TypeRealtime        = 0x28 // 1 Hz live heart rate + RR while realtime is on
 	TypeHistory         = 0x2F // 1 Hz stored records during a history sync
 	TypeEvent           = 0x30 // housekeeping: battery, wrist, charging, clock lost…
+	TypeConsoleLog      = 0x32 // firmware console text; a real strap's first history burst was all of these
 	TypeMetadata        = 0x31 // e.g. end-of-batch markers during a sync
 )
 
@@ -152,7 +153,14 @@ func command(seq byte, cmd byte, payload ...byte) []byte {
 	if why, blocked := blockedCommands[cmd]; blocked {
 		panic(fmt.Sprintf("whoopble: refusing to build command %#x (%s)", cmd, why))
 	}
-	return Frame(append([]byte{TypeCommand, seq, cmd}, payload...))
+	body := append([]byte{TypeCommand, seq, cmd}, payload...)
+	// The official app pads every command body with zeros to a multiple of 4
+	// bytes. A strap silently ignores a misaligned one (a 3-byte history start
+	// got no answer at all in a real capture), so this is not optional.
+	for len(body)%4 != 0 {
+		body = append(body, 0)
+	}
+	return Frame(body)
 }
 
 // ClockTicksPerSecond is the strap clock's sub-second resolution: the
@@ -253,7 +261,24 @@ type Sample struct {
 	Time time.Time
 	HR   int
 	RR   []int // beat-to-beat intervals in ms, 0–4 per second
+	// OffWrist is true when a realtime packet says the strap is not on a body
+	// (heart rate is then meaningless). History records carry no such flag
+	// that we have decoded, so it stays false for them.
+	OffWrist bool
+	Location uint8 // where it is worn, see the Location constants; 0 = unknown
 }
+
+// Where the strap is worn (realtime packet byte [19], from the official app's
+// location table; the app also supports its garments).
+const (
+	LocationUnknown   = 0
+	LocationWrist     = 1
+	LocationBicep     = 2
+	LocationCalf      = 3
+	LocationSideTorso = 4
+	LocationGlute     = 5
+	LocationAnkle     = 7
+)
 
 const (
 	minRRms = 300
@@ -283,9 +308,14 @@ func rr(body []byte, countOff, valuesOff, slots int) []int {
 }
 
 // DecodeRealtime reads a TypeRealtime body (20 bytes in captures from a
-// WHOOP 4.0; [1] was always 0x02 and [18:20] always 01 01):
+// WHOOP 4.0; [1] was always 0x02):
 //
-//	[0] 0x28 [1] ? [2:6] unix seconds [6:8] sub-second [8] HR [9] RR count [10:18] 4 × RR u16 ms
+//	[0] 0x28 [1] revision [2:6] unix seconds [6:8] sub-second [8] HR [9] RR count
+//	[10:18] 4 × RR u16 ms [18] on-wrist flag (0 = off wrist) [19] location (1 = wrist)
+//
+// The last two bytes were 01 01 in every capture, worn on a wrist. The official
+// app reads [18] == 0 as "off wrist" and [19] as the worn location; the
+// off-wrist side has not been seen on a real strap yet.
 //
 // Beat-to-beat intervals are sparse in the realtime stream: one capture got
 // RR in only about 13% of beats, in a few bursts. Don't expect a complete RR
@@ -294,21 +324,45 @@ func DecodeRealtime(body []byte) (Sample, bool) {
 	if len(body) < 18 || body[0] != TypeRealtime {
 		return Sample{}, false
 	}
-	return Sample{
+	smp := Sample{
 		Time: time.Unix(int64(binary.LittleEndian.Uint32(body[2:6])), 0),
 		HR:   int(body[8]),
 		RR:   rr(body, 9, 10, 4),
-	}, true
+	}
+	if len(body) >= 20 {
+		smp.OffWrist = body[18] == 0
+		smp.Location = body[19]
+	}
+	return smp, true
+}
+
+// HasHeartLayout reports whether a TypeHistory record is one of the layouts
+// whose HR byte position has been checked against real data: version 12 / kind 7
+// (the public sample records) and version 24 / kind 5 (this strap's own
+// records). The strap also sends other 0x2F records (version 25 / kind 0, an
+// 84-byte frame of sensor samples every ~20 minutes) whose byte 17 is not a
+// heart rate; reading it as one wrote values like 3 and 255 over real samples.
+// Anything else is kept raw and never decoded as heart rate.
+func HasHeartLayout(body []byte) bool {
+	if len(body) < 3 {
+		return false
+	}
+	switch [2]byte{body[1], body[2]} {
+	case [2]byte{12, 7}, [2]byte{24, 5}:
+		return true
+	}
+	return false
 }
 
 // DecodeHistory reads the heart-rate part of a TypeHistory record (the rest
 // of the 88-byte body holds sensor data that isn't decoded here; in the
 // published sample records, three little-endian float32s at [36:48] look like
-// a gravity vector in g, magnitude about 1.04):
+// a gravity vector in g, magnitude about 1.04). It refuses records whose
+// layout has not been verified (see HasHeartLayout):
 //
 //	[0] 0x2F [1] ? [2] record kind [3:7] record number [7:11] unix seconds [11:17] ? [17] HR [18] RR count [19:27] 4 × RR u16 ms
 func DecodeHistory(body []byte) (rec Sample, number uint32, ok bool) {
-	if len(body) < 27 || body[0] != TypeHistory {
+	if len(body) < 27 || body[0] != TypeHistory || !HasHeartLayout(body) {
 		return Sample{}, 0, false
 	}
 	return Sample{

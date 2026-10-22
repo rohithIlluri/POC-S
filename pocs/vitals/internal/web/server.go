@@ -37,6 +37,7 @@ import (
 	"github.com/rohithIlluri/POC-S/pocs/vitals/internal/config"
 	"github.com/rohithIlluri/POC-S/pocs/vitals/internal/entry"
 	"github.com/rohithIlluri/POC-S/pocs/vitals/internal/store"
+	"github.com/rohithIlluri/POC-S/pocs/vitals/internal/strapdb"
 	"github.com/rohithIlluri/POC-S/pocs/vitals/internal/whoop"
 )
 
@@ -60,6 +61,14 @@ type Server struct {
 	// OnConnected, if set, runs after a WHOOP login completes; the CLI's
 	// `vitals whoop login` uses it to shut the server down.
 	OnConnected func(member string)
+
+	dbMu sync.Mutex
+	db   *strapdb.DB
+	hist historySession
+
+	clientLogMu     sync.Mutex
+	clientLogWindow time.Time
+	clientLogCount  int
 
 	once   sync.Once
 	csrf   string
@@ -110,11 +119,27 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /delete", s.post(s.deleteEntry))
 	mux.HandleFunc("POST /strap/save", s.post(s.strapSave))
 	mux.HandleFunc("GET /strap/clock-command", s.strapClockCommand)
+	mux.HandleFunc("POST /api/samples", s.apiPost(s.apiSamples))
+	mux.HandleFunc("GET /api/status", s.apiStatus)
+	mux.HandleFunc("GET /api/health", s.apiHealth)
+	mux.HandleFunc("GET /api/csrf", s.apiCSRF)
+	mux.HandleFunc("GET /api/day", s.apiDay)
+	mux.HandleFunc("GET /api/sleep", s.apiSleep)
+	mux.HandleFunc("GET /api/battery", s.apiBattery)
+	mux.HandleFunc("GET /api/trend", s.apiTrend)
+	mux.HandleFunc("GET /api/samples", s.apiSeries)
+	mux.HandleFunc("POST /api/history/start", s.apiPost(s.historyStart))
+	mux.HandleFunc("POST /api/history/frames", s.apiPost(s.historyFrames))
+	mux.HandleFunc("POST /api/history/abort", s.apiPost(s.historyAbort))
+	mux.HandleFunc("GET /api/history/status", s.historyStatus)
+	mux.HandleFunc("GET /api/profile", s.apiProfile)
+	mux.HandleFunc("POST /api/profile", s.apiPost(s.apiProfile))
 	mux.HandleFunc("GET /whoop/connect", s.whoopConnect)
 	mux.HandleFunc("GET /whoop/callback", s.whoopCallback)
 	mux.HandleFunc("POST /whoop/sync", s.post(s.whoopSync))
 	mux.HandleFunc("POST /whoop/disconnect", s.post(s.whoopDisconnect))
-	return s.guard(mux)
+	mux.HandleFunc("POST /api/clientlog", s.apiPost(s.apiClientLog))
+	return s.accessLog(s.guard(mux))
 }
 
 func staticFiles(fsys fs.FS) http.Handler {
@@ -149,7 +174,7 @@ func (s *Server) guard(next http.Handler) http.Handler {
 			return
 		}
 		h := w.Header()
-		h.Set("Content-Security-Policy", "default-src 'none'; style-src 'self'; script-src 'self'; img-src 'self' data:; form-action 'self'; base-uri 'none'; frame-ancestors 'none'")
+		h.Set("Content-Security-Policy", "default-src 'none'; connect-src 'self'; style-src 'self'; script-src 'self'; img-src 'self' data:; form-action 'self'; base-uri 'none'; frame-ancestors 'none'")
 		h.Set("X-Content-Type-Options", "nosniff")
 		// same-origin, not no-referrer: no-referrer makes browsers send
 		// "Origin: null" on form posts, which the CSRF check must refuse.
