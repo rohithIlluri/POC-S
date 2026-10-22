@@ -56,12 +56,18 @@
   <div class="strap-live" id="strap-live" hidden>
     <div class="bpm"><span id="strap-bpm">--</span> <span class="unit">bpm</span></div>
     <svg class="trace" viewBox="0 0 300 60" preserveAspectRatio="none" aria-hidden="true"><path id="strap-trace"></path></svg>
-    <p class="muted strap-note" id="strap-note"></p>
+    <div class="auto-row" id="strap-auto-row" hidden>
+    <label><input type="checkbox" id="strap-auto" checked> Autopilot: keep the strap's clock right and download its history every 15 minutes</label>
+    <p class="muted" id="strap-auto-status" role="status"></p>
+  </div>
+  <p class="clock-hint" id="strap-clock-hint" role="status" hidden></p>
+  <p class="muted strap-note" id="strap-note"></p>
   </div>
   <div class="actions strap-actions">
     <button type="button" id="strap-connect" class="primary" hidden>Connect strap</button>
     <button type="button" id="strap-rest" hidden>Resting check · 2 min</button>
     <button type="button" id="strap-workout" hidden>Start workout</button>
+    <button type="button" id="strap-sync" class="quiet" hidden title="Downloads what the strap recorded while nothing was connected, stores it here, then lets the strap free that memory. Set the strap clock first so the data is dated correctly.">Sync history</button>
     <button type="button" id="strap-clock" class="quiet" hidden title="Sets the strap's clock to this computer's time. A strap that lost its clock stamps stored data with 1971.">Set strap clock</button>
     <button type="button" id="strap-capture" class="quiet" hidden title="Raw packets from the strap, for protocol work — see vitals strap decode">Download capture</button>
     <button type="button" id="strap-disconnect" class="quiet" hidden>Disconnect</button>
@@ -71,6 +77,56 @@
     <input type="hidden" name="days" value="{{.Days}}">
     <input type="hidden" name="kind"><input type="hidden" name="hr"><input type="hidden" name="rr"><input type="hidden" name="seconds">
   </form>
+</section>
+
+<section class="card data" id="data" aria-labelledby="data-h" aria-busy="true">
+  <header class="data-head">
+    <div>
+      <h2 id="data-h">Today</h2>
+      <p class="muted" id="data-sub">Loading…</p>
+    </div>
+    <div class="data-status">
+      <span class="pill" id="data-live" role="status"><i class="dot" aria-hidden="true"></i><span>Connecting…</span></span>
+      <span class="pill" id="data-wrist" hidden></span>
+      <span class="muted" id="data-sync"></span>
+    </div>
+  </header>
+
+  <div class="hero" id="data-hero" aria-label="Today at a glance"></div>
+
+  <figure class="data-chart" id="data-chart">
+    <div class="chart-wrap">
+      <svg id="data-svg" viewBox="0 0 600 160" preserveAspectRatio="none" role="img" tabindex="0" aria-label="Heart rate today"></svg>
+      <div class="chart-tip" id="data-tip" hidden></div>
+    </div>
+    <figcaption class="muted" id="data-cap"></figcaption>
+  </figure>
+
+  <div class="zones" id="data-zones" hidden>
+    <div class="zonebar" id="data-zonebar" role="img" aria-label="Time in heart-rate zones today"></div>
+    <ul class="zone-legend" id="data-zone-legend"></ul>
+  </div>
+
+  <figure class="hypno" id="data-hypno" hidden>
+    <figcaption class="hypno-head"><span class="metric-name">Sleep stages · last night</span><span class="chip provisional">Estimate</span></figcaption>
+    <div class="hypno-plot">
+      <ul class="hypno-rows" aria-hidden="true"><li>Wake</li><li>REM</li><li>Light</li><li>Deep</li></ul>
+      <svg id="data-hypno-svg" viewBox="0 0 600 96" preserveAspectRatio="none" role="img" aria-label="Estimated sleep stages through the night"></svg>
+      <div class="hypno-axis muted" id="data-hypno-axis"></div>
+    </div>
+    <ul class="zone-legend" id="data-hypno-legend"></ul>
+    <p class="metric-note" id="data-hypno-note"></p>
+  </figure>
+
+  <div class="metric-grid" id="data-metrics" aria-label="Metrics"></div>
+  <p class="metric-note sleep-note" id="data-sleep-note" hidden></p>
+  <details class="locked" id="data-locked" hidden>
+    <summary id="data-locked-sum"></summary>
+    <ul id="data-locked-list"></ul>
+  </details>
+
+  <p class="profile-line muted" id="data-profile"></p>
+  <p class="muted data-err" id="data-err" hidden></p>
 </section>
 
 {{if .Tiles}}

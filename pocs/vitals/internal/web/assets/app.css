@@ -151,3 +151,101 @@ td form { margin: 0; }
 .strap-note { grid-column: 1 / -1; margin: 0; font-size: 13px; }
 .strap-actions { flex-wrap: wrap; }
 .recording { border-color: var(--critical); color: var(--critical-text); }
+
+/* Today: rings, chart, zones, metrics */
+:root {
+  --z0: #8f8d86; --z1: #7fb3e6; --z2: #2a78d6; --z3: #0ca30c; --z4: #fab219; --z5: #d03b3b;
+}
+.data-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem; flex-wrap: wrap; }
+.data-head h2 { margin: 0; }
+.data-head p { margin: .15rem 0 0; }
+.data-status { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; font-size: .8rem; }
+.pill { display: inline-flex; align-items: center; gap: .4rem; padding: .15rem .6rem; border: 1px solid var(--border); border-radius: 999px; font-size: .78rem; color: var(--ink-2); }
+.pill .dot { width: .5rem; height: .5rem; border-radius: 50%; background: var(--muted); }
+.pill.live { color: var(--good-text); border-color: currentColor; }
+.pill.live .dot { background: var(--good); animation: pulse 1.8s ease-out infinite; }
+.pill.stale { color: var(--critical-text); border-color: currentColor; }
+.pill.stale .dot { background: var(--critical); }
+.pill.off { color: var(--critical-text); border-color: currentColor; }
+@keyframes pulse { 0% { box-shadow: 0 0 0 0 rgba(12, 163, 12, .5); } 100% { box-shadow: 0 0 0 .5rem rgba(12, 163, 12, 0); } }
+
+.hero { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 1rem; margin: 1.25rem 0 .5rem; }
+.ring { margin: 0; display: flex; flex-direction: column; align-items: center; gap: .35rem; text-align: center; }
+.ring svg { width: 130px; height: 130px; transform: rotate(-90deg); overflow: visible; }
+.ring .track { fill: none; stroke: var(--grid); stroke-width: 10; }
+.ring .arc { fill: none; stroke-width: 10; stroke-linecap: round; transition: stroke-dashoffset .8s cubic-bezier(.2, .8, .2, 1), stroke .4s; }
+.ring-centre { position: relative; width: 130px; height: 130px; }
+.ring-centre svg { position: absolute; inset: 0; }
+.ring-text { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; }
+.ring-big { font-size: 2rem; font-weight: 650; letter-spacing: -.03em; font-variant-numeric: tabular-nums; line-height: 1; }
+.ring-unit { font-size: .7rem; color: var(--muted); margin-top: .15rem; }
+.ring figcaption { font-size: .8rem; color: var(--ink-2); }
+.ring figcaption small { display: block; color: var(--muted); font-size: .72rem; }
+
+.data-chart { margin: 1rem 0 .25rem; }
+.chart-wrap { position: relative; }
+.data-chart.empty .chart-wrap { display: none; }
+.data-chart.empty figcaption { margin: 0; }
+.data-chart svg { width: 100%; height: 160px; display: block; border-radius: 8px; outline-offset: 2px; touch-action: pan-y; }
+.data-chart svg text { fill: var(--muted); font-size: 9px; }
+.data-chart figcaption { font-size: .8rem; margin-top: .25rem; display: flex; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
+.chart-tip { position: absolute; top: 4px; transform: translateX(-50%); background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: .25rem .5rem; font-size: .75rem; white-space: nowrap; pointer-events: none; box-shadow: 0 2px 8px rgba(0, 0, 0, .12); font-variant-numeric: tabular-nums; }
+
+.zones { margin: .75rem 0 0; }
+.zonebar { display: flex; height: 10px; border-radius: 5px; overflow: hidden; background: var(--grid); gap: 1px; }
+.zonebar span { display: block; min-width: 2px; transition: flex-grow .6s ease; }
+.zone-legend { list-style: none; margin: .4rem 0 0; padding: 0; display: flex; gap: .9rem; flex-wrap: wrap; font-size: .75rem; color: var(--ink-2); }
+.zone-legend li { display: inline-flex; align-items: center; gap: .3rem; font-variant-numeric: tabular-nums; }
+.zone-legend i { width: .6rem; height: .6rem; border-radius: 2px; display: inline-block; }
+
+/* Sleep-stage hypnogram (an estimate). Stage hues are categorical slots 1-4, in order; the row a bar
+   sits on names the stage too, so colour is never the only cue. */
+.hypno { margin: 1rem 0 0; border: 1px solid var(--border); border-radius: 12px; padding: .8rem .9rem; background: var(--surface); }
+.hypno-head { display: flex; justify-content: space-between; align-items: baseline; gap: .5rem; margin-bottom: .4rem; }
+.hypno-plot { display: grid; grid-template-columns: auto 1fr; column-gap: .5rem; }
+.hypno-rows { list-style: none; margin: 0; padding: 0; display: grid; grid-template-rows: repeat(4, 1fr); font-size: .7rem; color: var(--muted); height: 96px; }
+.hypno-rows li { display: flex; align-items: center; }
+.hypno svg { width: 100%; height: 96px; display: block; }
+.hypno svg rect.low { opacity: .45; }
+.hypno-axis { grid-column: 2; display: flex; justify-content: space-between; font-size: .7rem; font-variant-numeric: tabular-nums; margin-top: .2rem; }
+.hypno .zone-legend { margin-top: .5rem; }
+.hypno .metric-note { margin-top: .4rem; max-width: 80ch; }
+:root { --st-light: #2a78d6; --st-wake: #eb6834; --st-deep: #1baf7a; --st-rem: #eda100; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --st-light: #3987e5; --st-wake: #d95926; --st-deep: #199e70; --st-rem: #c98500; } }
+:root[data-theme="dark"] { --st-light: #3987e5; --st-wake: #d95926; --st-deep: #199e70; --st-rem: #c98500; }
+
+.metric-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: .75rem; margin-top: 1rem; }
+.metric { border: 1px solid var(--border); border-radius: 12px; padding: .8rem .9rem; background: var(--surface); display: flex; flex-direction: column; gap: .3rem; min-width: 0; }
+.metric-top { display: flex; justify-content: space-between; align-items: baseline; gap: .5rem; }
+.metric-name { font-size: .85rem; color: var(--ink-2); }
+.metric-value { font-size: 1.6rem; font-weight: 650; letter-spacing: -.02em; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.metric-value small { font-size: .8rem; font-weight: 500; color: var(--muted); letter-spacing: 0; margin-left: .2rem; }
+.metric-value.dim { color: var(--muted); font-size: 1rem; font-weight: 500; letter-spacing: 0; }
+.metric-note { font-size: .76rem; color: var(--muted); margin: 0; }
+.sleep-note { margin-top: .6rem; max-width: 70ch; }
+.spark { width: 100%; height: 28px; display: block; }
+.chip { font-size: .66rem; text-transform: uppercase; letter-spacing: .06em; padding: .08rem .45rem; border-radius: 999px; border: 1px solid var(--border); color: var(--muted); white-space: nowrap; }
+.chip.full { color: var(--good-text); border-color: currentColor; }
+.chip.low { color: var(--critical); border-color: currentColor; }
+.chip.provisional { color: var(--accent); border-color: currentColor; }
+.locked { margin-top: .9rem; font-size: .82rem; color: var(--ink-2); }
+.locked summary { cursor: pointer; color: var(--muted); }
+.locked ul { margin: .4rem 0 0; padding-left: 1.1rem; }
+.locked li { margin: .2rem 0; }
+.locked li b { font-weight: 600; color: var(--ink); }
+.profile-line { margin: .9rem 0 0; font-size: .8rem; display: flex; align-items: center; gap: .4rem; flex-wrap: wrap; }
+.profile-line button { font: inherit; font-size: .75rem; padding: .15rem .6rem; border-radius: 999px; border: 1px solid var(--border); background: var(--surface); color: var(--ink-2); cursor: pointer; }
+.profile-line button[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.data-err { color: var(--critical-text); margin-top: .75rem; }
+[aria-busy="true"] .ring .arc, [aria-busy="true"] .metric { opacity: .55; }
+@media (prefers-reduced-motion: reduce) {
+  .ring .arc, .zonebar span { transition: none; }
+  .pill.live .dot { animation: none; }
+}
+
+.clock-hint { margin: .6rem 0 0; padding: .55rem .8rem; border-radius: 10px; border: 1px solid var(--border); border-left: 4px solid var(--warning); background: var(--surface); font-size: .85rem; color: var(--ink); }
+.clock-hint.ok { border-left-color: var(--good); }
+
+.auto-row { margin: .6rem 0 0; font-size: .85rem; }
+.auto-row label { display: flex; gap: .5rem; align-items: center; cursor: pointer; }
+.auto-row p { margin: .25rem 0 0 1.55rem; }
