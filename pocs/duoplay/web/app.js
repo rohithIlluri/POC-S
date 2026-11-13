@@ -68,8 +68,9 @@ function speakerCard(id, title) {
       <label>Output<select id="dev-${id}"><option value="">System default</option></select></label>
       <div class="row">
         <button id="pick-${id}" hidden>Choose speaker…</button>
-        <button id="names-${id}" class="quiet" hidden>Show device names</button>
+        <button id="names-${id}" hidden>Find my speakers</button>
       </div>
+      <p class="hint" id="hint-${id}" hidden>Only "System default" is listed. Click <b>Find my speakers</b> and allow the microphone prompt: browsers only list speakers after that permission. The microphone is switched off straight away and nothing is recorded.</p>
     </div>
     <label>Channel
       <select id="ch-${id}">
@@ -104,12 +105,27 @@ async function listOutputs(selectEl, wanted) {
   if (wanted) selectEl.value = wanted;
 }
 
+const devSelects = []; // [selectEl, id] for every speaker card
+
+async function refreshOutputs() {
+  for (const [sel, id] of devSelects) {
+    const keep = sel.value;
+    for (const o of [...sel.options].slice(1)) o.remove();
+    await listOutputs(sel);
+    sel.value = [...sel.options].some((o) => o.value === keep) ? keep : '';
+    if (sel.value !== keep) sel.dispatchEvent(new Event('change')); // chosen speaker went away
+    $(`#hint-${id}`).hidden = sel.options.length > 1;
+  }
+}
+// Speakers connected or disconnected while the page is open.
+navigator.mediaDevices?.addEventListener?.('devicechange', refreshOutputs);
+
 function bindSpeaker(id, channel) {
   const dev = $(`#dev-${id}`);
   const status = $(`#drift-${id}`);
 
   if (canSink) {
-    listOutputs(dev);
+    devSelects.push([dev, id]);
     dev.addEventListener('change', async () => {
       try {
         await channel.setSink(dev.value);
@@ -140,10 +156,13 @@ function bindSpeaker(id, channel) {
           // Browsers only reveal speaker names after a microphone permission; we stop the mic right away.
           const s = await navigator.mediaDevices.getUserMedia({ audio: true });
           s.getTracks().forEach((t) => t.stop());
-          for (const o of [...dev.options].slice(1)) o.remove();
-          await listOutputs(dev);
-        } catch {
-          status.textContent = 'Permission denied: speaker names stay hidden.';
+          await refreshOutputs();
+          status.textContent = '';
+        } catch (e) {
+          status.textContent =
+            e.name === 'NotFoundError'
+              ? 'This browser needs a microphone to exist before it lists speakers. Connect any mic or headset, then try again.'
+              : 'Permission denied: the speaker list stays hidden. Allow the microphone for this page in the address bar, then try again.';
         }
       });
     }
@@ -190,6 +209,7 @@ $('#room-speaker').innerHTML = speakerCard('r', 'This device');
 bindSpeaker('a', chA);
 bindSpeaker('b', chB);
 bindSpeaker('r', chR);
+refreshOutputs();
 // Pre-set the stereo pair so "Left"/"Right" is one click away on each side.
 $('#ch-a').value = 'both';
 $('#ch-b').value = 'both';

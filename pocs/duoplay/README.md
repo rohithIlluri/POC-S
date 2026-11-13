@@ -19,6 +19,24 @@ npm test             # timing maths, room state machine, server end to end
 
 Dual Output also works as plain static files: serve `web/` from anything. Room Sync needs `npm start`, because the server relays room commands and keeps uploaded tracks.
 
+## Linux quick start (one machine, two Bluetooth speakers)
+
+Needs only the Linux machine: Bluetooth, Node.js 20+, and Chrome or Chromium (Firefox cannot choose speakers this way).
+
+```bash
+git clone -b feat/duoplay https://github.com/rohithIlluri/POC-S.git
+cd POC-S/pocs/duoplay
+./start-linux.sh
+```
+
+The script installs the one dependency, lists the Bluetooth speakers the sound system sees, starts the server and opens the page. Then:
+
+1. Pair and connect both speakers in Bluetooth settings (the page's lists update when they connect).
+2. In **Dual Output**, click **Find my speakers** and allow the microphone prompt. Chrome only lists speakers after that permission; the mic is switched off straight away.
+3. Pick one speaker per side, press **Test tone** on each, load **Sync click test**, press Play, and nudge until you hear one click.
+
+If one speaker stutters, the built-in Bluetooth adapter may not keep up with two streams; moving closer usually helps.
+
 ## Test it on real speakers
 
 1. **Computer, two Bluetooth speakers (Dual Output).** Pair both speakers in the OS Bluetooth settings. Open the page in Chrome or Edge, pick one per side (use *Choose speaker…* or *Show device names* if the list shows no names), press **Test tone** on each to confirm which is which.
