@@ -5,7 +5,7 @@ import { estimateOffset } from './sync.js';
 const wall = () => performance.timeOrigin + performance.now();
 
 export class RoomClient {
-  /** handlers: { onJoined(code, state, members), onState(state), onMembers(n), onError(msg), onClose() } */
+  /** handlers: { onJoined(code, state, members), onState(state), onMembers(n), onError(msg), onClose(), onClock(clock, previous) } */
   constructor(handlers) {
     this.h = handlers;
     this.ws = null;
@@ -32,10 +32,14 @@ export class RoomClient {
   #onMessage(m) {
     switch (m.t) {
       case 'pong':
+      {
         this.samples.push({ t0: m.c0, ts: m.s, t1: wall() });
         if (this.samples.length > 20) this.samples.shift();
+        const previous = this.clock;
         this.clock = estimateOffset(this.samples);
+        this.h.onClock?.(this.clock, previous);
         break;
+      }
       case 'joined':
         this.h.onJoined(m.code, m.state, m.members);
         break;
@@ -64,7 +68,10 @@ export class RoomClient {
     this.send({ t: 'cmd', cmd });
   }
 
-  /** Quick burst of pings now, then a few every 10 s so the estimate follows clock drift. */
+  /**
+   * Quick burst of pings, then a few every 10 s so the estimate follows clock drift.
+   * Resolves once the first burst is answered, so callers can measure the clock before joining.
+   */
   async startClockSync() {
     const burst = async (n) => {
       for (let i = 0; i < n; i++) {
@@ -73,6 +80,7 @@ export class RoomClient {
       }
     };
     await burst(12);
+    await new Promise((r) => setTimeout(r, 150)); // let the last replies land
     this.timer = setInterval(() => burst(4), 10_000);
   }
 

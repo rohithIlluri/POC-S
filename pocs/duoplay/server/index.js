@@ -10,7 +10,10 @@ import { WebSocketServer } from 'ws';
 import { Room, makeCode, MAX_MEMBERS } from './rooms.js';
 
 const WEB_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../web');
-const MAX_UPLOAD = 40 * 1024 * 1024;
+const MAX_UPLOAD = 40 * 1024 * 1024; // per file
+const MAX_UPLOAD_TOTAL = 200 * 1024 * 1024; // across all rooms, held in memory
+const MAX_UPLOADS_PER_ROOM = 3; // older tracks in a room are dropped
+const MAX_ROOMS = 100;
 
 const MIME = {
   '.html': 'text/html; charset=utf-8',
@@ -45,6 +48,10 @@ export async function startServer({ port = 3000, host = '0.0.0.0' } = {}) {
           }
           chunks.push(chunk);
         }
+        const inRoom = [...uploads].filter(([, u]) => u.room === room);
+        while (inRoom.length >= MAX_UPLOADS_PER_ROOM) uploads.delete(inRoom.shift()[0]);
+        const total = [...uploads.values()].reduce((n, u) => n + u.buf.length, 0);
+        if (total + size > MAX_UPLOAD_TOTAL) return json(res, 507, { error: 'Server is full, try again later' });
         const id = randomBytes(8).toString('hex');
         uploads.set(id, { buf: Buffer.concat(chunks), room });
         return json(res, 200, { url: `/api/track/${id}` });
@@ -109,6 +116,7 @@ export async function startServer({ port = 3000, host = '0.0.0.0' } = {}) {
       if (msg.t === 'ping') return send({ t: 'pong', c0: msg.c0, s: Date.now() });
 
       if (msg.t === 'create' && !ws.room) {
+        if (rooms.size >= MAX_ROOMS) return send({ t: 'error', message: 'Too many rooms open, try again later' });
         const code = makeCode((c) => rooms.has(c));
         const room = new Room(code, Date.now());
         rooms.set(code, room);

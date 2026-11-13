@@ -359,7 +359,10 @@ async function keepAwake() {
   }
 }
 document.addEventListener('visibilitychange', () => {
-  if (document.visibilityState === 'visible' && roomCode) keepAwake();
+  if (document.visibilityState !== 'visible' || !roomCode) return;
+  keepAwake();
+  // Phones pause audio in the background; line back up with the room on return.
+  chR.resume().then(syncRoomPlayer);
 });
 
 function syncRoomPlayer() {
@@ -434,10 +437,16 @@ async function enterRoom(action) {
       $('#room-error').textContent = msg;
       setStatus(msg);
     },
+    onClock: (clock, previous) => {
+      // A better clock estimate moves the shared start time on this device: re-line up if it moved much.
+      if (previous && Math.abs(clock.offset - previous.offset) > 15 && roomState?.playing) syncRoomPlayer();
+    },
     onClose: () => {
       if (roomCode) {
+        const code = roomCode;
         leaveRoom();
-        $('#room-error').textContent = 'Lost connection to the room.';
+        $('#room-code').value = code;
+        $('#room-error').textContent = 'Lost connection to the room. Tap Join to rejoin.';
       }
     },
   });
@@ -448,8 +457,11 @@ async function enterRoom(action) {
     $('#room-error').textContent = `${e.message}. Room Sync needs the DuoPlay server (npm start).`;
     return;
   }
+  // Measure the clock before joining, so the first play is scheduled on the right timeline.
+  $('#room-error').textContent = 'Connecting…';
+  await roomClient.startClockSync();
+  $('#room-error').textContent = '';
   action(roomClient);
-  roomClient.startClockSync();
 }
 
 $('#room-create').addEventListener('click', () => enterRoom((c) => c.create()));
@@ -492,3 +504,6 @@ if (linked) {
 } else {
   setMode('dual');
 }
+
+// Read-only handle for debugging from the browser console (and the smoke test).
+window.__duoplay = { dual, room, clock: () => roomClient?.clock ?? null };

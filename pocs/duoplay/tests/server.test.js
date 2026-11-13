@@ -100,3 +100,20 @@ test('upload needs a real room, and the static server blocks path traversal', as
   assert.equal((await fetch(`${base}/..%2fserver%2findex.js`)).status, 403);
   assert.equal((await fetch(`${base}/%2e%2e/package.json`)).status === 200, false);
 });
+
+test('a room keeps only its 3 newest uploads', async (t) => {
+  const srv = await startServer({ port: 0, host: '127.0.0.1' });
+  t.after(() => srv.close());
+  const c = await client(srv.port);
+  c.send({ t: 'create' });
+  const { code } = await c.next('joined');
+  const urls = [];
+  for (let i = 0; i < 4; i++) {
+    const res = await fetch(`http://127.0.0.1:${srv.port}/api/upload?room=${code}`, { method: 'POST', body: `t${i}` });
+    urls.push((await res.json()).url);
+  }
+  assert.equal(srv.uploads.size, 3);
+  assert.equal((await fetch(`http://127.0.0.1:${srv.port}${urls[0]}`)).status, 404); // oldest dropped
+  assert.equal(await (await fetch(`http://127.0.0.1:${srv.port}${urls[3]}`)).text(), 't3');
+  c.ws.close();
+});
