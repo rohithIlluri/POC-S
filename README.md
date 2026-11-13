@@ -10,6 +10,7 @@ A collection of proof-of-concept projects. Each POC is self-contained in its own
 | [`pocs/aipet`](pocs/aipet) | Local AI-usage companion — a terminal "pet" that reads Claude Code / Codex session logs on-device to coach token spend, rank a local leaderboard, and seed the *Codelings* game. Fully local, zero network surface | ✅ Active (v1.0.0) |
 | [`pocs/sparkroom`](pocs/sparkroom) | Multiplayer-AI workspace — pitch an idea, it becomes a live room where humans and an AI peer chat and co-write one shared draft, with every edit attributed and undoable. Runs as a Claude.ai Artifact | ✅ Active (v0.1.0) |
 | [`pocs/signalhire`](pocs/signalhire) | Application authenticity engine — triages a folder of job applications into genuine effort / mass-generated / needs review using document forensics, layout fingerprinting, hidden-text detection, JD-mirroring and cross-applicant clustering. Assistive only, never auto-reject | ✅ Active (v0.1.0) |
+| [`pocs/duoplay`](pocs/duoplay) | Two-speaker web app — plays one track on two speakers in time. *Dual Output* sends it to two outputs on one computer; *Room Sync* keeps one-device-per-speaker (including iPhone) on a shared clock. Includes a browser-capability check and a click test for tuning by ear | 🧪 Test bench (v0.1.0) |
 
 ## Conventions
 

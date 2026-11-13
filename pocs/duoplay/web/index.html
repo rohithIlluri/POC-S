@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>DuoPlay</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <main>
+      <header>
+        <h1>DuoPlay</h1>
+        <p>Play one track on two speakers, in time.</p>
+      </header>
+
+      <section class="card" aria-labelledby="support-h">
+        <h2 id="support-h">This browser</h2>
+        <p id="verdict" class="verdict"></p>
+        <ul id="support-list" class="checks"></ul>
+        <button id="copy-report" class="quiet">Copy test report</button>
+      </section>
+
+      <div class="tabs" role="tablist" aria-label="Mode">
+        <button role="tab" id="tab-dual" aria-selected="true" aria-controls="panel-dual">Dual Output</button>
+        <button role="tab" id="tab-room" aria-selected="false" aria-controls="panel-room">Room Sync</button>
+      </div>
+
+      <section id="panel-dual" role="tabpanel" aria-labelledby="tab-dual">
+        <p class="lead">
+          One computer, two speakers. Connect both speakers to this computer first (Bluetooth settings), then pick
+          one for each side.
+        </p>
+        <div id="speakers" class="grid"></div>
+      </section>
+
+      <section id="panel-room" role="tabpanel" aria-labelledby="tab-room" hidden>
+        <div id="room-lobby" class="card">
+          <p class="lead">
+            One speaker per device. Everyone opens this page, joins the same room, and each device plays through its
+            own speaker. This works on iPhone.
+          </p>
+          <div class="row">
+            <button id="room-create" class="primary">Create room</button>
+            <span class="or">or</span>
+            <input id="room-code" maxlength="4" placeholder="CODE" autocapitalize="characters" autocomplete="off" aria-label="Room code" />
+            <button id="room-join">Join</button>
+          </div>
+          <p id="room-error" class="error" role="alert"></p>
+        </div>
+        <div id="room-live" hidden>
+          <div class="card">
+            <div class="room-head">
+              <div>
+                <div class="hint">Room code</div>
+                <div id="room-code-big" class="code"></div>
+              </div>
+              <div class="room-meta">
+                <div><span id="room-members">1</span> device(s) in room</div>
+                <div class="hint" id="room-clock">Clock: measuring…</div>
+              </div>
+            </div>
+            <div class="row">
+              <button id="room-copy">Copy join link</button>
+              <button id="room-leave" class="quiet">Leave</button>
+            </div>
+          </div>
+          <div id="room-speaker"></div>
+        </div>
+      </section>
+
+      <section id="player" class="card" aria-labelledby="player-h" hidden>
+        <h2 id="player-h">Track</h2>
+        <p id="track-name" class="track-name">Nothing loaded</p>
+        <div class="row">
+          <button id="load-click">Sync click test</button>
+          <label class="file">Upload audio file<input id="load-file" type="file" accept="audio/*" /></label>
+          <input id="load-url" type="url" placeholder="Or paste a direct audio link" aria-label="Audio link" />
+          <button id="load-url-go">Load</button>
+        </div>
+        <div class="transport">
+          <button id="play" class="primary" disabled>Play</button>
+          <input id="seek" type="range" min="0" max="1000" value="0" disabled aria-label="Position" />
+          <span id="time" class="time">0:00 / 0:00</span>
+        </div>
+        <p id="status" class="hint" role="status"></p>
+      </section>
+
+      <footer>
+        <p>
+          Tip: the sync click test plays one click per second on every speaker. If you hear a double click, nudge the
+          speaker that clicks first later (+), or the other one earlier (−).
+        </p>
+      </footer>
+    </main>
+    <script type="module" src="app.js"></script>
+  </body>
+</html>
