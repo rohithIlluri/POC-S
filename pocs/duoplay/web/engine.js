@@ -217,6 +217,7 @@ export class LiveRouter {
     return this.stream !== null;
   }
 
+  /** Share another browser tab (Chrome's picker). */
   async start() {
     const stream = await navigator.mediaDevices.getDisplayMedia({
       video: { frameRate: 1 }, // Chrome requires video to share a tab; we never use it
@@ -233,9 +234,16 @@ export class LiveRouter {
       err.name = 'NoAudioError';
       throw err;
     }
+    this.startStream(stream, 'tab');
+  }
+
+  /** Route any live audio stream (a shared tab, or the computer's sound) to every speaker. */
+  startStream(stream, kind) {
+    const audio = stream.getAudioTracks()[0];
     this.stop();
     this.stream = stream;
-    // The user pressed "Stop sharing" in Chrome's bar, or closed the tab.
+    this.kind = kind;
+    // Sharing stopped in Chrome's bar, the tab closed, or the input disappeared.
     audio.addEventListener('ended', () => {
       this.stop();
       this.onEnded?.();

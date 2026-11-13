@@ -35,6 +35,16 @@ The script installs the one dependency, lists the Bluetooth speakers the sound s
 2. In **Dual Output**, click **Find my speakers** and allow the microphone prompt. Chrome only lists speakers after that permission; the mic is switched off straight away.
 3. Pick one speaker per side, press **Test tone** on each, load **Sync click test**, press Play, and nudge until you hear one click.
 
+### Play everything from this computer (Brave, Spotify, YouTube…) — Linux
+
+`./start-linux.sh` adds a virtual output called **DuoPlay** and makes it the computer's default, so every app plays into it. The **Computer sound** card at the top of Dual Output records that output and plays it on your two speakers.
+
+1. Run `./start-linux.sh` (it opens DuoPlay in its own window).
+2. Click **Play computer sound on both speakers**. The first time, allow the microphone prompt: that is how the browser hears the DuoPlay output. Your two Bluetooth speakers are picked automatically.
+3. Play music in any app. Tick **Start automatically when DuoPlay opens** to skip the click next time.
+
+Keep the terminal open while you listen. **Ctrl+C** (or closing the terminal) puts the computer's normal sound output back. If the script was killed some other way and the laptop is silent, run `./start-linux.sh --restore`.
+
 ### Play YouTube (or any site) on both speakers
 
 1. Open YouTube in another Chrome tab and start the video.

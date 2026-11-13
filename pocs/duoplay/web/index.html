@@ -30,6 +30,19 @@
           One computer, two speakers. Connect both speakers to this computer first (Bluetooth settings), then pick
           one for each side.
         </p>
+        <div id="computer" class="card computer" hidden>
+          <h2>Computer sound</h2>
+          <p class="lead">
+            Play music in any app or browser on this computer (Brave, Spotify, YouTube…) and it comes out of both
+            speakers.
+          </p>
+          <ul id="computer-checks" class="checks"></ul>
+          <div class="row">
+            <button id="computer-go" class="primary">Play computer sound on both speakers</button>
+            <label class="inline"><input type="checkbox" id="auto-start" /> Start automatically when DuoPlay opens</label>
+          </div>
+          <p id="computer-status" class="hint" role="status"></p>
+        </div>
         <div id="speakers" class="grid"></div>
       </section>
 

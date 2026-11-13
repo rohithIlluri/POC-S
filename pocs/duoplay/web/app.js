@@ -96,12 +96,15 @@ function speakerCard(id, title) {
 
 let onNudge = () => {}; // set per mode: restart playback so a nudge takes effect
 
+const isDuoPlayDevice = (label) => /^duoplay$|monitor of duoplay/i.test(label.trim());
+
 async function listOutputs(selectEl, wanted) {
   if (!navigator.mediaDevices?.enumerateDevices) return;
   const outs = (await navigator.mediaDevices.enumerateDevices()).filter((d) => d.kind === 'audiooutput');
   const known = new Set([...selectEl.options].map((o) => o.value));
   for (const d of outs) {
     if (!d.deviceId || d.deviceId === 'default' || known.has(d.deviceId)) continue;
+    if (isDuoPlayDevice(d.label)) continue; // our own virtual output is never a speaker
     selectEl.add(new Option(d.label || `Output ${selectEl.options.length}`, d.deviceId));
   }
   if (wanted) selectEl.value = wanted;
@@ -109,12 +112,30 @@ async function listOutputs(selectEl, wanted) {
 
 const devSelects = []; // [selectEl, id] for every speaker card
 
+// Per-viewer memory (chosen speakers, auto-start). Wrapped: storage can be blocked.
+function store(key, value) {
+  try {
+    localStorage.setItem(`duoplay.${key}`, value);
+  } catch {
+    /* not available */
+  }
+}
+function recall(key) {
+  try {
+    return localStorage.getItem(`duoplay.${key}`) ?? '';
+  } catch {
+    return '';
+  }
+}
+
 async function refreshOutputs() {
   for (const [sel, id] of devSelects) {
     const keep = sel.value;
     for (const o of [...sel.options].slice(1)) o.remove();
     await listOutputs(sel);
-    sel.value = [...sel.options].some((o) => o.value === keep) ? keep : '';
+    const saved = recall(`dev-${id}`);
+    const want = keep || saved;
+    sel.value = [...sel.options].some((o) => o.value === want) ? want : '';
     if (sel.value !== keep) sel.dispatchEvent(new Event('change')); // chosen speaker went away
     $(`#hint-${id}`).hidden = sel.options.length > 1;
   }
@@ -130,8 +151,10 @@ function bindSpeaker(id, channel) {
     devSelects.push([dev, id]);
     dev.addEventListener('change', async () => {
       try {
+        store(`dev-${id}`, dev.value);
         await channel.setSink(dev.value);
         status.textContent = '';
+        if (typeof renderComputerChecks === 'function' && !$('#computer').hidden) renderComputerChecks();
       } catch (e) {
         status.textContent = e.message;
       }
@@ -399,11 +422,13 @@ setInterval(() => {
 // ---------------------------------------------------------------- YouTube / any tab
 function stopLive() {
   live.stop();
+  if (!$('#computer').hidden) renderComputerChecks();
   trackLoaded(dual.buffer ? $('#track-name').dataset.file || 'Track' : 'Nothing loaded');
   setStatus('');
   refreshTransport();
 }
 live.onEnded = () => {
+  if (!$('#computer').hidden) renderComputerChecks();
   trackLoaded(dual.buffer ? $('#track-name').dataset.file || 'Track' : 'Nothing loaded');
   setStatus('Tab sharing stopped.');
   refreshTransport();
@@ -428,6 +453,148 @@ $('#load-tab').addEventListener('click', async () => {
   }
   refreshTransport();
 });
+
+// ---------------------------------------------------------------- Computer sound (Linux)
+// start-linux.sh adds a virtual output called DuoPlay and makes it the default, so
+// every app plays into it. We record its monitor and play that on both speakers.
+let linuxAudio = { available: false, inputReady: false, speakers: [] };
+const label = (sel) => sel.options[sel.selectedIndex]?.text ?? '';
+
+async function loadLinuxStatus() {
+  try {
+    const res = await fetch('/api/linux-audio');
+    if (res.ok) linuxAudio = await res.json();
+  } catch {
+    /* served without the DuoPlay server (static hosting): feature off */
+  }
+}
+
+async function hasMicPermission() {
+  try {
+    return (await navigator.permissions.query({ name: 'microphone' })).state === 'granted';
+  } catch {
+    return false;
+  }
+}
+
+/** Browsers only reveal device names after a microphone permission. Ask once. */
+async function ensureDeviceNames() {
+  if (await hasMicPermission()) return;
+  const s = await navigator.mediaDevices.getUserMedia({ audio: true });
+  s.getTracks().forEach((t) => t.stop());
+}
+
+/** Put the computer's Bluetooth speakers on A and B if those are still "System default". */
+function autoPickSpeakers() {
+  const a = $('#dev-a');
+  const b = $('#dev-b');
+  const bt = linuxAudio.speakers.map((x) => x.toLowerCase());
+  const candidates = [...a.options]
+    .filter((o) => o.value && !isDuoPlayDevice(o.text))
+    .sort((x, y) => {
+      const isBt = (o) => bt.some((name) => o.text.toLowerCase().includes(name));
+      return Number(isBt(y)) - Number(isBt(x)); // Bluetooth speakers first
+    });
+  for (const sel of [a, b]) {
+    if (sel.value) continue;
+    const other = sel === a ? b.value : a.value;
+    const pick = candidates.find((o) => o.value !== other);
+    if (!pick) break;
+    sel.value = pick.value;
+    sel.dispatchEvent(new Event('change'));
+  }
+}
+
+function renderComputerChecks() {
+  const a = $('#dev-a');
+  const b = $('#dev-b');
+  const row = (ok, text) => `<li><span class="mark ${ok ? 'ok' : 'no'}">${ok ? '✓' : '✗'}</span><span>${text}</span></li>`;
+  const esc = (t) => t.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+  $('#computer-checks').innerHTML = [
+    row(linuxAudio.inputReady, linuxAudio.inputReady ? 'DuoPlay input ready: apps on this computer play into DuoPlay' : 'DuoPlay input not set up. Start DuoPlay with ./start-linux.sh'),
+    row(!!a.value, a.value ? `Speaker A: ${esc(label(a))}` : 'Speaker A: not chosen yet'),
+    row(!!b.value, b.value ? `Speaker B: ${esc(label(b))}` : 'Speaker B: not chosen yet'),
+  ].join('');
+  const on = live.active && live.kind === 'computer';
+  $('#computer-go').textContent = on ? 'Stop' : 'Play computer sound on both speakers';
+  $('#computer-go').classList.toggle('primary', !on);
+}
+
+async function startComputerSound() {
+  const say = (t) => ($('#computer-status').textContent = t);
+  try {
+    await ensureDeviceNames();
+    await refreshOutputs();
+    autoPickSpeakers();
+    const a = $('#dev-a').value;
+    const b = $('#dev-b').value;
+    renderComputerChecks();
+    // A speaker left on "System default" would be the DuoPlay output itself: an endless echo.
+    if (!a || !b) return say('Connect both Bluetooth speakers, then choose one for Speaker A and one for Speaker B below.');
+    if (a === b) return say('Speaker A and Speaker B are the same speaker. Choose two different ones below.');
+    const input = (await navigator.mediaDevices.enumerateDevices()).find(
+      (d) => d.kind === 'audioinput' && /monitor of duoplay/i.test(d.label),
+    );
+    if (!input) return say('The DuoPlay input was not found. Close this window and start DuoPlay with ./start-linux.sh.');
+    const stream = await navigator.mediaDevices.getUserMedia({
+      audio: {
+        deviceId: { exact: input.deviceId },
+        echoCancellation: false,
+        noiseSuppression: false,
+        autoGainControl: false,
+        channelCount: 2,
+      },
+    });
+    if (dual.playing) dual.stop();
+    live.startStream(stream, 'computer');
+    trackLoaded('Live: computer sound on both speakers');
+    say('Playing. Start music in any app. If you hear an echo, nudge the speaker that plays first with +.');
+  } catch (e) {
+    say(e.name === 'NotAllowedError' ? 'DuoPlay needs the microphone permission to hear the computer sound. Allow it and try again.' : `Could not start: ${e.message}`);
+  } finally {
+    renderComputerChecks();
+    refreshTransport();
+  }
+}
+
+$('#computer-go').addEventListener('click', async () => {
+  await resumeAll();
+  if (live.active && live.kind === 'computer') {
+    stopLive();
+    $('#computer-status').textContent = 'Stopped.';
+    return renderComputerChecks();
+  }
+  startComputerSound();
+});
+
+$('#auto-start').addEventListener('change', (e) => store('auto-start', e.target.checked ? '1' : ''));
+
+async function initComputerSound() {
+  await loadLinuxStatus();
+  if (!linuxAudio.available || !canSink) return; // not a Linux machine running ./start-linux.sh
+  $('#computer').hidden = false;
+  $('#auto-start').checked = recall('auto-start') === '1';
+  if (await hasMicPermission()) {
+    await refreshOutputs();
+    autoPickSpeakers();
+  }
+  renderComputerChecks();
+  if (!$('#auto-start').checked || !linuxAudio.inputReady || !(await hasMicPermission())) return;
+
+  // Audio may only start after a click unless the browser was opened by start-linux.sh.
+  await Promise.race([resumeAll(), sleep(500)]);
+  if (chA.ctx.state === 'running' && chB.ctx.state === 'running') return startComputerSound();
+  $('#computer-status').textContent = 'Click anywhere on this page to start.';
+  document.addEventListener(
+    'pointerdown',
+    async () => {
+      await resumeAll();
+      if (!live.active) startComputerSound();
+    },
+    { once: true },
+  );
+}
+initComputerSound();
 
 // ---------------------------------------------------------------- Room Sync
 async function keepAwake() {

@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { randomBytes } from 'node:crypto';
 import { WebSocketServer } from 'ws';
 import { Room, makeCode, MAX_MEMBERS } from './rooms.js';
+import { status as linuxAudioStatus } from './linux-audio.js';
 
 const WEB_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../web');
 const MAX_UPLOAD = 40 * 1024 * 1024; // per file
@@ -55,6 +56,13 @@ export async function startServer({ port = 3000, host = '0.0.0.0' } = {}) {
         const id = randomBytes(8).toString('hex');
         uploads.set(id, { buf: Buffer.concat(chunks), room });
         return json(res, 200, { url: `/api/track/${id}` });
+      }
+
+      if (req.method === 'GET' && url.pathname === '/api/linux-audio') {
+        // Describes this computer's speakers, so only the computer itself may ask.
+        const ip = req.socket.remoteAddress ?? '';
+        if (!['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(ip)) return json(res, 404, { error: 'Not found' });
+        return json(res, 200, await linuxAudioStatus());
       }
 
       if (req.method === 'GET' && url.pathname.startsWith('/api/track/')) {
