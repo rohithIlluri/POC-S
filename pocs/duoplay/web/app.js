@@ -1,4 +1,4 @@
-import { Channel, Player, clickBuffer, hasContextSink } from './engine.js';
+import { Channel, Player, LiveRouter, clickBuffer, hasContextSink, canCaptureTab } from './engine.js';
 import { RoomClient } from './room.js';
 
 const $ = (sel) => document.querySelector(sel);
@@ -12,6 +12,7 @@ const checks = [
   ['Web Audio', hasAudio, 'Needed for everything'],
   ['Choose output speaker (AudioContext.setSinkId)', canSink, 'Needed for Dual Output'],
   ['Browser speaker prompt (selectAudioOutput)', !!navigator.mediaDevices?.selectAudioOutput, 'Lets you pick a speaker the list does not show'],
+  ['Share a tab\'s audio (getDisplayMedia)', canCaptureTab(), 'Needed to play YouTube or any website on both speakers'],
   ['List outputs (enumerateDevices)', !!navigator.mediaDevices?.enumerateDevices, 'Needed to fill the speaker lists'],
   ['Keep screen awake (Wake Lock)', 'wakeLock' in navigator, 'Helps phones stay in Room Sync'],
   ['iOS audio session (audioSession)', 'audioSession' in navigator, 'Lets audio play with the silent switch on'],
@@ -87,6 +88,7 @@ function speakerCard(id, title) {
         <button id="np-${id}" aria-label="Nudge 5 ms later">+5</button>
       </div>
     </label>
+    <label>Signal <meter id="level-${id}" min="0" max="1" value="0"></meter></label>
     <div class="row"><button id="tone-${id}">Test tone</button></div>
     <p class="hint" id="drift-${id}"></p>
   </div>`;
@@ -170,7 +172,8 @@ function bindSpeaker(id, channel) {
 
   $(`#ch-${id}`).addEventListener('change', (e) => {
     channel.mode = e.target.value;
-    onNudge();
+    if (live.active && channel !== chR) live.wire();
+    else onNudge();
   });
   $(`#vol-${id}`).addEventListener('input', (e) => {
     channel.setVolume(e.target.value / 100);
@@ -202,6 +205,7 @@ const chA = new Channel('A');
 const chB = new Channel('B');
 const chR = new Channel('Room');
 const dual = new Player([chA, chB]);
+const live = new LiveRouter([chA, chB]); // another tab's sound (YouTube) on both speakers
 const room = new Player([chR]);
 
 $('#speakers').innerHTML = speakerCard('a', 'Speaker A') + speakerCard('b', 'Speaker B');
@@ -232,11 +236,14 @@ function setMode(next) {
   }
   if (next === 'dual') {
     $('#player').hidden = false;
-    onNudge = restartDual;
+    onNudge = () => (live.active ? live.applyNudges() : restartDual());
   } else {
+    if (live.active) stopLive();
     $('#player').hidden = !roomCode;
     onNudge = () => roomClient && syncRoomPlayer();
   }
+  // Tab sharing feeds this computer's speakers only, so it belongs to Dual Output.
+  $('#tab-share').hidden = next !== 'dual' || !canSink || !canCaptureTab();
   refreshTransport();
   setStatus('');
 }
@@ -255,11 +262,13 @@ async function fetchBuffer(url, ctx) {
 }
 
 function trackLoaded(name) {
+  if (!name.startsWith('Live from tab')) $('#track-name').dataset.file = name;
   $('#track-name').textContent = name;
   refreshTransport();
 }
 
 async function loadLocal(buffer, loop, name) {
+  if (live.active) stopLive();
   dual.setTrack(buffer, loop);
   trackLoaded(name);
 }
@@ -310,6 +319,12 @@ $('#load-url-go').addEventListener('click', async () => {
 
 // ---------------------------------------------------------------- transport
 function refreshTransport() {
+  if (mode === 'dual' && live.active) {
+    $('#play').disabled = false;
+    $('#play').textContent = 'Stop sharing';
+    $('#seek').disabled = true;
+    return;
+  }
   const p = active();
   const ready = !!p.buffer;
   $('#play').disabled = !ready;
@@ -327,7 +342,9 @@ function restartDual() {
 
 $('#play').addEventListener('click', async () => {
   await resumeAll();
-  if (mode === 'dual') {
+  if (mode === 'dual' && live.active) {
+    stopLive();
+  } else if (mode === 'dual') {
     if (dual.playing) dual.stop();
     else dual.play(dual.parked >= dual.duration && !dual.loop ? 0 : dual.parked, performance.now() + 250);
   } else if (roomState?.playing) {
@@ -357,6 +374,15 @@ setInterval(() => {
     refreshTransport();
   }
   if (mode === 'room' && p.hasEnded()) p.stop(p.duration);
+  for (const [id, ch] of [['a', chA], ['b', chB], ['r', chR]]) $(`#level-${id}`).value = ch.level();
+  if (mode === 'dual' && live.active) {
+    $('#time').textContent = 'Live';
+    for (const id of ['a', 'b']) {
+      const el = $(`#drift-${id}`);
+      if (!el.textContent.startsWith('Permission') && !el.textContent.startsWith('This browser')) el.textContent = '';
+    }
+    return;
+  }
   const pos = p.position();
   if (!seeking && p.duration) $('#seek').value = p.loop ? 0 : Math.round((pos / p.duration) * 1000);
   $('#time').textContent = p.loop ? (p.playing ? 'Looping' : 'Stopped') : `${fmt(pos)} / ${fmt(p.duration)}`;
@@ -369,6 +395,39 @@ setInterval(() => {
     el.textContent = drifts[i] === null ? '' : `Drift: ${drifts[i] > 0 ? '+' : ''}${drifts[i].toFixed(0)} ms`;
   });
 }, 100);
+
+// ---------------------------------------------------------------- YouTube / any tab
+function stopLive() {
+  live.stop();
+  trackLoaded(dual.buffer ? $('#track-name').dataset.file || 'Track' : 'Nothing loaded');
+  setStatus('');
+  refreshTransport();
+}
+live.onEnded = () => {
+  trackLoaded(dual.buffer ? $('#track-name').dataset.file || 'Track' : 'Nothing loaded');
+  setStatus('Tab sharing stopped.');
+  refreshTransport();
+};
+
+$('#load-tab').addEventListener('click', async () => {
+  await resumeAll(); // inside the click, so audio is allowed to start
+  if (dual.playing) dual.stop();
+  setStatus('Choose the YouTube tab in the browser window, keep "Also share tab audio" on, then click Share.');
+  try {
+    await live.start();
+    trackLoaded('Live from tab: the shared tab is playing on both speakers');
+    setStatus('Playing that tab on both speakers. Control the music in the YouTube tab; nudge here if you hear an echo.');
+  } catch (e) {
+    setStatus(
+      e.name === 'NotAllowedError'
+        ? 'Sharing was cancelled.'
+        : e.name === 'NoAudioError'
+          ? 'No sound came through. Choose a browser tab (not a window or the whole screen) and keep "Also share tab audio" switched on.'
+          : `Could not share the tab: ${e.message}`,
+    );
+  }
+  refreshTransport();
+});
 
 // ---------------------------------------------------------------- Room Sync
 async function keepAwake() {
@@ -526,4 +585,4 @@ if (linked) {
 }
 
 // Read-only handle for debugging from the browser console (and the smoke test).
-window.__duoplay = { dual, room, clock: () => roomClient?.clock ?? null };
+window.__duoplay = { dual, room, live, chA, chB, clock: () => roomClient?.clock ?? null };

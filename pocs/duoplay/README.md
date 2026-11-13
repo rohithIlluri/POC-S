@@ -35,6 +35,14 @@ The script installs the one dependency, lists the Bluetooth speakers the sound s
 2. In **Dual Output**, click **Find my speakers** and allow the microphone prompt. Chrome only lists speakers after that permission; the mic is switched off straight away.
 3. Pick one speaker per side, press **Test tone** on each, load **Sync click test**, press Play, and nudge until you hear one click.
 
+### Play YouTube (or any site) on both speakers
+
+1. Open YouTube in another Chrome tab and start the video.
+2. In DuoPlay's **Dual Output**, click **Play from YouTube or another tab**.
+3. Choose the YouTube tab, keep **Also share tab audio** on, and click **Share**.
+
+Chrome mutes the tab and DuoPlay plays its sound on both speakers, with the same nudge, volume and left/right controls. Control the music in the YouTube tab. Click **Stop sharing** (in DuoPlay or Chrome's bar) to end it. This captures the tab's sound only for your own speakers; nothing is downloaded or saved. Some protected content (for example, some paid music services) may come through silent.
+
 If one speaker stutters, the built-in Bluetooth adapter may not keep up with two streams; moving closer usually helps.
 
 ## Test it on real speakers

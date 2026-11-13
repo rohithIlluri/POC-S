@@ -27,6 +27,10 @@ export class Channel {
     this.ctx = new AudioContext({ latencyHint: 'interactive' });
     this.gain = this.ctx.createGain();
     this.gain.connect(this.ctx.destination);
+    this.meter = this.ctx.createAnalyser(); // taps what this speaker is playing, for the level meter
+    this.meter.fftSize = 1024;
+    this.gain.connect(this.meter);
+    this.meterBuf = new Float32Array(this.meter.fftSize);
     this.mode = 'both'; // 'both' | 'left' | 'right'
     this.nudgeMs = 0; // positive = plays later
     this.src = null;
@@ -111,6 +115,14 @@ export class Channel {
     return wrapPosition(this.startPos + elapsed, this.duration, this.loop);
   }
 
+  /** Loudness of what this speaker is playing right now, 0 (silent) to about 1. */
+  level() {
+    this.meter.getFloatTimeDomainData(this.meterBuf);
+    let sum = 0;
+    for (const v of this.meterBuf) sum += v * v;
+    return Math.min(1, Math.sqrt(sum / this.meterBuf.length) * 3);
+  }
+
   /** A 350 ms beep so you can tell which speaker is which. */
   tone() {
     const osc = this.ctx.createOscillator();
@@ -181,5 +193,92 @@ export class Player {
       if (heard === null || !this.playing) return null;
       return positionDiff(heard, expected - ch.nudgeMs / 1000, this.duration, this.loop) * 1000;
     });
+  }
+}
+
+export const canCaptureTab = () => !!navigator.mediaDevices?.getDisplayMedia;
+
+/**
+ * Plays another browser tab's sound (YouTube or any site) on every channel at once.
+ * Chrome's tab sharing hands us the tab's audio as a live stream and, with
+ * suppressLocalAudioPlayback, mutes the tab itself so the sound only comes out
+ * of our speakers. Live audio cannot start early, so nudges become delays
+ * relative to the earliest speaker.
+ */
+export class LiveRouter {
+  constructor(channels) {
+    this.channels = channels;
+    this.stream = null;
+    this.nodes = [];
+    this.onEnded = null;
+  }
+
+  get active() {
+    return this.stream !== null;
+  }
+
+  async start() {
+    const stream = await navigator.mediaDevices.getDisplayMedia({
+      video: { frameRate: 1 }, // Chrome requires video to share a tab; we never use it
+      audio: { suppressLocalAudioPlayback: true, echoCancellation: false, noiseSuppression: false, autoGainControl: false },
+      preferCurrentTab: false,
+      selfBrowserSurface: 'exclude',
+      surfaceSwitching: 'include',
+      systemAudio: 'exclude',
+    });
+    const audio = stream.getAudioTracks()[0];
+    if (!audio) {
+      stream.getTracks().forEach((t) => t.stop());
+      const err = new Error('The shared tab sent no audio');
+      err.name = 'NoAudioError';
+      throw err;
+    }
+    this.stop();
+    this.stream = stream;
+    // The user pressed "Stop sharing" in Chrome's bar, or closed the tab.
+    audio.addEventListener('ended', () => {
+      this.stop();
+      this.onEnded?.();
+    });
+    this.wire();
+  }
+
+  /** (Re)build each speaker's path: tab audio -> optional left/right pick -> delay -> speaker. */
+  wire() {
+    this.unwire();
+    if (!this.stream) return;
+    for (const ch of this.channels) {
+      const src = ch.ctx.createMediaStreamSource(this.stream);
+      const delay = ch.ctx.createDelay(1);
+      if (ch.mode !== 'both') {
+        const split = ch.ctx.createChannelSplitter(2);
+        src.connect(split);
+        split.connect(delay, ch.mode === 'left' ? 0 : 1);
+      } else {
+        src.connect(delay);
+      }
+      delay.connect(ch.gain);
+      this.nodes.push({ ch, src, delay });
+    }
+    this.applyNudges();
+  }
+
+  applyNudges() {
+    const base = Math.min(...this.channels.map((c) => c.nudgeMs));
+    for (const { ch, delay } of this.nodes) delay.delayTime.value = (ch.nudgeMs - base) / 1000;
+  }
+
+  unwire() {
+    for (const { src, delay } of this.nodes) {
+      src.disconnect();
+      delay.disconnect();
+    }
+    this.nodes = [];
+  }
+
+  stop() {
+    this.unwire();
+    this.stream?.getTracks().forEach((t) => t.stop());
+    this.stream = null;
   }
 }
