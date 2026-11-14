@@ -61,7 +61,12 @@ if command -v pactl >/dev/null; then
     echo "Computer sound could not be set up ($out). The rest of DuoPlay still works."
   fi
 else
-  echo "pactl not found: Computer sound needs PipeWire or PulseAudio. The rest of DuoPlay still works."
+  echo "pactl not found, so Computer sound is off. Install it, then run this script again:"
+  if command -v apt >/dev/null; then echo "  sudo apt install -y pulseaudio-utils"
+  elif command -v dnf >/dev/null; then echo "  sudo dnf install -y pulseaudio-utils"
+  elif command -v pacman >/dev/null; then echo "  sudo pacman -S libpulse"
+  else echo "  install the package that provides pactl (pulseaudio-utils or libpulse)"; fi
+  echo "The rest of DuoPlay still works."
 fi
 
 PORT="$PORT" node server/index.js &
